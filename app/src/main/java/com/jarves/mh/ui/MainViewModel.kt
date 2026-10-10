@@ -325,6 +325,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val runtimeHealthController = com.jarves.mh.runtime.RuntimeHealthController(application)
     val agentSessionController = com.jarves.mh.session.AgentSessionController(application, sessionManager)
     val terminalSessionController = com.jarves.mh.terminal.TerminalSessionController()
+    val gitDomainController = com.jarves.mh.workspace.GitDomainController { args, workingDir, guestPath ->
+        if (!installer.isInstalled()) return@GitDomainController 1 to "Linux runtime is not ready."
+        val installed = installer.installedRuntime()
+        val outputFile = File(getApplication<Application>().cacheDir, "git-op-${System.nanoTime()}.log")
+        try {
+            val process = installer.process(
+                installed.proot,
+                installed.rootfs,
+                workingDir,
+                mapOf("GIT_TERMINAL_PROMPT" to "0"),
+                listOf("git") + args,
+                guestWorkspacePath = guestPath,
+                outputFile = outputFile,
+            )
+            val exitCode = process.waitFor()
+            val out = outputFile.readTailText(MAX_PROCESS_OUTPUT_BYTES).trim()
+            exitCode to out
+        } finally {
+            outputFile.delete()
+        }
+    }
+    val appErrorCoordinator = com.jarves.mh.runtime.AppErrorCoordinator()
     val projectWorkspaceController = com.jarves.mh.workspace.ProjectWorkspaceController(application)
     val fileOperationsController = com.jarves.mh.workspace.FileOperationsController()
     val projectMemoryStore = com.jarves.mh.runtime.ProjectMemoryStore(application.filesDir)
@@ -828,21 +850,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createTerminalSession() {
-        val sessions = _state.value.terminalSessions
-        val nextNum = sessions.size + 1
-        val newId = "term-${System.currentTimeMillis()}"
-        val newSession = TerminalSessionTab(
-            id = newId,
-            title = "Terminal $nextNum",
-            isRunning = false,
-            cwd = _state.value.projectTerminalCwd,
-            lines = emptyList(),
+        val (updated, newSession) = terminalSessionController.createSession(
+            sessions = _state.value.terminalSessions,
+            defaultCwd = _state.value.projectTerminalCwd,
         )
-        val updated = sessions + newSession
         _state.update {
             it.copy(
                 terminalSessions = updated,
-                activeTerminalSessionId = newId,
+                activeTerminalSessionId = newSession.id,
                 projectTerminalLines = emptyList(),
                 projectTerminalLiveOutput = "",
             )
@@ -850,22 +865,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectTerminalSession(sessionId: String) {
-        val currentSessionId = _state.value.activeTerminalSessionId
-        if (currentSessionId == sessionId) return
         val current = _state.value
-        val updatedSessions = current.terminalSessions.map { session ->
-            if (session.id == currentSessionId) {
-                session.copy(
-                    lines = current.projectTerminalLines,
-                    cwd = current.projectTerminalCwd,
-                    isRunning = current.projectTerminalRunning,
-                )
-            } else session
-        }
-        val target = updatedSessions.firstOrNull { it.id == sessionId } ?: return
+        val (updated, target) = terminalSessionController.selectSession(
+            sessions = current.terminalSessions,
+            currentActiveId = current.activeTerminalSessionId,
+            currentLines = current.projectTerminalLines,
+            currentCwd = current.projectTerminalCwd,
+            currentRunning = current.projectTerminalRunning,
+            targetSessionId = sessionId,
+        )
+        if (target == null) return
         _state.update {
             it.copy(
-                terminalSessions = updatedSessions,
+                terminalSessions = updated,
                 activeTerminalSessionId = target.id,
                 projectTerminalLines = target.lines,
                 projectTerminalCwd = target.cwd,
@@ -876,24 +888,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeTerminalSession(sessionId: String) {
-        val sessions = _state.value.terminalSessions
-        if (sessions.size <= 1) {
+        if (_state.value.terminalSessions.size <= 1) {
             clearProjectTerminal()
             return
         }
-        val remaining = sessions.filter { it.id != sessionId }
-        val newActive = if (_state.value.activeTerminalSessionId == sessionId) {
-            remaining.last()
-        } else {
-            remaining.firstOrNull { it.id == _state.value.activeTerminalSessionId } ?: remaining.first()
-        }
+        val (remaining, newActive) = terminalSessionController.closeSession(
+            sessions = _state.value.terminalSessions,
+            currentActiveId = _state.value.activeTerminalSessionId,
+            targetSessionId = sessionId,
+        )
+        val active = newActive ?: remaining.firstOrNull() ?: return
         _state.update {
             it.copy(
                 terminalSessions = remaining,
-                activeTerminalSessionId = newActive.id,
-                projectTerminalLines = newActive.lines,
-                projectTerminalCwd = newActive.cwd,
-                projectTerminalRunning = newActive.isRunning,
+                activeTerminalSessionId = active.id,
+                projectTerminalLines = active.lines,
+                projectTerminalCwd = active.cwd,
+                projectTerminalRunning = active.isRunning,
                 projectTerminalLiveOutput = "",
             )
         }
@@ -3972,100 +3983,116 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun runWorkspaceGitCommand(args: List<String>, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val project = _state.value.activeProject ?: return
+        val project = _state.value.activeProject ?: return onResult(false, "No active project")
         val workspace = projectWorkspaceRoot(project)
         viewModelScope.launch {
-            val (exit, output) = withContext(Dispatchers.IO) {
-                runCatching {
-                    if (!installer.isInstalled()) return@runCatching 1 to "Linux runtime is not ready."
-                    val installed = installer.installedRuntime()
-                    val outputFile = File(getApplication<Application>().cacheDir, "git-op-${System.nanoTime()}.log")
-                    try {
-                        val process = installer.process(
-                            installed.proot,
-                            installed.rootfs,
-                            workspace,
-                            mapOf("GIT_TERMINAL_PROMPT" to "0"),
-                            listOf("git") + args,
-                            guestWorkspacePath = "/workspace/${project.slug}",
-                            outputFile = outputFile,
-                        )
-                        val exitCode = process.waitFor()
-                        val out = outputFile.readTailText(MAX_PROCESS_OUTPUT_BYTES).trim()
-                        exitCode to out
-                    } finally {
-                        outputFile.delete()
-                    }
-                }.getOrElse { 1 to (it.message ?: "Failed to run git command") }
+            val result = withContext(Dispatchers.IO) {
+                gitDomainController.executeGit(args, workspace, "/workspace/${project.slug}")
             }
-            val success = exit == 0
-            if (!success && output.isNotBlank()) {
-                _state.update { it.copy(toastMessage = "Git: $output") }
+            if (!result.success && result.output.isNotBlank()) {
+                _state.update { it.copy(toastMessage = "Git: ${result.output}") }
             }
-            onResult(success, output)
+            onResult(result.success, result.output)
         }
     }
 
     fun gitStatus(onResult: (String) -> Unit) {
-        runWorkspaceGitCommand(listOf("status", "--short")) { _, out -> onResult(out) }
+        val project = _state.value.activeProject ?: return onResult("No active project")
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                gitDomainController.status(workspace, "/workspace/${project.slug}")
+            }
+            onResult(res.output)
+        }
     }
 
     fun gitDiff(onResult: (String) -> Unit) {
-        runWorkspaceGitCommand(listOf("diff", "--stat")) { _, out -> onResult(out) }
+        val project = _state.value.activeProject ?: return onResult("No active project")
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                gitDomainController.diff(workspace, "/workspace/${project.slug}")
+            }
+            onResult(res.output)
+        }
     }
 
     fun gitBranchList(onResult: (List<String>) -> Unit) {
-        runWorkspaceGitCommand(listOf("branch", "--list")) { _, out ->
-            val branches = out.lineSequence().map { it.trim().removePrefix("*").trim() }.filter { it.isNotBlank() }.toList()
+        val project = _state.value.activeProject ?: return onResult(emptyList())
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val branches = withContext(Dispatchers.IO) {
+                gitDomainController.branchList(workspace, "/workspace/${project.slug}")
+            }
             onResult(branches)
         }
     }
 
     fun gitCheckout(branch: String, createNew: Boolean = false, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val args = if (createNew) listOf("checkout", "-b", branch) else listOf("checkout", branch)
-        runWorkspaceGitCommand(args) { success, out ->
-            if (success) {
+        val project = _state.value.activeProject ?: return onResult(false, "No active project")
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                gitDomainController.checkout(workspace, branch, createNew, "/workspace/${project.slug}")
+            }
+            if (res.success) {
                 _state.update { it.copy(toastMessage = "Checked out $branch") }
                 refreshProjectFiles()
+            } else if (res.output.isNotBlank()) {
+                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
             }
-            onResult(success, out)
+            onResult(res.success, res.output)
         }
     }
 
     fun gitCommit(message: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        runWorkspaceGitCommand(listOf("add", "-A")) { addSuccess, _ ->
-            if (!addSuccess) {
-                onResult(false, "Failed to stage changes")
-                return@runWorkspaceGitCommand
+        val project = _state.value.activeProject ?: return onResult(false, "No active project")
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                gitDomainController.commit(workspace, message, "/workspace/${project.slug}")
             }
-            runWorkspaceGitCommand(listOf("commit", "-m", message)) { commitSuccess, out ->
-                if (commitSuccess) {
-                    _state.update { it.copy(toastMessage = "Committed: $message") }
-                    refreshProjectFiles()
-                }
-                onResult(commitSuccess, out)
+            if (res.success) {
+                _state.update { it.copy(toastMessage = "Committed: $message") }
+                refreshProjectFiles()
+            } else if (res.output.isNotBlank()) {
+                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
             }
+            onResult(res.success, res.output)
         }
     }
 
     fun gitPush(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val args = if (branch.isNotBlank()) listOf("push", remote, branch) else listOf("push")
-        runWorkspaceGitCommand(args) { success, out ->
-            if (success) {
-                _state.update { it.copy(toastMessage = "Git push successful") }
+        val project = _state.value.activeProject ?: return onResult(false, "No active project")
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                gitDomainController.push(workspace, remote, branch, "/workspace/${project.slug}")
             }
-            onResult(success, out)
+            if (res.success) {
+                _state.update { it.copy(toastMessage = "Git push successful") }
+            } else if (res.output.isNotBlank()) {
+                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
+            }
+            onResult(res.success, res.output)
         }
     }
 
     fun gitPull(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val args = if (branch.isNotBlank()) listOf("pull", remote, branch) else listOf("pull")
-        runWorkspaceGitCommand(args) { success, out ->
-            if (success) {
+        val project = _state.value.activeProject ?: return onResult(false, "No active project")
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                gitDomainController.pull(workspace, remote, branch, "/workspace/${project.slug}")
+            }
+            if (res.success) {
                 _state.update { it.copy(toastMessage = "Git pull successful") }
                 refreshProjectFiles()
+            } else if (res.output.isNotBlank()) {
+                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
             }
-            onResult(success, out)
+            onResult(res.success, res.output)
         }
     }
 

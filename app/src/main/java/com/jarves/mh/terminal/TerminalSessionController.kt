@@ -2,131 +2,68 @@ package com.jarves.mh.terminal
 
 import com.jarves.mh.ui.TerminalOutputLine
 import com.jarves.mh.ui.TerminalSessionTab
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-
-data class TerminalDomainState(
-    val sessions: List<TerminalSessionTab> = listOf(TerminalSessionTab(id = "term-1", title = "Terminal 1")),
-    val activeSessionId: String = "term-1",
-    val activeLines: List<TerminalOutputLine> = emptyList(),
-    val activeCwd: String = "/workspace",
-    val isRunning: Boolean = false,
-    val liveOutput: String = "",
-)
 
 /**
- * Domain controller for managing multi-tab terminal sessions and command state.
+ * Domain controller for managing multi-session terminal tabs, switching, and closing.
+ * Decoupled from MainViewModel to ensure single-responsibility and testability.
  */
 class TerminalSessionController {
 
-    private val _state = MutableStateFlow(TerminalDomainState())
-    val state: StateFlow<TerminalDomainState> = _state.asStateFlow()
-
-    fun addSession(title: String? = null, cwd: String = "/workspace"): String {
-        var newId = ""
-        _state.update { current ->
-            val nextNum = current.sessions.size + 1
-            val id = "term-$nextNum"
-            newId = id
-            val newTab = TerminalSessionTab(
-                id = id,
-                title = title ?: "Terminal $nextNum",
-                cwd = cwd,
-            )
-            current.copy(
-                sessions = current.sessions + newTab,
-                activeSessionId = id,
-                activeLines = emptyList(),
-                activeCwd = cwd,
-                isRunning = false,
-                liveOutput = "",
-            )
-        }
-        return newId
+    fun createSession(
+        sessions: List<TerminalSessionTab>,
+        defaultCwd: String = "/workspace",
+    ): Pair<List<TerminalSessionTab>, TerminalSessionTab> {
+        val nextNum = sessions.size + 1
+        val newId = "term-${System.currentTimeMillis()}"
+        val newSession = TerminalSessionTab(
+            id = newId,
+            title = "Terminal $nextNum",
+            isRunning = false,
+            cwd = defaultCwd,
+            lines = emptyList(),
+        )
+        return (sessions + newSession) to newSession
     }
 
-    fun selectSession(sessionId: String) {
-        _state.update { current ->
-            if (current.activeSessionId == sessionId) return@update current
-            // Save active tab state before switching
-            val updatedSessions = current.sessions.map { tab ->
-                if (tab.id == current.activeSessionId) {
-                    tab.copy(
-                        lines = current.activeLines,
-                        cwd = current.activeCwd,
-                        isRunning = current.isRunning,
-                    )
-                } else tab
-            }
-            val target = updatedSessions.firstOrNull { it.id == sessionId } ?: return@update current
-            current.copy(
-                sessions = updatedSessions,
-                activeSessionId = target.id,
-                activeLines = target.lines,
-                activeCwd = target.cwd,
-                isRunning = target.isRunning,
-                liveOutput = "",
-            )
+    fun selectSession(
+        sessions: List<TerminalSessionTab>,
+        currentActiveId: String,
+        currentLines: List<TerminalOutputLine>,
+        currentCwd: String,
+        currentRunning: Boolean,
+        targetSessionId: String,
+    ): Pair<List<TerminalSessionTab>, TerminalSessionTab?> {
+        if (currentActiveId == targetSessionId) {
+            val target = sessions.firstOrNull { it.id == targetSessionId }
+            return sessions to target
         }
-    }
-
-    fun closeSession(sessionId: String) {
-        _state.update { current ->
-            if (current.sessions.size <= 1) {
-                // Clear the single remaining session instead of removing
-                val resetTab = TerminalSessionTab(id = "term-1", title = "Terminal 1")
-                return@update current.copy(
-                    sessions = listOf(resetTab),
-                    activeSessionId = "term-1",
-                    activeLines = emptyList(),
-                    activeCwd = "/workspace",
-                    isRunning = false,
-                    liveOutput = "",
+        val updated = sessions.map { session ->
+            if (session.id == currentActiveId) {
+                session.copy(
+                    lines = currentLines,
+                    cwd = currentCwd,
+                    isRunning = currentRunning,
                 )
-            }
-            val remaining = current.sessions.filter { it.id != sessionId }
-            val newActive = if (current.activeSessionId == sessionId) {
-                remaining.last()
-            } else {
-                remaining.firstOrNull { it.id == current.activeSessionId } ?: remaining.first()
-            }
-            current.copy(
-                sessions = remaining,
-                activeSessionId = newActive.id,
-                activeLines = newActive.lines,
-                activeCwd = newActive.cwd,
-                isRunning = newActive.isRunning,
-                liveOutput = "",
-            )
+            } else session
         }
+        val target = updated.firstOrNull { it.id == targetSessionId }
+        return updated to target
     }
 
-    fun appendLine(line: TerminalOutputLine) {
-        _state.update { current ->
-            current.copy(activeLines = current.activeLines + line)
+    fun closeSession(
+        sessions: List<TerminalSessionTab>,
+        currentActiveId: String,
+        targetSessionId: String,
+    ): Pair<List<TerminalSessionTab>, TerminalSessionTab?> {
+        if (sessions.size <= 1) {
+            return sessions to null
         }
-    }
-
-    fun updateCwd(cwd: String) {
-        _state.update { it.copy(activeCwd = cwd) }
-    }
-
-    fun updateRunning(running: Boolean) {
-        _state.update { it.copy(isRunning = running) }
-    }
-
-    fun updateLiveOutput(output: String) {
-        _state.update { it.copy(liveOutput = output) }
-    }
-
-    fun clearActive() {
-        _state.update { current ->
-            current.copy(
-                activeLines = emptyList(),
-                liveOutput = "",
-            )
+        val remaining = sessions.filter { it.id != targetSessionId }
+        val newActive = if (currentActiveId == targetSessionId) {
+            remaining.last()
+        } else {
+            remaining.firstOrNull { it.id == currentActiveId } ?: remaining.first()
         }
+        return remaining to newActive
     }
 }

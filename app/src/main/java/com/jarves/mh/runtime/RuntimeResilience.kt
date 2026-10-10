@@ -65,6 +65,9 @@ object RuntimeFailureClassifier {
         is SocketException -> "Network error: " + error.message.orEmpty().ifBlank { "socket connection failed" } + "."
         else -> error.message.orEmpty().ifBlank { error::class.java.simpleName }
     }
+
+    fun verifyAndHealRootfs(rootfsDir: java.io.File): RootfsIntegrityReport =
+        RootfsIntegrityVerifier.verifyAndHeal(rootfsDir)
 }
 
 data class RuntimeRetryPolicy(
