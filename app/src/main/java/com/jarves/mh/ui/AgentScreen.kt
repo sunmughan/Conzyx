@@ -39,8 +39,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
+import com.jarves.mh.agent.team.AgentTeamOrchestrator
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
@@ -183,9 +185,12 @@ fun AgentScreen(
     onSwitchAntigravityAccount: (String) -> Unit = {},
     onRemoveAntigravityAccount: (String) -> Unit = {},
     onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
+    onDispatchTeamTask: ((String) -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
     val scope = rememberCoroutineScope()
+    var showTeamDialog by rememberSaveable { mutableStateOf(false) }
+    val teamOrchestrator = remember { AgentTeamOrchestrator() }
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
     var baseUrl by rememberSaveable(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
     var model by rememberSaveable(state.provider.model) { mutableStateOf(state.provider.model) }
@@ -809,7 +814,14 @@ fun AgentScreen(
                             )
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
+                    IconButton(onClick = { showTeamDialog = true }) {
+                        Icon(
+                            Icons.Default.Groups,
+                            contentDescription = "Multi-Agent Engineering Team",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -1163,6 +1175,16 @@ fun AgentScreen(
                 }
             }
         }
+    }
+
+    if (showTeamDialog) {
+        MultiAgentTeamBottomSheet(
+            orchestrator = teamOrchestrator,
+            onDismiss = { showTeamDialog = false },
+            onDispatchToAgent = { goal ->
+                onDispatchTeamTask?.invoke(goal)
+            },
+        )
     }
 }
 

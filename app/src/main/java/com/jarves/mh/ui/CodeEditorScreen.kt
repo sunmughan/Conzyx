@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.VerticalSplit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -115,6 +116,25 @@ fun CodeEditorScreen(
     var bracketPair by remember(filePath) { mutableStateOf<BracketPair?>(null) }
     var saving by rememberSaveable(filePath) { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable(filePath) { mutableStateOf(false) }
+    var splitScreenOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var secondaryFilePath by rememberSaveable(filePath) {
+        mutableStateOf(openTabs.firstOrNull { it != filePath } ?: filePath)
+    }
+    var secondaryValue by remember(secondaryFilePath) {
+        val initialSecText = if (secondaryFilePath == filePath) {
+            source
+        } else {
+            try {
+                val f = File(secondaryFilePath)
+                if (f.exists() && f.isFile) f.readText() else ""
+            } catch (_: Exception) { "" }
+        }
+        mutableStateOf(TextFieldValue(initialSecText))
+    }
+    val secondaryVertical = rememberScrollState()
+    val secondaryHorizontal = rememberScrollState()
+    val secondaryLines = remember(secondaryValue.text) { secondaryValue.text.split('\n') }
+    val secondaryLineNumbers = remember(secondaryLines.size) { (1..max(1, secondaryLines.size)).joinToString("\n") }
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -419,6 +439,13 @@ fun CodeEditorScreen(
                     IconButton(onClick = { searchOpen = !searchOpen }) {
                         Icon(Icons.Default.Search, "Find and replace")
                     }
+                    IconButton(onClick = { splitScreenOpen = !splitScreenOpen }) {
+                        Icon(
+                            Icons.Default.VerticalSplit,
+                            contentDescription = "Toggle split editor",
+                            tint = if (splitScreenOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { menuOpen = !menuOpen }) {
                         Icon(Icons.Default.MoreVert, "Editor actions")
                     }
@@ -431,6 +458,13 @@ fun CodeEditorScreen(
                             onClick = {
                                 menuOpen = false
                                 commandPaletteOpen = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (splitScreenOpen) "Close split editor" else "Split editor (Portrait stacked)") },
+                            onClick = {
+                                splitScreenOpen = !splitScreenOpen
+                                menuOpen = false
                             },
                         )
                         if (workspaceDir != null) {
@@ -636,37 +670,36 @@ fun CodeEditorScreen(
                 }
             }
 
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                if (loading) {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                } else {
-                    Row(Modifier.fillMaxSize()) {
-                        Box(
-                            Modifier
-                                .fillMaxHeight()
-                                .width(48.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                                .verticalScroll(vertical, enabled = false),
-                        ) {
-                            Text(
-                                lineNumbers,
-                                Modifier.padding(top = 8.dp, end = 6.dp),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                            )
-                        }
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (wordWrap) Modifier.verticalScroll(vertical)
-                                    else Modifier.horizontalScroll(horizontal).verticalScroll(vertical),
-                                ),
-                        ) {
-                            BasicTextField(
+            if (!splitScreenOpen) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if (loading) {
+                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    } else {
+                        EditorPane(
+                            value = value,
+                            onValueChange = {
+                                if (!readOnly) {
+                                    value = it
+                                    bracketPair = findBracketPair(it.text, it.selection.start)
+                                }
+                            },
+                            lineNumbers = lineNumbers,
+                            vertical = vertical,
+                            horizontal = horizontal,
+                            wordWrap = wordWrap,
+                            readOnly = readOnly,
+                            bracketPair = bracketPair,
+                        )
+                    }
+                }
+            } else {
+                Column(Modifier.weight(1f).fillMaxWidth()) {
+                    // Pane 1: Top pane
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        if (loading) {
+                            CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        } else {
+                            EditorPane(
                                 value = value,
                                 onValueChange = {
                                     if (!readOnly) {
@@ -674,27 +707,106 @@ fun CodeEditorScreen(
                                         bracketPair = findBracketPair(it.text, it.selection.start)
                                     }
                                 },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(if (wordWrap) Modifier else Modifier.widthIn(min = 720.dp))
-                                    .padding(start = 12.dp, top = 8.dp, end = 24.dp, bottom = 24.dp),
-                                enabled = !readOnly,
-                                textStyle = TextStyle(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    lineHeight = 20.sp,
-                                ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                visualTransformation = CodeSyntaxVisualTransformation(
-                                    keywordColor = MaterialTheme.colorScheme.primary,
-                                    stringColor = MaterialTheme.colorScheme.tertiary,
-                                    commentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    numberColor = MaterialTheme.colorScheme.secondary,
-                                    bracketPair = bracketPair,
-                                ),
+                                lineNumbers = lineNumbers,
+                                vertical = vertical,
+                                horizontal = horizontal,
+                                wordWrap = wordWrap,
+                                readOnly = readOnly,
+                                bracketPair = bracketPair,
                             )
                         }
+                    }
+
+                    // Divider bar (Portrait 1 column stacked separator)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().height(36.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.VerticalSplit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = "Pane 2: " + secondaryFilePath.substringAfterLast('/'),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                if (openTabs.size > 1) {
+                                    var switchMenuOpen by remember { mutableStateOf(false) }
+                                    Box {
+                                        TextButton(
+                                            onClick = { switchMenuOpen = true },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        ) {
+                                            Text("Switch tab", fontSize = 11.sp)
+                                        }
+                                        DropdownMenu(
+                                            expanded = switchMenuOpen,
+                                            onDismissRequest = { switchMenuOpen = false },
+                                        ) {
+                                            openTabs.forEach { tab ->
+                                                DropdownMenuItem(
+                                                    text = { Text(tab.substringAfterLast('/'), fontSize = 12.sp) },
+                                                    onClick = {
+                                                        switchMenuOpen = false
+                                                        secondaryFilePath = tab
+                                                        try {
+                                                            val f = File(tab)
+                                                            if (f.exists() && f.isFile) {
+                                                                secondaryValue = TextFieldValue(f.readText())
+                                                            }
+                                                        } catch (_: Exception) {}
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { splitScreenOpen = false },
+                                    modifier = Modifier.size(24.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Close Split",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Pane 2: Bottom pane
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        EditorPane(
+                            value = secondaryValue,
+                            onValueChange = { secondaryValue = it },
+                            lineNumbers = secondaryLineNumbers,
+                            vertical = secondaryVertical,
+                            horizontal = secondaryHorizontal,
+                            wordWrap = wordWrap,
+                            readOnly = false,
+                            bracketPair = null,
+                        )
                     }
                 }
             }
@@ -710,7 +822,7 @@ fun CodeEditorScreen(
             }
 
             Text(
-                statusText(value, dirty, bracketPair),
+                (if (splitScreenOpen) "[Split] " else "") + statusText(value, dirty, bracketPair) + (if (splitScreenOpen) " | Pane 2: " + secondaryFilePath.substringAfterLast('/') else ""),
                 Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
@@ -718,6 +830,71 @@ fun CodeEditorScreen(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditorPane(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    lineNumbers: String,
+    vertical: androidx.compose.foundation.ScrollState,
+    horizontal: androidx.compose.foundation.ScrollState,
+    wordWrap: Boolean,
+    readOnly: Boolean,
+    bracketPair: BracketPair?,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(48.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                .verticalScroll(vertical, enabled = false),
+        ) {
+            Text(
+                lineNumbers,
+                Modifier.padding(top = 8.dp, end = 6.dp),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(
+                    if (wordWrap) Modifier.verticalScroll(vertical)
+                    else Modifier.horizontalScroll(horizontal).verticalScroll(vertical),
+                ),
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (wordWrap) Modifier else Modifier.widthIn(min = 720.dp))
+                    .padding(start = 12.dp, top = 8.dp, end = 24.dp, bottom = 24.dp),
+                enabled = !readOnly,
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = CodeSyntaxVisualTransformation(
+                    keywordColor = MaterialTheme.colorScheme.primary,
+                    stringColor = MaterialTheme.colorScheme.tertiary,
+                    commentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    numberColor = MaterialTheme.colorScheme.secondary,
+                    bracketPair = bracketPair,
+                ),
             )
         }
     }

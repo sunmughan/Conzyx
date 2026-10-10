@@ -2519,6 +2519,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         openProject(project)
     }
     fun consumeToast() = _state.update { it.copy(toastMessage = null) }
+    fun showToast(message: String) = _state.update { it.copy(toastMessage = message) }
 
     fun createProject(name: String, folderUri: Uri? = null) {
         if (name.isBlank() && folderUri == null) return

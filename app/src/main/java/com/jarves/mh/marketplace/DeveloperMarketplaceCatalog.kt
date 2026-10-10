@@ -95,8 +95,38 @@ object DeveloperMarketplaceCatalog {
             rating = 4.8,
             downloads = 3800,
             installUrl = "template://python-fastapi"
+        ),
+
+        // Specialized Agents
+        MarketplaceItem(
+            name = "Claude 3.7 Sonnet Engineer",
+            category = MarketplaceCategory.AGENTS,
+            author = "Anthropic",
+            description = "Hybrid reasoning and coding model with extended thinking for complex engineering.",
+            rating = 4.9,
+            downloads = 14200,
+            installUrl = "agent://claude-3-7-sonnet"
+        ),
+        MarketplaceItem(
+            name = "DeepSeek Coder R1",
+            category = MarketplaceCategory.AGENTS,
+            author = "DeepSeek AI",
+            description = "Open reasoning model optimized for mathematical logic, algorithms, and debugging.",
+            rating = 4.8,
+            downloads = 9800,
+            installUrl = "agent://deepseek-r1"
         )
     )
+
+    private val installedItemIds = mutableSetOf<String>()
+
+    fun markInstalled(itemId: String) {
+        installedItemIds.add(itemId)
+    }
+
+    fun isInstalled(itemId: String): Boolean {
+        return installedItemIds.contains(itemId)
+    }
 
     fun filterByCategory(category: MarketplaceCategory): List<MarketplaceItem> {
         return curatedCatalog.filter { it.category == category }

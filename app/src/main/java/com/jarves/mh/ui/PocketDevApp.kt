@@ -149,6 +149,7 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MovieFilter
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -284,6 +285,7 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
     PROJECTS("Projects", Icons.Default.Folder),
     AGENT("Agent", Icons.Default.SmartToy),
     SKILLS("Skills", Icons.Default.Extension),
+    MARKETPLACE("Market", Icons.Default.Storefront),
     SETTINGS("Settings", Icons.Default.Settings),
 }
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
@@ -2391,6 +2393,7 @@ private fun RootScreenHost(
                     onSwitchAntigravityAccount = viewModel::switchAntigravityAccount,
                     onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
                     onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
+                    onDispatchTeamTask = { prompt -> viewModel.sendPrompt(prompt) },
                 )
                 RootScreen.SKILLS -> SkillsScreen(
                     installed = state.skills,
@@ -2406,6 +2409,12 @@ private fun RootScreenHost(
                     onUpdate = viewModel::updateSkill,
                     autoUpdateEnabled = state.autoUpdateToolsAndSkills,
                     onToggleAutoUpdate = viewModel::toggleAutoUpdateToolsAndSkills,
+                )
+                RootScreen.MARKETPLACE -> MarketplaceScreen(
+                    onBack = { screen = RootScreen.PROJECTS },
+                    onInstallItem = { item ->
+                        viewModel.showToast("Marketplace: installed ${item.name}")
+                    },
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
