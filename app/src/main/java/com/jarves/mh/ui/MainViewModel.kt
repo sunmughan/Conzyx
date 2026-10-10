@@ -325,6 +325,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val runtimeHealthController = com.jarves.mh.runtime.RuntimeHealthController(application)
     val agentSessionController = com.jarves.mh.session.AgentSessionController(application, sessionManager)
     val terminalSessionController = com.jarves.mh.terminal.TerminalSessionController()
+    val agentChatController = com.jarves.mh.agent.AgentChatController()
     val gitDomainController = com.jarves.mh.workspace.GitDomainController { args, workingDir, guestPath ->
         if (!installer.isInstalled()) return@GitDomainController 1 to "Linux runtime is not ready."
         val installed = installer.installedRuntime()
@@ -3639,43 +3640,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         roadmap: ActiveRoadmap?,
         liveProcess: List<ActivityItem>,
         isRunning: Boolean,
-    ): List<ScratchpadItem> {
-        val items = mutableListOf<ScratchpadItem>()
-        if (roadmap != null && roadmap.steps.isNotEmpty()) {
-            roadmap.steps.forEach { step ->
-                val status = when (step.status) {
-                    StepStatus.COMPLETED -> TaskStatus.FINISHED
-                    StepStatus.IN_PROGRESS -> if (isRunning) TaskStatus.RUNNING else TaskStatus.FINISHED
-                    StepStatus.SKIPPED -> TaskStatus.FINISHED
-                    StepStatus.PENDING -> TaskStatus.PENDING
-                }
-                items.add(
-                    ScratchpadItem(
-                        id = step.id,
-                        title = step.title,
-                        status = status,
-                        detail = step.description,
-                    )
-                )
-            }
-        }
-        liveProcess.forEach { proc ->
-            if (proc.title.isNotBlank() && proc.title != "Think") {
-                val status = if (proc.isComplete || !isRunning) TaskStatus.FINISHED else TaskStatus.RUNNING
-                if (items.none { it.title.equals(proc.title, ignoreCase = true) }) {
-                    items.add(
-                        ScratchpadItem(
-                            id = UUID.randomUUID().toString(),
-                            title = proc.title,
-                            status = status,
-                            detail = proc.detail,
-                        )
-                    )
-                }
-            }
-        }
-        return items
-    }
+    ): List<ScratchpadItem> = agentChatController.deriveScratchpadItems(roadmap, liveProcess, isRunning)
 
     fun createChat() {
         val project = _state.value.activeProject ?: return
@@ -4420,10 +4385,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun sanitizeAttachmentName(name: String): String {
-        val clean = name.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().trim('.').take(100)
-        return clean.ifBlank { "attachment-${UUID.randomUUID().toString().take(8)}" }
-    }
+    private fun sanitizeAttachmentName(name: String): String =
+        agentChatController.sanitizeAttachmentName(name)
 
     fun sendPrompt(prompt: String) {
         val project = state.value.activeProject ?: return
@@ -4442,49 +4405,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val mentionedPaths = resolveMentionedWorkspacePaths(prompt, project)
         updateActiveChatTitle(requestText)
         val mode = _state.value.executionMode
-        val modeInstruction = when {
-            requestText.contains("<execution_mode") -> ""
-            mode == ExecutionMode.PLAN -> """
-<execution_mode name="PLAN">
-You are running in PLAN mode.
-Your objective: Formulate a comprehensive, architectural implementation plan and roadmap for the user's request.
-CRITICAL CONSTRAINTS FOR PLAN MODE:
-- DO NOT perform any file edits, modifications, creations, deletions, or write operations.
-- DO NOT execute commands that modify system state, files, or environment. Only read-only exploration commands (ls, cat, git status, etc.) or read-only tools are allowed.
-- Output your plan structured with a clear summary, architecture decisions, and an interactive roadmap under the header '### Implementation Roadmap'.
-- In the roadmap, format each task as a checklist item:
-1. [ ] Step title
-   - Description / Details
-   - Files affected: `path/to/file`
-2. [ ] Next step
-</execution_mode>
-""".trimIndent()
-            mode == ExecutionMode.BUILD -> """
-<execution_mode name="BUILD">
-You are running in BUILD mode.
-Your objective: Directly understand the user request, plan internally, and immediately begin implementing all required changes end-to-end.
-- Read relevant files, edit code, execute build/test commands, verify changes, and report progress.
-- Once finished, summarize what was accomplished with full verification details.
-- Do NOT output future roadmaps, speculative checklists, or ask the user to 'Approve & Build' when the task is complete.
-</execution_mode>
-""".trimIndent()
-            mode == ExecutionMode.UNIFIED -> """
-<execution_mode name="UNIFIED">
-You are running in UNIFIED mode (Phase 1: Roadmap & Planning).
-Your objective: Analyze the request and workspace, formulate the plan, and provide an interactive roadmap for user review and approval before any implementation begins.
-CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
-- Do NOT make any modifications to code or files yet.
-- Inspect the codebase to understand requirements.
-- Present a clear explanation followed by '### Implementation Roadmap'.
-- List the steps as numbered checklist items:
-1. [ ] Step title
-   - Description: Brief explanation of what will be done
-   - Files: `path/to/file`
-- Conclude by asking the user to review the roadmap, add any comments/adjustments, or click 'Approve & Build' to proceed.
-</execution_mode>
-""".trimIndent()
-            else -> ""
-        }
+        val modeInstruction = agentChatController.buildModeInstruction(mode, requestText)
         _state.update {
             val startedAt = System.currentTimeMillis()
             val thinkItem = ActivityItem("Think", requestPlanningSummary(requestText, it.agentKind), false)
@@ -4525,36 +4446,14 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         touchProject(project.id)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
-        val runtimePrompt = buildString {
-            appendLine(requestText)
-            if (modeInstruction.isNotBlank()) {
-                appendLine()
-                appendLine(modeInstruction)
-            }
-            if (mentionedPaths.isNotEmpty()) {
-                appendLine()
-                appendLine("<mentioned_files>")
-                appendLine("The user explicitly referenced these workspace files with @mentions. Inspect the referenced files before deciding what to change; they are context pointers, not permission to modify other files.")
-                mentionedPaths.forEach { relativePath ->
-                    appendLine("- " + projectGuestRoot(project) + "/" + relativePath)
-                }
-                appendLine("</mentioned_files>")
-            }
-            if (attachments.isNotEmpty()) {
-                appendLine()
-                appendLine("<attached_files>")
-                attachments.forEach { attachment ->
-                    appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
-                }
-                appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
-                appendLine("</attached_files>")
-            }
-            val skillContext = skillManager.buildPromptContext(state.value.agentKind)
-            if (skillContext.isNotBlank()) {
-                appendLine()
-                appendLine(skillContext)
-            }
-        }
+        val runtimePrompt = agentChatController.buildEnrichedPrompt(
+            requestText = requestText,
+            modeInstruction = modeInstruction,
+            mentionedPaths = mentionedPaths,
+            attachments = attachments,
+            guestRoot = projectGuestRoot(project),
+            skillContext = skillManager.buildPromptContext(state.value.agentKind),
+        )
         failedApiKeyIds.clear()
         activeRuntimeRequest = RuntimeRetryRequest(
             runtime = activeRuntime(),
@@ -4608,22 +4507,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         }
     }
 
-    private fun resolveMentionedWorkspacePaths(prompt: String, project: Project): List<String> {
-        val workspace = runCatching { projectWorkspaceRoot(project).canonicalFile }.getOrNull() ?: return emptyList()
-        val workspacePath = workspace.toPath()
-        val candidates = Regex("@([A-Za-z0-9._/-]+)")
-            .findAll(prompt)
-            .map { it.groupValues[1].trimEnd('.', ',', ';', ':', ')', ']', '}') }
-            .filter { it.isNotBlank() && !it.startsWith("/") && ".." !in it.split('/') }
-            .distinct()
-            .toList()
-        return candidates.filter { relativePath ->
-            runCatching {
-                val target = File(workspace, relativePath).canonicalFile
-                target.isFile && target.toPath().startsWith(workspacePath)
-            }.getOrDefault(false)
-        }.take(16)
-    }
+    private fun resolveMentionedWorkspacePaths(prompt: String, project: Project): List<String> =
+        agentChatController.resolveMentionedWorkspacePaths(prompt, projectWorkspaceRoot(project))
     fun answerApproval(approved: Boolean) {
         answerApprovalWithLevel(com.jarves.mh.security.PermissionLevel.ONCE, approved)
     }
@@ -4714,71 +4599,30 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         }
     }
 
-    private fun isNoisyRuntimeItem(item: ActivityItem): Boolean {
-        val combined = "${item.title} ${item.detail}"
-        return combined.contains("Starting Claude Code", true) ||
-            combined.contains("Agent process started", true) ||
-            combined.contains("Claude Code connected", true) ||
-            combined.contains("Runtime warning", true) ||
-            combined.contains("unrecognized_model", true) ||
-            combined.contains("Writing response", true) ||
-            combined.contains("Claude Code finished", true) ||
-            combined.contains("Task completed", true)
-    }
+    private fun isNoisyRuntimeItem(item: ActivityItem): Boolean =
+        agentChatController.isNoisyRuntimeItem(item)
 
-    private fun toolPlanSummary(toolName: String, detail: String): String {
-        val clean = detail.replace(Regex("\\s+"), " ").trim()
-        val short = clean.take(90).ifBlank { "the current project" }
-        return when (toolName) {
-            "Write" -> "Preparing to create ${clean.substringAfterLast('/').ifBlank { "a project file" }}"
-            "Edit", "NotebookEdit" -> "Preparing to update ${clean.substringAfterLast('/').ifBlank { "a project file" }}"
-            "Read" -> "Preparing to inspect ${clean.substringAfterLast('/').ifBlank { "a project file" }}"
-            "Glob" -> "Preparing to find matching project files"
-            "Grep" -> "Preparing to search the project for $short"
-            "Bash" -> if (clean.contains("cat ", true) || clean.contains("printf ", true) || clean.contains(" >")) {
-                "Preparing to create or update project files with Bash"
-            } else {
-                "Preparing to run: $short"
-            }
-            else -> "Preparing to use $toolName for the next step"
-        }
-    }
+    private fun toolPlanSummary(toolName: String, detail: String): String =
+        agentChatController.toolPlanSummary(toolName, detail)
 
     private fun requestPlanningSummary(
         request: String,
         agentKind: AgentKind,
         toolName: String? = null,
         detail: String = "",
-    ): String {
-        val agentName = agentKind.title
-        val cleanRequest = request.replace(Regex("\\s+"), " ").trim().take(110)
-        val requestPart = if (cleanRequest.isBlank()) {
-            "$agentName is reviewing the request"
-        } else {
-            "The user is asking: “$cleanRequest”"
-        }
-        return if (toolName == null) {
-            "$requestPart. $agentName is deciding the next useful step."
-        } else {
-            "$requestPart. ${toolPlanSummary(toolName, detail)}."
-        }
-    }
+    ): String = agentChatController.requestPlanningSummary(request, agentKind.title, toolName, detail)
 
     private fun finishWorkSegment(current: AppUiState, finishedAt: Long = System.currentTimeMillis()): AppUiState {
-        val meaningfulItems = current.liveProcess.filterNot(::isNoisyRuntimeItem)
-            .map { if (it.isComplete) it else it.copy(isComplete = true) }
-        if (!current.liveThinking && meaningfulItems.isEmpty()) {
-            return current.copy(liveProcess = emptyList(), workSegmentStartedAtMillis = null)
-        }
-        val startedAt = current.workSegmentStartedAtMillis ?: current.taskStartedAtMillis ?: finishedAt
-        val block = ChatMessage(
-            fromUser = false,
-            text = "",
-            workItems = meaningfulItems,
-            workedMillis = (finishedAt - startedAt).coerceAtLeast(0L),
+        val (updatedMessages, _) = agentChatController.finishWorkSegment(
+            messages = current.messages,
+            liveProcess = current.liveProcess,
+            liveThinking = current.liveThinking,
+            workSegmentStartedAtMillis = current.workSegmentStartedAtMillis,
+            taskStartedAtMillis = current.taskStartedAtMillis,
+            finishedAt = finishedAt,
         )
         return current.copy(
-            messages = current.messages + block,
+            messages = updatedMessages,
             liveProcess = emptyList(),
             liveThinking = false,
             activeThinkingBlockId = null,
@@ -4787,18 +4631,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     }
 
     /** Adds the complete request duration to the response produced after the latest user message. */
-    private fun attachTaskDuration(current: AppUiState, finishedAt: Long): AppUiState {
-        val startedAt = current.taskStartedAtMillis ?: return current
-        val lastUserIndex = current.messages.indexOfLast { it.fromUser }
-        val responseIndex = current.messages.indices.lastOrNull { index ->
-            index > lastUserIndex && !current.messages[index].fromUser && current.messages[index].text.isNotBlank()
-        } ?: return current
-        val updated = current.messages.toMutableList()
-        updated[responseIndex] = updated[responseIndex].copy(
-            workedMillis = (finishedAt - startedAt).coerceAtLeast(1L),
-        )
-        return current.copy(messages = updated)
-    }
+    private fun attachTaskDuration(current: AppUiState, finishedAt: Long): AppUiState =
+        current.copy(messages = agentChatController.attachTaskDuration(current.messages, current.taskStartedAtMillis, finishedAt))
 
     private fun appendWorkItem(current: AppUiState, item: ActivityItem): AppUiState {
         if (isNoisyRuntimeItem(item)) return current
@@ -4844,12 +4678,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     } else {
                         current
                     }
-                    val lastMessage = timeline.messages.lastOrNull()
-                    if (lastMessage != null && !lastMessage.fromUser && lastMessage.workItems.isEmpty() && lastMessage.workedMillis == 0L) {
-                        timeline.copy(messages = timeline.messages.dropLast(1) + lastMessage.copy(text = lastMessage.text + event.text))
-                    } else {
-                        timeline.copy(messages = timeline.messages + ChatMessage(fromUser = false, text = event.text))
-                    }
+                    timeline.copy(messages = agentChatController.appendAssistantDelta(timeline.messages, event.text))
                 }
                 is RuntimeEvent.ReasoningProgress -> {
                     val existingIndex = current.liveProcess.indexOfLast { it.title == "Think" }
@@ -5136,22 +4965,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         persistMessages(includeLiveProcess = true)
     }
 
-    private fun ensureCompletionMessage(state: AppUiState, totalDurationText: String): AppUiState {
-        val lastUserIndex = state.messages.indexOfLast { it.fromUser }
-        val hasResponseForLastUser = state.messages.indices.any {
-            it > lastUserIndex && !state.messages[it].fromUser && state.messages[it].text.isNotBlank()
-        }
-        return if (!hasResponseForLastUser) {
-            state.copy(
-                messages = state.messages + ChatMessage(
-                    fromUser = false,
-                    text = "Task completed successfully in $totalDurationText.",
-                ),
-            )
-        } else {
-            state
-        }
-    }
+    private fun ensureCompletionMessage(state: AppUiState, totalDurationText: String): AppUiState =
+        state.copy(messages = agentChatController.ensureCompletionMessage(state.messages, totalDurationText))
 
     private fun recoverTransientRuntimeFailure(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
