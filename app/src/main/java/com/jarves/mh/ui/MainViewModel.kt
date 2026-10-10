@@ -4047,6 +4047,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun gitPush(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        val args = if (branch.isNotBlank()) listOf("push", remote, branch) else listOf("push")
+        runWorkspaceGitCommand(args) { success, out ->
+            if (success) {
+                _state.update { it.copy(toastMessage = "Git push successful") }
+            }
+            onResult(success, out)
+        }
+    }
+
+    fun gitPull(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        val args = if (branch.isNotBlank()) listOf("pull", remote, branch) else listOf("pull")
+        runWorkspaceGitCommand(args) { success, out ->
+            if (success) {
+                _state.update { it.copy(toastMessage = "Git pull successful") }
+                refreshProjectFiles()
+            }
+            onResult(success, out)
+        }
+    }
+
+    fun scaffoldProjectTemplate(template: com.jarves.mh.workspace.ProjectTemplate) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.scaffoldTemplate(root, template)
+        if (result.isSuccess) {
+            _state.update { it.copy(toastMessage = "Scaffolded ${template.displayName} starter template") }
+            refreshProjectFiles()
+        }
+    }
+
+    private val _detectedLocalhostPorts = kotlinx.coroutines.flow.MutableStateFlow<List<Int>>(emptyList())
+    val detectedLocalhostPorts: kotlinx.coroutines.flow.StateFlow<List<Int>> = _detectedLocalhostPorts.asStateFlow()
+
+    fun scanActiveLocalhostPorts(onComplete: (List<Int>) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val commonPorts = listOf(3000, 5173, 8080, 8000, 4200, 5000, 9222)
+            val openPorts = mutableListOf<Int>()
+            for (port in commonPorts) {
+                try {
+                    java.net.Socket().use { socket ->
+                        socket.connect(java.net.InetSocketAddress("127.0.0.1", port), 200)
+                        openPorts.add(port)
+                    }
+                } catch (_: Exception) {}
+            }
+            _detectedLocalhostPorts.value = openPorts
+            withContext(Dispatchers.Main) {
+                onComplete(openPorts)
+            }
+        }
+    }
+
+    fun attachVisualInspectionToAgent(url: String, note: String = "") {
+        val prompt = "Visual Inspection Report for $url: ${note.ifBlank { "Please inspect this web page layout and verify all components are rendering properly." }}"
+        sendPrompt(prompt)
+    }
+
+
     private fun loadFileContent(project: Project, path: String) {
         viewModelScope.launch {
             val content = withContext(Dispatchers.IO) {

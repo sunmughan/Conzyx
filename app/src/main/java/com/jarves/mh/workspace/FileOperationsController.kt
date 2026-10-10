@@ -191,4 +191,208 @@ class FileOperationsController {
         }
         destination
     }
+
+    /**
+     * Scaffolds starter project files for a selected template (Phase 9 - App Factory).
+     */
+    fun scaffoldTemplate(workspaceRoot: File, template: ProjectTemplate): Result<Unit> = runCatching {
+        if (template == ProjectTemplate.NONE) return@runCatching
+        workspaceRoot.mkdirs()
+
+        when (template) {
+            ProjectTemplate.NONE -> {}
+            ProjectTemplate.ANDROID_COMPOSE -> {
+                val manifest = File(workspaceRoot, "app/src/main/AndroidManifest.xml")
+                manifest.parentFile?.mkdirs()
+                SafeFileOps.atomicWriteText(
+                    manifest,
+                    """<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="My App"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+""".trimIndent()
+                )
+                val mainActivity = File(workspaceRoot, "app/src/main/java/com/example/app/MainActivity.kt")
+                mainActivity.parentFile?.mkdirs()
+                SafeFileOps.atomicWriteText(
+                    mainActivity,
+                    """package com.example.app
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Text("Hello from Mobile Harness Android App!")
+            }
+        }
+    }
 }
+""".trimIndent()
+                )
+            }
+            ProjectTemplate.NODEJS_API -> {
+                val pkg = File(workspaceRoot, "package.json")
+                SafeFileOps.atomicWriteText(
+                    pkg,
+                    """{
+  "name": "my-api",
+  "version": "1.0.0",
+  "description": "Scaffolded with Mobile Harness App Factory",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
+""".trimIndent()
+                )
+                val server = File(workspaceRoot, "index.js")
+                SafeFileOps.atomicWriteText(
+                    server,
+                    """const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Hello from Mobile Harness API!', timestamp: new Date() });
+});
+
+app.listen(port, () => {
+  console.log(`API server listening on http://localhost:${'$'}{port}`);
+});
+""".trimIndent()
+                )
+            }
+            ProjectTemplate.REACT_WEB -> {
+                val pkg = File(workspaceRoot, "package.json")
+                SafeFileOps.atomicWriteText(
+                    pkg,
+                    """{
+  "name": "my-react-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.4"
+  }
+}
+""".trimIndent()
+                )
+                val indexHtml = File(workspaceRoot, "index.html")
+                SafeFileOps.atomicWriteText(
+                    indexHtml,
+                    """<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mobile Harness React App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+""".trimIndent()
+                )
+                val mainJsx = File(workspaceRoot, "src/main.jsx")
+                mainJsx.parentFile?.mkdirs()
+                SafeFileOps.atomicWriteText(
+                    mainJsx,
+                    """import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+""".trimIndent()
+                )
+                val appJsx = File(workspaceRoot, "src/App.jsx")
+                SafeFileOps.atomicWriteText(
+                    appJsx,
+                    """import React from 'react';
+
+export default function App() {
+  return (
+    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 32, textAlign: 'center' }}>
+      <h1>⚡ React Web App</h1>
+      <p>Scaffolded on Android with Mobile Harness App Factory.</p>
+    </div>
+  );
+}
+""".trimIndent()
+                )
+            }
+            ProjectTemplate.PYTHON_FASTAPI -> {
+                val mainPy = File(workspaceRoot, "main.py")
+                SafeFileOps.atomicWriteText(
+                    mainPy,
+                    """from fastapi import FastAPI
+
+app = FastAPI(title="Mobile Harness FastAPI")
+
+@app.get("/")
+def read_root():
+    return {"message": "Hello from Python FastAPI on Android!", "status": "ok"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+""".trimIndent()
+                )
+                val reqs = File(workspaceRoot, "requirements.txt")
+                SafeFileOps.atomicWriteText(
+                    reqs,
+                    """fastapi>=0.111.0
+uvicorn>=0.30.0
+pydantic>=2.7.0
+""".trimIndent()
+                )
+            }
+        }
+    }
+}
+
+enum class ProjectTemplate(val displayName: String, val description: String) {
+    NONE("Blank", "Empty workspace"),
+    ANDROID_COMPOSE("Android (Compose)", "Jetpack Compose + Material 3 app"),
+    NODEJS_API("Node.js (API)", "Express REST API server"),
+    REACT_WEB("React (Web)", "React + Vite web app"),
+    PYTHON_FASTAPI("Python (FastAPI)", "FastAPI async REST server")
+}
+

@@ -146,7 +146,7 @@ import com.jarves.mh.auth.ui.ChangePasswordDialog
 import com.jarves.mh.auth.ui.DeleteAccountDialog
 import com.jarves.mh.auth.ui.EditDisplayNameDialog
 
-private enum class SettingsSection { ACCOUNT, APPEARANCE, GOOGLE_ACCOUNTS, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL }
+private enum class SettingsSection { ACCOUNT, APPEARANCE, GOOGLE_ACCOUNTS, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL, PERMISSIONS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -203,6 +203,12 @@ fun SettingsScreen(
     var terminalCleared by remember { mutableStateOf(false) }
     var showReliabilityHelp by rememberSaveable { mutableStateOf(false) }
     var stackPendingRemoval by remember { mutableStateOf<DevStack?>(null) }
+    var allowShellExec by rememberSaveable { mutableStateOf(true) }
+    var allowNetworkAccess by rememberSaveable { mutableStateOf(true) }
+    var allowFileDeletion by rememberSaveable { mutableStateOf(false) }
+    var allowGitPush by rememberSaveable { mutableStateOf(false) }
+    var allowApkInstall by rememberSaveable { mutableStateOf(false) }
+    var showAuditLogSheet by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
 
     stackPendingRemoval?.let { stack ->
@@ -755,6 +761,97 @@ fun SettingsScreen(
 
             item {
                 SettingsAccordion(
+                    title = "Permissions & Safety",
+                    subtitle = "Granular execution boundaries & audit trails",
+                    icon = Icons.Default.Lock,
+                    expanded = expanded == SettingsSection.PERMISSIONS,
+                    onClick = { toggle(SettingsSection.PERMISSIONS) },
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Shell execution", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Allow agent to execute terminal commands", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = allowShellExec, onCheckedChange = { allowShellExec = it })
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Network access", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Allow agent outbound HTTP and curl requests", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = allowNetworkAccess, onCheckedChange = { allowNetworkAccess = it })
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Auto-delete files", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Require explicit user prompt before deleting files", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = allowFileDeletion, onCheckedChange = { allowFileDeletion = it })
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Git push", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Require prompt before pushing commits to remote", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = allowGitPush, onCheckedChange = { allowGitPush = it })
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Install device APKs", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Allow background APK installations without prompt", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = allowApkInstall, onCheckedChange = { allowApkInstall = it })
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        Button(
+                            onClick = { showAuditLogSheet = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("View Security Audit Log", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsAccordion(
                     title = "Contributors",
                     subtitle = "People building Mobile Harness Extended",
                     icon = Icons.Default.Person,
@@ -814,6 +911,70 @@ fun SettingsScreen(
                     )
                 }
                 Spacer(Modifier.height(18.dp))
+            }
+        }
+    }
+
+    if (showAuditLogSheet) {
+        val auditEntries = remember {
+            com.jarves.mh.security.PermissionPolicyEngine(context).auditLogger.getEntries(50)
+        }
+        ModalBottomSheet(onDismissRequest = { showAuditLogSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(480.dp)
+                    .padding(horizontal = 18.dp),
+            ) {
+                Text("Security Audit Trail", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Recent access evaluations, policy checks, and blocked dangerous actions",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                if (auditEntries.isEmpty()) {
+                    Text("No security events recorded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(auditEntries, key = { it.id }) { entry ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(entry.action, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text(
+                                            entry.decision.name,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = when (entry.decision) {
+                                                com.jarves.mh.security.AuditDecision.ALLOWED -> Color(0xFF4CAF50)
+                                                com.jarves.mh.security.AuditDecision.BLOCKED_DANGEROUS, com.jarves.mh.security.AuditDecision.DENIED -> MaterialTheme.colorScheme.error
+                                                else -> PocketOrange
+                                            },
+                                        )
+                                    }
+                                    if (entry.target.isNotBlank()) {
+                                        Text("Target: " + entry.target, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                    }
+                                    if (entry.reason.isNotBlank()) {
+                                        Text(entry.reason, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

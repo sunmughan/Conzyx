@@ -110,6 +110,8 @@ fun CodeEditorScreen(
     var find by rememberSaveable(filePath) { mutableStateOf("") }
     var replace by rememberSaveable(filePath) { mutableStateOf("") }
     var lineInput by rememberSaveable(filePath) { mutableStateOf("") }
+    var searchInSelection by rememberSaveable(filePath) { mutableStateOf(false) }
+    var selectionRangeAtSearch by remember(filePath) { mutableStateOf<TextRange?>(null) }
     var bracketPair by remember(filePath) { mutableStateOf<BracketPair?>(null) }
     var saving by rememberSaveable(filePath) { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable(filePath) { mutableStateOf(false) }
@@ -121,6 +123,7 @@ fun CodeEditorScreen(
         value = TextFieldValue(source)
         savedText = source
         bracketPair = null
+        selectionRangeAtSearch = null
     }
 
     val dirty = value.text != savedText
@@ -142,16 +145,33 @@ fun CodeEditorScreen(
         if (find.isBlank()) return -1
         val text = value.text
         if (text.isEmpty()) return -1
-        return if (forward) {
-            val start = from.coerceIn(0, text.length)
-            text.indexOf(find, startIndex = start, ignoreCase = true)
-                .takeIf { it >= 0 }
-                ?: text.indexOf(find, startIndex = 0, ignoreCase = true)
+
+        val range = if (searchInSelection && selectionRangeAtSearch != null) {
+            selectionRangeAtSearch!!
         } else {
-            val start = (from - 1).coerceIn(0, text.length)
-            text.lastIndexOf(find, startIndex = start, ignoreCase = true)
-                .takeIf { it >= 0 }
-                ?: text.lastIndexOf(find, startIndex = text.length, ignoreCase = true)
+            TextRange(0, text.length)
+        }
+        val minIdx = range.min
+        val maxIdx = range.max
+
+        return if (forward) {
+            val start = from.coerceIn(minIdx, maxIdx)
+            val found = text.indexOf(find, startIndex = start, ignoreCase = true)
+            if (found in minIdx..(maxIdx - find.length)) {
+                found
+            } else {
+                val wrapped = text.indexOf(find, startIndex = minIdx, ignoreCase = true)
+                if (wrapped in minIdx..(maxIdx - find.length)) wrapped else -1
+            }
+        } else {
+            val start = (from - 1).coerceIn(minIdx, maxIdx)
+            val found = text.lastIndexOf(find, startIndex = start, ignoreCase = true)
+            if (found in minIdx..(maxIdx - find.length)) {
+                found
+            } else {
+                val wrapped = text.lastIndexOf(find, startIndex = maxIdx - 1, ignoreCase = true)
+                if (wrapped in minIdx..(maxIdx - find.length)) wrapped else -1
+            }
         }
     }
 
@@ -548,8 +568,32 @@ fun CodeEditorScreen(
                                 onValueChange = { find = it },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
-                                label = { Text("Find") },
+                                label = { Text(if (searchInSelection) "Find in selection" else "Find") },
                             )
+                            IconButton(
+                                onClick = {
+                                    searchInSelection = !searchInSelection
+                                    if (searchInSelection) {
+                                        selectionRangeAtSearch = if (value.selection.length > 0) value.selection else null
+                                    } else {
+                                        selectionRangeAtSearch = null
+                                    }
+                                }
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (searchInSelection) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, if (searchInSelection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                                ) {
+                                    Text(
+                                        "Sel",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (searchInSelection) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                        color = if (searchInSelection) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                             IconButton(onClick = ::findPrevious, enabled = find.isNotBlank()) {
                                 Icon(Icons.Default.KeyboardArrowUp, "Previous match")
                             }

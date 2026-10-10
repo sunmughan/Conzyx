@@ -302,6 +302,7 @@ fun PocketDevApp(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val authState by authViewModel.authState.collectAsStateWithLifecycle()
+    val detectedPorts by viewModel.detectedLocalhostPorts.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val projectsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     var guestDismissedAuth by rememberSaveable { mutableStateOf(false) }
@@ -470,6 +471,11 @@ fun PocketDevApp(
             onGitCheckout = viewModel::gitCheckout,
             onGitDiff = viewModel::gitDiff,
             onGitBranchList = viewModel::gitBranchList,
+            onGitPush = { cb -> viewModel.gitPush(onResult = cb) },
+            onGitPull = { cb -> viewModel.gitPull(onResult = cb) },
+            detectedPorts = detectedPorts,
+            onScanPorts = viewModel::scanActiveLocalhostPorts,
+            onAttachVisualInspection = viewModel::attachVisualInspectionToAgent,
         )
         else -> RootScreenHost(
             state = state,
@@ -2340,6 +2346,7 @@ private fun RootScreenHost(
                     listState = projectsListState,
                     onOpen = viewModel::openProject,
                     onCreate = viewModel::createProject,
+                    onScaffoldTemplate = viewModel::scaffoldProjectTemplate,
                     onCreateQuickProject = viewModel::createQuickProject,
                     onImportZip = viewModel::importZipProject,
                     onImportFolder = viewModel::importFolderProject,
@@ -3369,6 +3376,7 @@ private fun ProjectsScreen(
     listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
     onOpen: (Project) -> Unit,
     onCreate: (String, Uri?) -> Unit,
+    onScaffoldTemplate: (com.jarves.mh.workspace.ProjectTemplate) -> Unit = {},
     onCreateQuickProject: () -> Unit,
     onImportZip: (Uri) -> Unit,
     onImportFolder: (Uri) -> Unit = {},
@@ -3714,11 +3722,13 @@ private fun ProjectsScreen(
             }
         }
     }
+    var selectedTemplate by rememberSaveable { mutableStateOf(com.jarves.mh.workspace.ProjectTemplate.NONE) }
     if (showCreate) AlertDialog(
         onDismissRequest = {
             showCreate = false
             selectedFolderUri = null
             selectedFolderName = null
+            selectedTemplate = com.jarves.mh.workspace.ProjectTemplate.NONE
         },
         title = { Text("Create project") },
         text = {
@@ -3731,6 +3741,29 @@ private fun ProjectsScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text("Starter Template:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    com.jarves.mh.workspace.ProjectTemplate.values().forEach { tmpl ->
+                        val isSel = tmpl == selectedTemplate
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            border = if (isSel) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                            modifier = Modifier.clickable { selectedTemplate = tmpl },
+                        ) {
+                            Text(
+                                tmpl.displayName,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 if (selectedFolderUri != null) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -3783,9 +3816,14 @@ private fun ProjectsScreen(
         confirmButton = {
             TextButton(
                 onClick = {
+                    val tmpl = selectedTemplate
                     onCreate(name, selectedFolderUri)
+                    if (tmpl != com.jarves.mh.workspace.ProjectTemplate.NONE) {
+                        onScaffoldTemplate(tmpl)
+                    }
                     showCreate = false
                     name = ""
+                    selectedTemplate = com.jarves.mh.workspace.ProjectTemplate.NONE
                     selectedFolderUri = null
                     selectedFolderName = null
                 },
@@ -3797,6 +3835,7 @@ private fun ProjectsScreen(
                 showCreate = false
                 selectedFolderUri = null
                 selectedFolderName = null
+                selectedTemplate = com.jarves.mh.workspace.ProjectTemplate.NONE
             }) { Text("Cancel") }
         },
     )
@@ -4319,6 +4358,11 @@ private fun WorkspaceScreen(
     onGitCheckout: (String, Boolean, (Boolean, String) -> Unit) -> Unit = { _, _, _ -> },
     onGitDiff: ((String) -> Unit) -> Unit = {},
     onGitBranchList: ((List<String>) -> Unit) -> Unit = {},
+    onGitPush: (((Boolean, String) -> Unit) -> Unit) = {},
+    onGitPull: (((Boolean, String) -> Unit) -> Unit) = {},
+    detectedPorts: List<Int> = emptyList(),
+    onScanPorts: ((List<Int>) -> Unit) -> Unit = {},
+    onAttachVisualInspection: (String, String) -> Unit = { _, _ -> },
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4786,6 +4830,8 @@ private fun WorkspaceScreen(
                     onGitCheckout = onGitCheckout,
                     onGitDiff = onGitDiff,
                     onGitBranchList = onGitBranchList,
+                    onGitPush = onGitPush,
+                    onGitPull = onGitPull,
                 )
                 WorkspaceTab.TERMINAL -> TerminalScreen(
                     lines = state.projectTerminalLines,
@@ -4824,6 +4870,9 @@ private fun WorkspaceScreen(
                 WorkspaceTab.PREVIEW -> PreviewTab(
                     ready = state.previewReady,
                     url = state.previewUrl,
+                    detectedPorts = detectedPorts,
+                    onScanPorts = onScanPorts,
+                    onAttachVisualInspection = onAttachVisualInspection,
                 )
                 }
             }
@@ -5082,6 +5131,8 @@ private fun FilesTab(
     onGitCheckout: (String, Boolean, (Boolean, String) -> Unit) -> Unit = { _, _, _ -> },
     onGitDiff: ((String) -> Unit) -> Unit = {},
     onGitBranchList: ((List<String>) -> Unit) -> Unit = {},
+    onGitPush: (((Boolean, String) -> Unit) -> Unit) = {},
+    onGitPull: (((Boolean, String) -> Unit) -> Unit) = {},
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fileQuery by rememberSaveable { mutableStateOf("") }
@@ -5384,6 +5435,8 @@ private fun FilesTab(
             onCheckout = onGitCheckout,
             onDiff = onGitDiff,
             onBranchList = onGitBranchList,
+            onPush = onGitPush,
+            onPull = onGitPull,
         )
     }
 }
@@ -6778,8 +6831,12 @@ private const val MOBILE_CHROME_USER_AGENT =
 private fun PreviewTab(
     ready: Boolean,
     url: String?,
+    detectedPorts: List<Int> = emptyList(),
+    onScanPorts: ((List<Int>) -> Unit) -> Unit = {},
+    onAttachVisualInspection: (String, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
+    LaunchedEffect(Unit) { onScanPorts {} }
 
     // Multi-tab state
     var tabs by rememberSaveable {
@@ -7244,6 +7301,61 @@ private fun PreviewTab(
                                     showMoreMenu = false
                                     navigateTo("http://127.0.0.1:9222")
                                 },
+                            )
+
+                            // Inspect UI with AI
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                        Text("Inspect UI with AI")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    val target = address.ifBlank { url.orEmpty() }
+                                    onAttachVisualInspection(target, "Browser UI preview at $target")
+                                    Toast.makeText(context, "Attached visual preview context to Agent", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Localhost Ports Auto-Discovery Strip
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 2.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("Ports:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(
+                        onClick = { onScanPorts {} },
+                        modifier = Modifier.size(22.dp),
+                    ) {
+                        Icon(Icons.Default.Refresh, "Scan localhost ports", modifier = Modifier.size(14.dp))
+                    }
+                    val ports = if (detectedPorts.isNotEmpty()) detectedPorts else listOf(3000, 5173, 8080)
+                    ports.forEach { port ->
+                        val isOpen = detectedPorts.contains(port)
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isOpen) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            border = if (isOpen) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                            modifier = Modifier.clickable {
+                                navigateTo("http://127.0.0.1:$port")
+                            },
+                        ) {
+                            Text(
+                                ":$port",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = if (isOpen) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                color = if (isOpen) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

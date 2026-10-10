@@ -1,5 +1,7 @@
 package com.jarves.mh.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -397,7 +399,7 @@ fun MoveEntryDialog(
 }
 
 /**
- * Dialog to inspect Git status, view diffs, switch branches, and commit changes.
+ * Dialog to inspect Git status, view visual color-coded diffs, switch branches, commit, push, and pull changes.
  */
 @Composable
 fun GitOperationsDialog(
@@ -407,6 +409,8 @@ fun GitOperationsDialog(
     onCheckout: (String, Boolean, (Boolean, String) -> Unit) -> Unit,
     onDiff: ((String) -> Unit) -> Unit,
     onBranchList: ((List<String>) -> Unit) -> Unit,
+    onPush: ((Boolean, String) -> Unit) -> Unit = { _ -> },
+    onPull: ((Boolean, String) -> Unit) -> Unit = { _ -> },
 ) {
     var gitOutput by remember { mutableStateOf("Loading status...") }
     var commitMessage by rememberSaveable { mutableStateOf("") }
@@ -425,18 +429,40 @@ fun GitOperationsDialog(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Repository Status:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("Repository Status & Diff:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 ) {
-                    Text(
-                        gitOutput,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(8.dp),
-                    )
+                    val lines = gitOutput.lines()
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        lines.take(200).forEach { line ->
+                            val color = when {
+                                line.startsWith("+++") || line.startsWith("---") -> MaterialTheme.colorScheme.onSurfaceVariant
+                                line.startsWith("+") -> Color(0xFF4CAF50)
+                                line.startsWith("-") -> Color(0xFFE57373)
+                                line.startsWith("@@") -> Color(0xFF64B5F6)
+                                line.startsWith("diff ") -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurface
+                            }
+                            val bg = when {
+                                line.startsWith("+") && !line.startsWith("+++") -> Color(0xFF1B5E20).copy(alpha = 0.2f)
+                                line.startsWith("-") && !line.startsWith("---") -> Color(0xFFB71C1C).copy(alpha = 0.2f)
+                                else -> Color.Transparent
+                            }
+                            Text(
+                                text = line,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.5.sp,
+                                color = color,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(bg)
+                                    .padding(vertical = 1.dp)
+                            )
+                        }
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -475,6 +501,35 @@ fun GitOperationsDialog(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Branches", fontSize = 11.sp)
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = {
+                            loading = true
+                            onPush { success, out ->
+                                loading = false
+                                gitOutput = if (success) "Push completed successfully!\n$out" else "Push failed:\n$out"
+                            }
+                        },
+                        enabled = !loading,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Push", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            loading = true
+                            onPull { success, out ->
+                                loading = false
+                                gitOutput = if (success) "Pull completed successfully!\n$out" else "Pull failed:\n$out"
+                            }
+                        },
+                        enabled = !loading,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Pull", fontSize = 11.sp)
                     }
                 }
 
