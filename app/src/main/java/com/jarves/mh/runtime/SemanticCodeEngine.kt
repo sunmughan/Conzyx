@@ -258,6 +258,24 @@ object SemanticCodeEngine {
         return results
     }
 
+    /**
+     * Renames a symbol across matching files in a workspace, returning count of modified files.
+     */
+    fun renameSymbolAcrossFiles(
+        workspaceDir: File,
+        oldName: String,
+        newName: String,
+    ): Int {
+        if (oldName.isBlank() || newName.isBlank() || !workspaceDir.isDirectory) return 0
+        return com.jarves.mh.workspace.GlobalSearchEngine.replaceAll(
+            workspaceDir = workspaceDir,
+            query = oldName,
+            replacement = newName,
+            wholeWord = true,
+            matchCase = true,
+        )
+    }
+
     // --- Language Parsers ---
 
     private fun parseKotlin(

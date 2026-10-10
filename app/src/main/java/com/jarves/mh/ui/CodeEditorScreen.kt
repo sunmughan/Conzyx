@@ -27,13 +27,39 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VerticalSplit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import com.jarves.mh.editor.CodeCompletionEngine
+import com.jarves.mh.editor.CodeFoldingEngine
+import com.jarves.mh.editor.CompletionItem
+import com.jarves.mh.editor.DiagnosticSeverity
+import com.jarves.mh.editor.EditorDiagnostic
+import com.jarves.mh.editor.EditorDiagnosticsEngine
+import com.jarves.mh.editor.FoldableRange
+import com.jarves.mh.runtime.CodeSymbol
+import com.jarves.mh.runtime.SymbolKind
+import com.jarves.mh.runtime.SymbolReference
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -150,6 +176,98 @@ fun CodeEditorScreen(
     val lines = remember(value.text) { value.text.split('\n') }
     val lineNumbers = remember(lines.size) { (1..max(1, lines.size)).joinToString("\n") }
     val symbols = remember(value.text, filePath) { extractEditorSymbols(value.text, filePath) }
+
+    var diagnosticsOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var referencesOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var renameDialogOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var renameOldName by rememberSaveable(filePath) { mutableStateOf("") }
+    var renameNewName by rememberSaveable(filePath) { mutableStateOf("") }
+    var activeReferences by remember(filePath) { mutableStateOf(emptyList<SymbolReference>()) }
+    var activeFolds by remember(filePath) { mutableStateOf(emptySet<FoldableRange>()) }
+
+    val language = remember(filePath) { SemanticCodeEngine.detectLanguage(filePath) }
+    val foldableRanges = remember(value.text, language) {
+        CodeFoldingEngine.findFoldableRanges(value.text, language)
+    }
+    val diagnostics = remember(value.text, filePath) {
+        EditorDiagnosticsEngine.analyzeDocument(value.text, filePath)
+    }
+    val completions = remember(value.text, value.selection.start, language, symbols) {
+        val projectSyms = symbols.map { CodeSymbol(it.name, SymbolKind.FUNCTION, it.line) }
+        CodeCompletionEngine.getCompletions(value.text, value.selection.start, language, projectSyms)
+    }
+
+    fun applyCompletion(item: CompletionItem) {
+        val cursor = value.selection.start.coerceIn(0, value.text.length)
+        val textBefore = value.text.substring(0, cursor)
+        val prefix = textBefore.takeLastWhile { it.isLetterOrDigit() || it == '_' }
+        val replaceStart = (cursor - prefix.length).coerceAtLeast(0)
+        val newText = value.text.substring(0, replaceStart) + item.insertText + value.text.substring(cursor)
+        val newCursor = (replaceStart + item.insertText.length).coerceAtMost(newText.length)
+        value = TextFieldValue(newText, TextRange(newCursor))
+    }
+
+    fun getSymbolUnderCursor(): String {
+        val cursor = value.selection.start.coerceIn(0, value.text.length)
+        val text = value.text
+        if (text.isEmpty()) return ""
+        var start = cursor
+        while (start > 0 && (text[start - 1].isLetterOrDigit() || text[start - 1] == '_')) start--
+        var end = cursor
+        while (end < text.length && (text[end].isLetterOrDigit() || text[end] == '_')) end++
+        return if (start < end) text.substring(start, end) else ""
+    }
+
+    fun goToDefinition() {
+        val sym = getSymbolUnderCursor()
+        if (sym.isBlank() || workspaceDir == null) return
+        val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
+            it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+        }
+        val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+        val defs = SemanticCodeEngine.findDefinitions(sym, summaries, exactMatch = true)
+        val target = defs.firstOrNull() ?: return
+        onNavigateToFileLine?.invoke(File(workspaceDir, target.first).absolutePath, target.second.line)
+    }
+
+    fun findReferencesForSymbol() {
+        val sym = getSymbolUnderCursor()
+        if (sym.isBlank() || workspaceDir == null) return
+        val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
+            it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+        }
+        val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+        activeReferences = SemanticCodeEngine.findReferences(sym, summaries)
+        referencesOpen = true
+    }
+
+    fun triggerRenameSymbol() {
+        val sym = getSymbolUnderCursor()
+        if (sym.isNotBlank()) {
+            renameOldName = sym
+            renameNewName = sym
+            renameDialogOpen = true
+        }
+    }
+
+    fun toggleFoldAtCursor() {
+        val currentLine = value.text.take(value.selection.start.coerceIn(0, value.text.length)).count { it == '\n' } + 1
+        val targetRange = foldableRanges.firstOrNull { it.startLine == currentLine || (currentLine in it.startLine..it.endLine) }
+        if (targetRange != null) {
+            activeFolds = if (targetRange in activeFolds) activeFolds - targetRange else activeFolds + targetRange
+        }
+    }
+
+    val handleSaveShortcut: () -> Unit = {
+        if (dirty && !readOnly && !saving) {
+            val textToSave = value.text
+            scope.launch {
+                saving = true
+                if (onSave(textToSave)) savedText = textToSave
+                saving = false
+            }
+        }
+    }
 
     fun goToLine(line: Int) {
         val target = line.coerceIn(1, max(1, lines.size))
@@ -398,6 +516,144 @@ fun CodeEditorScreen(
                 }
             },
         )
+    if (renameDialogOpen && workspaceDir != null) {
+        AlertDialog(
+            onDismissRequest = { renameDialogOpen = false },
+            title = { Text("Rename symbol: $renameOldName") },
+            text = {
+                OutlinedTextField(
+                    value = renameNewName,
+                    onValueChange = { renameNewName = it },
+                    singleLine = true,
+                    label = { Text("New symbol name") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val oldSym = renameOldName
+                        val newSym = renameNewName
+                        renameDialogOpen = false
+                        scope.launch {
+                            SemanticCodeEngine.renameSymbolAcrossFiles(workspaceDir, oldSym, newSym)
+                            try {
+                                val f = File(filePath)
+                                if (f.exists()) {
+                                    val newContent = f.readText()
+                                    value = TextFieldValue(newContent)
+                                    savedText = newContent
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    enabled = renameNewName.isNotBlank() && renameNewName != renameOldName,
+                ) { Text("Rename everywhere") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameDialogOpen = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (referencesOpen) {
+        ModalBottomSheet(onDismissRequest = { referencesOpen = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height(460.dp)
+                    .padding(horizontal = 18.dp),
+            ) {
+                Text("References to '${getSymbolUnderCursor()}'", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                Text("${activeReferences.size} usages found in workspace", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                if (activeReferences.isEmpty()) {
+                    Text("No external references found in open project files.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(activeReferences.size) { idx ->
+                            val ref = activeReferences[idx]
+                            Surface(
+                                onClick = {
+                                    referencesOpen = false
+                                    if (workspaceDir != null) {
+                                        onNavigateToFileLine?.invoke(File(workspaceDir, ref.sourceFilePath).absolutePath, ref.line)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            ) {
+                                Column(Modifier.padding(10.dp)) {
+                                    Text(ref.sourceFilePath, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("Line ${ref.line} (${ref.referenceType.name})", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (diagnosticsOpen) {
+        ModalBottomSheet(onDismissRequest = { diagnosticsOpen = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height(460.dp)
+                    .padding(horizontal = 18.dp),
+            ) {
+                Text("Code Diagnostics (${diagnostics.size})", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                if (diagnostics.isEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, tint = com.jarves.mh.ui.theme.PocketGreen)
+                        Text("No syntax errors or warnings detected in file.", color = com.jarves.mh.ui.theme.PocketGreen)
+                    }
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(diagnostics.size) { idx ->
+                            val diag = diagnostics[idx]
+                            Surface(
+                                onClick = {
+                                    diagnosticsOpen = false
+                                    goToLine(diag.lineNumber)
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (diag.severity == DiagnosticSeverity.ERROR) {
+                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        if (diag.severity == DiagnosticSeverity.ERROR) Icons.Default.Error else Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = if (diag.severity == DiagnosticSeverity.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        Text(diag.message, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        Text("Line ${diag.lineNumber}, Col ${diag.column} · ${diag.ruleId}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // The parent owns navigation; the editor owns dirty-state confirmation.
@@ -458,6 +714,55 @@ fun CodeEditorScreen(
                             onClick = {
                                 menuOpen = false
                                 commandPaletteOpen = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Diagnostics (${diagnostics.size})") },
+                            onClick = {
+                                menuOpen = false
+                                diagnosticsOpen = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Go to definition") },
+                            onClick = {
+                                menuOpen = false
+                                goToDefinition()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Find references") },
+                            onClick = {
+                                menuOpen = false
+                                findReferencesForSymbol()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Rename symbol") },
+                            onClick = {
+                                menuOpen = false
+                                triggerRenameSymbol()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Fold/unfold block") },
+                            onClick = {
+                                menuOpen = false
+                                toggleFoldAtCursor()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Fold all blocks (${foldableRanges.size})") },
+                            onClick = {
+                                menuOpen = false
+                                activeFolds = foldableRanges.toSet()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Unfold all blocks") },
+                            onClick = {
+                                menuOpen = false
+                                activeFolds = emptySet()
                             },
                         )
                         DropdownMenuItem(
@@ -528,14 +833,33 @@ fun CodeEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
                 ) {
+                    val currentTabIdx = openTabs.indexOf(filePath)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        IconButton(
+                            onClick = { if (currentTabIdx > 0) onSelectTab(openTabs[currentTabIdx - 1]) },
+                            enabled = currentTabIdx > 0,
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Previous tab",
+                                modifier = Modifier.size(14.dp),
+                                tint = if (currentTabIdx > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                         openTabs.forEach { tabPath ->
                             val isSelected = tabPath == filePath
                             val fileName = tabPath.substringAfterLast('/')
@@ -579,8 +903,21 @@ fun CodeEditorScreen(
                             }
                         }
                     }
+                    IconButton(
+                        onClick = { if (currentTabIdx >= 0 && currentTabIdx < openTabs.size - 1) onSelectTab(openTabs[currentTabIdx + 1]) },
+                        enabled = currentTabIdx >= 0 && currentTabIdx < openTabs.size - 1,
+                        modifier = Modifier.size(24.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Next tab",
+                            modifier = Modifier.size(14.dp),
+                            tint = if (currentTabIdx >= 0 && currentTabIdx < openTabs.size - 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                        )
+                    }
                 }
             }
+        }
             if (searchOpen) {
                 Surface(
                     Modifier
@@ -629,10 +966,10 @@ fun CodeEditorScreen(
                                 }
                             }
                             IconButton(onClick = ::findPrevious, enabled = find.isNotBlank()) {
-                                Icon(Icons.Default.KeyboardArrowUp, "Previous match")
+                                Icon(Icons.Default.ArrowUpward, "Previous match")
                             }
                             IconButton(onClick = ::findNext, enabled = find.isNotBlank()) {
-                                Icon(Icons.Default.KeyboardArrowDown, "Next match")
+                                Icon(Icons.Default.ArrowDownward, "Next match")
                             }
                         }
                         Row(
@@ -689,6 +1026,11 @@ fun CodeEditorScreen(
                             wordWrap = wordWrap,
                             readOnly = readOnly,
                             bracketPair = bracketPair,
+                            onSaveShortcut = handleSaveShortcut,
+                            onSearchShortcut = { searchOpen = !searchOpen },
+                            onPaletteShortcut = { commandPaletteOpen = true },
+                            onCloseShortcut = { if (dirty && !readOnly) showDiscardDialog = true else onClose() },
+                            onSplitShortcut = { splitScreenOpen = !splitScreenOpen },
                         )
                     }
                 }
@@ -713,6 +1055,11 @@ fun CodeEditorScreen(
                                 wordWrap = wordWrap,
                                 readOnly = readOnly,
                                 bracketPair = bracketPair,
+                                onSaveShortcut = handleSaveShortcut,
+                                onSearchShortcut = { searchOpen = !searchOpen },
+                                onPaletteShortcut = { commandPaletteOpen = true },
+                                onCloseShortcut = { if (dirty && !readOnly) showDiscardDialog = true else onClose() },
+                                onSplitShortcut = { splitScreenOpen = !splitScreenOpen },
                             )
                         }
                     }
@@ -811,6 +1158,50 @@ fun CodeEditorScreen(
                 }
             }
 
+            if (!readOnly && completions.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        completions.forEach { item ->
+                            Surface(
+                                onClick = { applyCompletion(item) },
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        text = item.label,
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        text = item.kind.name.lowercase(),
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (!readOnly) {
                 CodingToolbar(
                     value = value,
@@ -821,18 +1212,58 @@ fun CodeEditorScreen(
                 )
             }
 
-            Text(
-                (if (splitScreenOpen) "[Split] " else "") + statusText(value, dirty, bracketPair) + (if (splitScreenOpen) " | Pane 2: " + secondaryFilePath.substringAfterLast('/') else ""),
-                Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        (if (splitScreenOpen) "[Split] " else "") + statusText(value, dirty, bracketPair) + (if (splitScreenOpen) " | Pane 2: " + secondaryFilePath.substringAfterLast('/') else ""),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val errorCount = diagnostics.count { it.severity == DiagnosticSeverity.ERROR }
+                    val warnCount = diagnostics.count { it.severity == DiagnosticSeverity.WARNING }
+                    Surface(
+                        onClick = { diagnosticsOpen = true },
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (errorCount > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                if (errorCount > 0) Icons.Default.Error else if (warnCount > 0) Icons.Default.Warning else Icons.Default.Check,
+                                contentDescription = "Diagnostics",
+                                modifier = Modifier.size(12.dp),
+                                tint = if (errorCount > 0) MaterialTheme.colorScheme.error else if (warnCount > 0) MaterialTheme.colorScheme.primary else com.jarves.mh.ui.theme.PocketGreen,
+                            )
+                            Text(
+                                if (errorCount > 0) "$errorCount err" else if (warnCount > 0) "$warnCount warn" else "0 err",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (errorCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
+}
 }
 
 @Composable
@@ -845,6 +1276,11 @@ private fun EditorPane(
     wordWrap: Boolean,
     readOnly: Boolean,
     bracketPair: BracketPair?,
+    onSaveShortcut: () -> Unit = {},
+    onSearchShortcut: () -> Unit = {},
+    onPaletteShortcut: () -> Unit = {},
+    onCloseShortcut: () -> Unit = {},
+    onSplitShortcut: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxSize()) {
@@ -879,7 +1315,19 @@ private fun EditorPane(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(if (wordWrap) Modifier else Modifier.widthIn(min = 720.dp))
-                    .padding(start = 12.dp, top = 8.dp, end = 24.dp, bottom = 24.dp),
+                    .padding(start = 12.dp, top = 8.dp, end = 24.dp, bottom = 24.dp)
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown && event.isCtrlPressed) {
+                            when (event.key) {
+                                Key.S -> { onSaveShortcut(); true }
+                                Key.F -> { onSearchShortcut(); true }
+                                Key.P -> { onPaletteShortcut(); true }
+                                Key.W -> { onCloseShortcut(); true }
+                                Key.Backslash -> { onSplitShortcut(); true }
+                                else -> false
+                            }
+                        } else false
+                    },
                 enabled = !readOnly,
                 textStyle = TextStyle(
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1045,7 +1493,8 @@ private class CodeSyntaxVisualTransformation(
                     if (word in keywords) builder.pop()
                     continue
                 }
-                if (bracketPair != null && (absolute == bracketPair.cursor || absolute == bracketPair.match)) {
+                val bp = bracketPair
+                if (bp != null && (absolute == bp.cursor || absolute == bp.match)) {
                     builder.pushStyle(
                         SpanStyle(
                             background = Color(0x664F72FF),
