@@ -384,6 +384,125 @@ pydantic>=2.7.0
 """.trimIndent()
                 )
             }
+            ProjectTemplate.FLUTTER_STARTER -> {
+                val pubspec = File(workspaceRoot, "pubspec.yaml")
+                SafeFileOps.atomicWriteText(
+                    pubspec,
+                    """name: mobile_harness_flutter
+description: A new Flutter project scaffolded by Mobile Harness App Factory.
+version: 1.0.0+1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true
+""".trimIndent()
+                )
+                val mainDart = File(workspaceRoot, "lib/main.dart")
+                mainDart.parentFile?.mkdirs()
+                SafeFileOps.atomicWriteText(
+                    mainDart,
+                    """import 'package:flutter/material.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Mobile Harness Flutter',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: Scaffold(
+        appBar: AppBar(title: const Text('Mobile Harness Flutter')),
+        body: const Center(
+          child: Text('Scaffolded with Mobile Harness App Factory!'),
+        ),
+      ),
+    );
+  }
+}
+""".trimIndent()
+                )
+            }
+            ProjectTemplate.REACT_NATIVE -> {
+                val pkg = File(workspaceRoot, "package.json")
+                SafeFileOps.atomicWriteText(
+                    pkg,
+                    """{
+  "name": "mobile-harness-react-native",
+  "version": "1.0.0",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android"
+  },
+  "dependencies": {
+    "expo": "~51.0.0",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-native": "0.74.5"
+  }
+}
+""".trimIndent()
+                )
+                val appJs = File(workspaceRoot, "App.js")
+                SafeFileOps.atomicWriteText(
+                    appJs,
+                    """import { StatusBar } from 'expo-status-bar';
+import { StyleSheet, Text, View } from 'react-native';
+
+export default function App() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Mobile Harness React Native</Text>
+      <Text>Scaffolded on Android with Mobile Harness App Factory.</Text>
+      <StatusBar style="auto" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+});
+""".trimIndent()
+                )
+                val appJson = File(workspaceRoot, "app.json")
+                SafeFileOps.atomicWriteText(
+                    appJson,
+                    """{
+  "expo": {
+    "name": "MobileHarnessRN",
+    "slug": "mobile-harness-rn",
+    "version": "1.0.0",
+    "orientation": "portrait"
+  }
+}
+""".trimIndent()
+                )
+            }
         }
     }
 }
@@ -393,6 +512,8 @@ enum class ProjectTemplate(val displayName: String, val description: String) {
     ANDROID_COMPOSE("Android (Compose)", "Jetpack Compose + Material 3 app"),
     NODEJS_API("Node.js (API)", "Express REST API server"),
     REACT_WEB("React (Web)", "React + Vite web app"),
-    PYTHON_FASTAPI("Python (FastAPI)", "FastAPI async REST server")
+    PYTHON_FASTAPI("Python (FastAPI)", "FastAPI async REST server"),
+    FLUTTER_STARTER("Flutter", "Flutter cross-platform mobile starter"),
+    REACT_NATIVE("React Native (Expo)", "React Native mobile starter with Expo")
 }
 

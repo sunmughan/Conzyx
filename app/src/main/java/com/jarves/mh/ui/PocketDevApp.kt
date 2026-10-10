@@ -4841,6 +4841,7 @@ private fun WorkspaceScreen(
                     onGitBranchList = onGitBranchList,
                     onGitPush = onGitPush,
                     onGitPull = onGitPull,
+                    onSendPrompt = onSend,
                 )
                 WorkspaceTab.TERMINAL -> TerminalScreen(
                     lines = state.projectTerminalLines,
@@ -5142,12 +5143,14 @@ private fun FilesTab(
     onGitBranchList: ((List<String>) -> Unit) -> Unit = {},
     onGitPush: (((Boolean, String) -> Unit) -> Unit) = {},
     onGitPull: (((Boolean, String) -> Unit) -> Unit) = {},
+    onSendPrompt: (String) -> Unit = {},
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fileQuery by rememberSaveable { mutableStateOf("") }
     var showCreateFileDialog by rememberSaveable { mutableStateOf(false) }
     var showCreateFolderDialog by rememberSaveable { mutableStateOf(false) }
     var showGitDialog by rememberSaveable { mutableStateOf(false) }
+    var showGitHubIssues by rememberSaveable { mutableStateOf(false) }
     var targetParentDir by rememberSaveable { mutableStateOf<String?>(null) }
     var entryToRename by remember { mutableStateOf<WorkspaceEntry?>(null) }
     var entryToMove by remember { mutableStateOf<WorkspaceEntry?>(null) }
@@ -5446,6 +5449,22 @@ private fun FilesTab(
             onBranchList = onGitBranchList,
             onPush = onGitPush,
             onPull = onGitPull,
+            onOpenIssues = {
+                showGitDialog = false
+                showGitHubIssues = true
+            },
+        )
+    }
+
+    if (showGitHubIssues) {
+        GitHubIssuesBottomSheet(
+            repoFullName = "",
+            token = "",
+            onDismiss = { showGitHubIssues = false },
+            onSolveWithAI = { issuePrompt ->
+                showGitHubIssues = false
+                onSendPrompt(issuePrompt)
+            },
         )
     }
 }
@@ -7752,6 +7771,16 @@ private fun PreviewTab(
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 loading = newProgress < 100
                             }
+
+                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                val msg = consoleMessage?.message() ?: return super.onConsoleMessage(consoleMessage)
+                                if (msg.startsWith("MH_DOM_INSPECT:")) {
+                                    val inspected = msg.removePrefix("MH_DOM_INSPECT:").trim()
+                                    Toast.makeText(context, inspected, Toast.LENGTH_SHORT).show()
+                                    return true
+                                }
+                                return super.onConsoleMessage(consoleMessage)
+                            }
                         }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -7954,6 +7983,54 @@ private fun PreviewTab(
                                 },
                             ) {
                                 Text("Inject", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Mobile Touch DOM Inspector
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("DOM Element Inspector", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Tap any page element to inspect tags & classes", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Button(
+                                onClick = {
+                                    val inspectJs = """
+                                        (function() {
+                                            if (window.__mh_inspect_active) {
+                                                window.__mh_inspect_active = false;
+                                                console.log('MH_DOM_INSPECT: Inspector disabled');
+                                                return;
+                                            }
+                                            window.__mh_inspect_active = true;
+                                            document.addEventListener('click', function(e) {
+                                                if (!window.__mh_inspect_active) return;
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                var t = e.target;
+                                                var tag = t.tagName.toLowerCase();
+                                                var id = t.id ? '#' + t.id : '';
+                                                var cls = t.className ? '.' + (typeof t.className === 'string' ? t.className.trim().split(/\s+/).join('.') : '') : '';
+                                                var text = (t.innerText || '').slice(0, 50).trim();
+                                                console.log('MH_DOM_INSPECT: <' + tag + id + cls + '> "' + text + '"');
+                                            }, true);
+                                            console.log('MH_DOM_INSPECT: Inspector enabled. Tap any element.');
+                                        })();
+                                    """.trimIndent()
+                                    webView?.evaluateJavascript(inspectJs, null)
+                                    showExtensionsModal = false
+                                },
+                            ) {
+                                Text("Inspect", fontSize = 11.sp)
                             }
                         }
                     }

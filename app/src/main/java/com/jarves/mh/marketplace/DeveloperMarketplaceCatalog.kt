@@ -18,7 +18,8 @@ data class MarketplaceItem(
     val rating: Double = 4.8,
     val downloads: Int = 1200,
     val installUrl: String,
-    val isInstalled: Boolean = false
+    val isInstalled: Boolean = false,
+    val isCustom: Boolean = false,
 )
 
 /**
@@ -119,6 +120,7 @@ object DeveloperMarketplaceCatalog {
     )
 
     private val installedItemIds = mutableSetOf<String>()
+    private val customItems = mutableListOf<MarketplaceItem>()
 
     fun markInstalled(itemId: String) {
         installedItemIds.add(itemId)
@@ -128,14 +130,26 @@ object DeveloperMarketplaceCatalog {
         return installedItemIds.contains(itemId)
     }
 
+    fun getAllItems(): List<MarketplaceItem> {
+        return curatedCatalog + customItems
+    }
+
+    fun addCustomItem(item: MarketplaceItem) {
+        customItems.add(item.copy(isCustom = true))
+    }
+
+    fun removeCustomItem(itemId: String) {
+        customItems.removeAll { it.id == itemId }
+    }
+
     fun filterByCategory(category: MarketplaceCategory): List<MarketplaceItem> {
-        return curatedCatalog.filter { it.category == category }
+        return getAllItems().filter { it.category == category }
     }
 
     fun search(query: String): List<MarketplaceItem> {
-        if (query.isBlank()) return curatedCatalog
+        if (query.isBlank()) return getAllItems()
         val q = query.trim().lowercase()
-        return curatedCatalog.filter {
+        return getAllItems().filter {
             it.name.lowercase().contains(q) || it.description.lowercase().contains(q)
         }
     }

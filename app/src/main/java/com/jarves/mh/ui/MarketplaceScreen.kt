@@ -20,12 +20,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -40,12 +43,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,7 +64,7 @@ import com.jarves.mh.marketplace.MarketplaceItem
 
 /**
  * AI Developer Marketplace (Phase 14).
- * Discover and 1-click install agents, MCP servers, skills, and templates.
+ * Discover, 1-click install, and publish custom AI agents, MCP servers, skills, and templates.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,10 +75,12 @@ fun MarketplaceScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<MarketplaceCategory?>(null) }
     var installedSet by remember { mutableStateOf(setOf<String>()) }
+    var showPublishDialog by rememberSaveable { mutableStateOf(false) }
+    var catalogVersion by remember { mutableStateOf(0) }
 
-    val allItems = remember(searchQuery, selectedCategory) {
+    val allItems = remember(searchQuery, selectedCategory, catalogVersion) {
         val base = if (selectedCategory == null) {
-            DeveloperMarketplaceCatalog.curatedCatalog
+            DeveloperMarketplaceCatalog.getAllItems()
         } else {
             DeveloperMarketplaceCatalog.filterByCategory(selectedCategory!!)
         }
@@ -83,6 +90,17 @@ fun MarketplaceScreen(
             val q = searchQuery.trim().lowercase()
             base.filter { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
         }
+    }
+
+    if (showPublishDialog) {
+        PublishMarketplaceItemDialog(
+            onDismiss = { showPublishDialog = false },
+            onPublish = { newItem ->
+                DeveloperMarketplaceCatalog.addCustomItem(newItem)
+                catalogVersion++
+                showPublishDialog = false
+            },
+        )
     }
 
     Scaffold(
@@ -100,15 +118,24 @@ fun MarketplaceScreen(
                         )
                         Column {
                             Text("Marketplace", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("AI Agents, MCP, Skills & Templates", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Agents, MCP, Skills & Templates", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showPublishDialog = true }) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Publish custom item",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -129,7 +156,7 @@ fun MarketplaceScreen(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search catalog...") },
+                placeholder = { Text("Search catalog or custom items...") },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
@@ -147,7 +174,7 @@ fun MarketplaceScreen(
                 FilterChip(
                     selected = selectedCategory == null,
                     onClick = { selectedCategory = null },
-                    label = { Text("All (${DeveloperMarketplaceCatalog.curatedCatalog.size})") },
+                    label = { Text("All (${DeveloperMarketplaceCatalog.getAllItems().size})") },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                     ),
@@ -191,6 +218,12 @@ fun MarketplaceScreen(
                             installedSet = installedSet + item.id
                             onInstallItem(item)
                         },
+                        onDeleteCustom = if (item.isCustom) {
+                            {
+                                DeveloperMarketplaceCatalog.removeCustomItem(item.id)
+                                catalogVersion++
+                            }
+                        } else null,
                     )
                 }
             }
@@ -203,6 +236,7 @@ private fun MarketplaceItemCard(
     item: MarketplaceItem,
     isInstalled: Boolean,
     onInstall: () -> Unit,
+    onDeleteCustom: (() -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -222,12 +256,31 @@ private fun MarketplaceItemCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (item.isCustom) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                            ) {
+                                Text(
+                                    text = "Custom",
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = "by " + item.author,
                         fontSize = 11.sp,
@@ -235,23 +288,42 @@ private fun MarketplaceItemCard(
                     )
                 }
 
-                // Category pill
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = when (item.category) {
-                        MarketplaceCategory.AGENTS -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        MarketplaceCategory.MCP_SERVERS -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
-                        MarketplaceCategory.SKILLS -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
-                        MarketplaceCategory.TEMPLATES -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                    },
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = item.category.name.replace('_', ' '),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+                    // Category pill
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = when (item.category) {
+                            MarketplaceCategory.AGENTS -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            MarketplaceCategory.MCP_SERVERS -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+                            MarketplaceCategory.SKILLS -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                            MarketplaceCategory.TEMPLATES -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        },
+                    ) {
+                        Text(
+                            text = item.category.name.replace('_', ' '),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+
+                    if (onDeleteCustom != null) {
+                        IconButton(
+                            onClick = onDeleteCustom,
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete custom item",
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -322,4 +394,110 @@ private fun MarketplaceItemCard(
             }
         }
     }
+}
+
+/**
+ * Dialog to add/publish a custom item into the AI Developer Marketplace.
+ */
+@Composable
+private fun PublishMarketplaceItemDialog(
+    onDismiss: () -> Unit,
+    onPublish: (MarketplaceItem) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var selectedCat by rememberSaveable { mutableStateOf(MarketplaceCategory.SKILLS) }
+    var author by rememberSaveable { mutableStateOf("Local Developer") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var installUrl by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Publish to Marketplace") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Item Name *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+
+                // Category Selector
+                Text("Category", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    MarketplaceCategory.entries.forEach { cat ->
+                        FilterChip(
+                            selected = selectedCat == cat,
+                            onClick = { selectedCat = cat },
+                            label = { Text(cat.name.replace('_', ' '), fontSize = 11.sp) },
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = author,
+                    onValueChange = { author = it },
+                    label = { Text("Author") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description *") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+
+                OutlinedTextField(
+                    value = installUrl,
+                    onValueChange = { installUrl = it },
+                    label = { Text("Install Command or URL *") },
+                    placeholder = { Text("e.g. npx -y ... or https://github.com/...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank() && description.isNotBlank()) {
+                        onPublish(
+                            MarketplaceItem(
+                                name = name.trim(),
+                                category = selectedCat,
+                                author = author.trim().ifBlank { "Local Developer" },
+                                description = description.trim(),
+                                installUrl = installUrl.trim(),
+                                rating = 5.0,
+                                downloads = 1,
+                                isCustom = true,
+                            )
+                        )
+                    }
+                },
+                enabled = name.isNotBlank() && description.isNotBlank(),
+            ) {
+                Text("Publish Item")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

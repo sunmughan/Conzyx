@@ -411,6 +411,7 @@ fun GitOperationsDialog(
     onBranchList: ((List<String>) -> Unit) -> Unit,
     onPush: ((Boolean, String) -> Unit) -> Unit = { _ -> },
     onPull: ((Boolean, String) -> Unit) -> Unit = { _ -> },
+    onOpenIssues: (() -> Unit)? = null,
 ) {
     var gitOutput by remember { mutableStateOf("Loading status...") }
     var commitMessage by rememberSaveable { mutableStateOf("") }
@@ -530,6 +531,15 @@ fun GitOperationsDialog(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Pull", fontSize = 11.sp)
+                    }
+                }
+
+                if (onOpenIssues != null) {
+                    OutlinedButton(
+                        onClick = onOpenIssues,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("GitHub Issues & PRs", fontSize = 11.sp)
                     }
                 }
 

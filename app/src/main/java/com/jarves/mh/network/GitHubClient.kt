@@ -25,6 +25,26 @@ data class GitHubRepository(
     val updatedAt: String,
 )
 
+data class GitHubIssue(
+    val number: Int,
+    val title: String,
+    val state: String,
+    val user: String,
+    val comments: Int,
+    val htmlUrl: String,
+    val createdAt: String = "",
+)
+
+data class GitHubPullRequest(
+    val number: Int,
+    val title: String,
+    val state: String,
+    val user: String,
+    val headBranch: String,
+    val baseBranch: String,
+    val htmlUrl: String,
+)
+
 sealed interface GitHubTokenPoll {
     data class Success(val accessToken: String) : GitHubTokenPoll
     data class Pending(val slowDown: Boolean = false) : GitHubTokenPoll
@@ -96,6 +116,54 @@ class GitHubClient {
         return result.values.toList()
     }
 
+    fun issues(token: String, repoFullName: String): List<GitHubIssue> {
+        val array = getJson(
+            "https://api.github.com/repos/$repoFullName/issues?state=all&per_page=30",
+            token,
+        ) as? JSONArray ?: return emptyList()
+        val list = mutableListOf<GitHubIssue>()
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            if (!item.has("pull_request")) {
+                list.add(
+                    GitHubIssue(
+                        number = item.getInt("number"),
+                        title = item.getString("title"),
+                        state = item.getString("state"),
+                        user = item.optJSONObject("user")?.optString("login") ?: "user",
+                        comments = item.optInt("comments", 0),
+                        htmlUrl = item.optString("html_url", ""),
+                        createdAt = item.optString("created_at", ""),
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun pullRequests(token: String, repoFullName: String): List<GitHubPullRequest> {
+        val array = getJson(
+            "https://api.github.com/repos/$repoFullName/pulls?state=all&per_page=30",
+            token,
+        ) as? JSONArray ?: return emptyList()
+        val list = mutableListOf<GitHubPullRequest>()
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            list.add(
+                GitHubPullRequest(
+                    number = item.getInt("number"),
+                    title = item.getString("title"),
+                    state = item.getString("state"),
+                    user = item.optJSONObject("user")?.optString("login") ?: "user",
+                    headBranch = item.optJSONObject("head")?.optString("ref") ?: "",
+                    baseBranch = item.optJSONObject("base")?.optString("ref") ?: "",
+                    htmlUrl = item.optString("html_url", ""),
+                )
+            )
+        }
+        return list
+    }
+
     private fun postForm(endpoint: String, values: Map<String, String>): JSONObject {
         val body = values.entries.joinToString("&") { (key, value) ->
             "${URLEncoder.encode(key, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}" 
@@ -119,7 +187,9 @@ class GitHubClient {
             connectTimeout = 15_000
             readTimeout = 30_000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("Authorization", "Bearer $token")
+            if (token.isNotBlank()) {
+                setRequestProperty("Authorization", "Bearer $token")
+            }
             setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
             setRequestProperty("User-Agent", "PocketDev-Android")
         }
