@@ -166,6 +166,11 @@ class RuntimeInstaller(private val context: Context) {
             isTargetValid = ::isRootfsCoreValid,
         )
 
+        // Repair recoverable merged-/usr links before deciding a valid version is corrupt.
+        if (rootfs.isDirectory && rootfsMarker.readTextOrNull() == ROOTFS_VERSION) {
+            ensureRootfsCompatibilityLinks()
+        }
+
         if (!isRootfsCoreValid(rootfs)) {
             onProgress(RuntimeInstallProgress("Preparing the private development runtime", 0.03f))
             val archive = obtainRuntimeBundle(
