@@ -176,4 +176,20 @@ class WorkspaceCheckpointsTest {
 
         assertEquals(setOf("normal.txt"), snapshot.keys)
     }
+
+    @Test
+    fun `ensureWorkspace rejects project directory symlinks escaping app storage`() {
+        val filesDir = tempFolder.newFolder("workspace-storage-symlink")
+        val outside = tempFolder.newFolder("workspace-storage-outside")
+        File(outside, "keep.txt").writeText("untouched")
+        val workspaces = File(filesDir, "workspaces").apply { mkdirs() }
+        java.nio.file.Files.createSymbolicLink(File(workspaces, "project-link").toPath(), outside.toPath())
+        val checkpoints = WorkspaceCheckpoints(filesDir)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            checkpoints.ensureWorkspace("project-link")
+        }
+        assertEquals("untouched", File(outside, "keep.txt").readText())
+        assertFalse(File(outside, "linked-file").exists())
+    }
 }
