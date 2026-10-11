@@ -1,6 +1,7 @@
 package com.jarves.mh.workspace
 
 import java.io.File
+import java.nio.file.Files
 import java.util.regex.Pattern
 
 data class SearchMatch(
@@ -53,10 +54,19 @@ object GlobalSearchEngine {
         var filesSearched = 0
         var isTruncated = false
 
+        val rootPath = canonicalRoot.toPath()
         canonicalRoot.walkTopDown()
-            .onEnter { dir -> dir == canonicalRoot || dir.name !in IGNORED_DIRECTORIES }
+            .onEnter { dir ->
+                dir == canonicalRoot || (
+                    dir.name !in IGNORED_DIRECTORIES &&
+                        !Files.isSymbolicLink(dir.toPath()) &&
+                        runCatching { dir.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false)
+                    )
+            }
             .filter { file ->
-                file.isFile && file.length() <= MAX_FILE_SIZE_BYTES &&
+                file.isFile && !Files.isSymbolicLink(file.toPath()) &&
+                    file.length() <= MAX_FILE_SIZE_BYTES &&
+                    runCatching { file.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false) &&
                     (filterRegex == null || filterRegex.matches(file.name))
             }
             .forEach { file ->
@@ -117,7 +127,7 @@ object GlobalSearchEngine {
         matchCase: Boolean = false,
         wholeWord: Boolean = false,
     ): Int {
-        if (!file.isFile || query.isEmpty()) return 0
+        if (!file.isFile || Files.isSymbolicLink(file.toPath()) || query.isEmpty()) return 0
         val pattern = buildRegexPattern(query, isRegex, matchCase, wholeWord) ?: return 0
         val original = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return 0
         val matcher = pattern.matcher(original)
@@ -154,10 +164,19 @@ object GlobalSearchEngine {
         val canonicalRoot = workspaceDir.canonicalFile
         val filterRegex = fileFilter?.takeIf { it.isNotBlank() }?.let { globToRegex(it) }
         var totalReplaced = 0
+        val rootPath = canonicalRoot.toPath()
         canonicalRoot.walkTopDown()
-            .onEnter { dir -> dir == canonicalRoot || dir.name !in IGNORED_DIRECTORIES }
+            .onEnter { dir ->
+                dir == canonicalRoot || (
+                    dir.name !in IGNORED_DIRECTORIES &&
+                        !Files.isSymbolicLink(dir.toPath()) &&
+                        runCatching { dir.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false)
+                    )
+            }
             .filter { file ->
-                file.isFile && file.length() <= MAX_FILE_SIZE_BYTES &&
+                file.isFile && !Files.isSymbolicLink(file.toPath()) &&
+                    file.length() <= MAX_FILE_SIZE_BYTES &&
+                    runCatching { file.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false) &&
                     (filterRegex == null || filterRegex.matches(file.name))
             }
             .forEach { file ->
