@@ -60,6 +60,11 @@ internal class ProjectTerminalHistoryStore(
         return SafeFileOps.atomicWriteText(file, JSONObject().put("cwd", cwd).put("lines", array).toString())
     }
 
+    fun delete(projectId: String): Boolean {
+        val file = historyFile(projectId)
+        return !file.exists() || file.delete()
+    }
+
     private fun historyFile(projectId: String): File {
         require(
             projectId.isNotBlank() &&
