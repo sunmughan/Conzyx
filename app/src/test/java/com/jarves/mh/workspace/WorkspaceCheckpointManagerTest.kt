@@ -154,5 +154,28 @@ class WorkspaceCheckpointManagerTest {
         assertTrue(File(filesDir, "workspaces/proj-abc/index.js").exists())
         assertEquals("console.log('hello world');", File(filesDir, "workspaces/proj-abc/index.js").readText())
     }
+
+    @Test
+    fun `rollback rejects symlink escape before changing any workspace file`() {
+        val filesDir = tempFolder.newFolder("symlink-rollback-files")
+        val workspace = tempFolder.newFolder("symlink-rollback-workspace")
+        val current = File(workspace, "a.txt").apply { writeText("baseline") }
+        val linkedDir = File(workspace, "linked").apply { mkdirs() }
+        File(linkedDir, "inside.txt").writeText("baseline inside")
+        val outside = tempFolder.newFolder("symlink-rollback-outside")
+        File(outside, "inside.txt").writeText("outside must remain unchanged")
+
+        val manager = WorkspaceCheckpointManager(filesDir)
+        val checkpoint = manager.createCheckpoint("project-symlink", workspace, "baseline")
+        assertNotNull(checkpoint)
+
+        current.writeText("current user data")
+        assertTrue(linkedDir.deleteRecursively())
+        java.nio.file.Files.createSymbolicLink(linkedDir.toPath(), outside.toPath())
+
+        assertFalse(manager.rollbackToCheckpoint("project-symlink", checkpoint!!.id, workspace))
+        assertEquals("current user data", current.readText())
+        assertEquals("outside must remain unchanged", File(outside, "inside.txt").readText())
+    }
 }
 
