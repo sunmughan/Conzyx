@@ -2122,7 +2122,7 @@ class RuntimeInstaller(private val context: Context) {
     private fun isRootfsCoreValid(directory: File): Boolean {
         if (!directory.isDirectory ||
             !File(directory, "usr/bin/bash").canExecute() ||
-            !File(directory, ".pocket-rootfs-version").readTextOrNull().equals(ROOTFS_VERSION) ||
+            File(directory, ".pocket-rootfs-version").readTextOrNull() != ROOTFS_VERSION ||
             !File(directory, "usr/bin/env").canExecute() ||
             !File(directory, "lib/ld-linux-aarch64.so.1").exists()
         ) return false
