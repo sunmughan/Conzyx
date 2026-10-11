@@ -26,7 +26,7 @@ data class SearchResult(
 object GlobalSearchEngine {
 
     private const val MAX_MATCHES_LIMIT = 500
-    private const val MAX_FILE_SIZE_BYTES = 2L * 1024L * 1024L // 2 MB per file
+    private const val MAX_FILE_SIZE_BYTES = 2L * 1024L * 1024L
 
     private val IGNORED_DIRECTORIES = setOf(
         ".git", ".gradle", ".idea", "build", "node_modules", "target", "dist", ".agents",
@@ -44,7 +44,8 @@ object GlobalSearchEngine {
             return SearchResult(query, emptyList(), 0, 0)
         }
 
-        val pattern = buildRegexPattern(query, isRegex, matchCase, wholeWord) ?: return SearchResult(query, emptyList(), 0, 0)
+        val pattern = buildRegexPattern(query, isRegex, matchCase, wholeWord)
+            ?: return SearchResult(query, emptyList(), 0, 0)
         val filterRegex = fileFilter?.takeIf { it.isNotBlank() }?.let { globToRegex(it) }
 
         val canonicalRoot = workspaceDir.canonicalFile
@@ -53,9 +54,7 @@ object GlobalSearchEngine {
         var isTruncated = false
 
         canonicalRoot.walkTopDown()
-            .onEnter { dir ->
-                dir == canonicalRoot || dir.name !in IGNORED_DIRECTORIES
-            }
+            .onEnter { dir -> dir == canonicalRoot || dir.name !in IGNORED_DIRECTORIES }
             .filter { file ->
                 file.isFile && file.length() <= MAX_FILE_SIZE_BYTES &&
                     (filterRegex == null || filterRegex.matches(file.name))
@@ -109,9 +108,7 @@ object GlobalSearchEngine {
         )
     }
 
-    /**
-     * Replaces occurrences of [query] in a specific file.
-     */
+    /** Replaces occurrences of [query] in a specific file. */
     fun replaceInFile(
         file: File,
         query: String,
@@ -122,7 +119,7 @@ object GlobalSearchEngine {
     ): Int {
         if (!file.isFile || query.isEmpty()) return 0
         val pattern = buildRegexPattern(query, isRegex, matchCase, wholeWord) ?: return 0
-        val original = file.readText(Charsets.UTF_8)
+        val original = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return 0
         val matcher = pattern.matcher(original)
         var count = 0
         val sb = StringBuffer()
@@ -132,14 +129,14 @@ object GlobalSearchEngine {
         }
         matcher.appendTail(sb)
 
-        if (count > 0) {
-            SafeFileOps.atomicWriteText(file, sb.toString())
-        }
+        if (count > 0 && !SafeFileOps.atomicWriteText(file, sb.toString())) return 0
         return count
     }
 
     /**
-     * Replaces all occurrences across all matched files in workspace.
+     * Replaces matches in every eligible workspace file. This deliberately does not
+     * use the UI search result list because that list is capped for responsiveness;
+     * a capped preview must never silently cap a destructive replace operation.
      */
     fun replaceAll(
         workspaceDir: File,
@@ -150,12 +147,22 @@ object GlobalSearchEngine {
         wholeWord: Boolean = false,
         fileFilter: String? = null,
     ): Int {
-        val search = search(workspaceDir, query, isRegex, matchCase, wholeWord, fileFilter)
-        val uniqueFiles = search.matches.map { File(workspaceDir, it.filePath) }.distinct()
+        if (query.isEmpty() || !workspaceDir.isDirectory ||
+            buildRegexPattern(query, isRegex, matchCase, wholeWord) == null
+        ) return 0
+
+        val canonicalRoot = workspaceDir.canonicalFile
+        val filterRegex = fileFilter?.takeIf { it.isNotBlank() }?.let { globToRegex(it) }
         var totalReplaced = 0
-        for (file in uniqueFiles) {
-            totalReplaced += replaceInFile(file, query, replacement, isRegex, matchCase, wholeWord)
-        }
+        canonicalRoot.walkTopDown()
+            .onEnter { dir -> dir == canonicalRoot || dir.name !in IGNORED_DIRECTORIES }
+            .filter { file ->
+                file.isFile && file.length() <= MAX_FILE_SIZE_BYTES &&
+                    (filterRegex == null || filterRegex.matches(file.name))
+            }
+            .forEach { file ->
+                totalReplaced += replaceInFile(file, query, replacement, isRegex, matchCase, wholeWord)
+            }
         return totalReplaced
     }
 
@@ -164,14 +171,12 @@ object GlobalSearchEngine {
         isRegex: Boolean,
         matchCase: Boolean,
         wholeWord: Boolean,
-    ): Pattern? {
-        return runCatching {
-            val baseRegex = if (isRegex) query else Pattern.quote(query)
-            val wordRegex = if (wholeWord) "\\b$baseRegex\\b" else baseRegex
-            val flags = if (matchCase) 0 else Pattern.CASE_INSENSITIVE
-            Pattern.compile(wordRegex, flags)
-        }.getOrNull()
-    }
+    ): Pattern? = runCatching {
+        val baseRegex = if (isRegex) query else Pattern.quote(query)
+        val wordRegex = if (wholeWord) "\\b$baseRegex\\b" else baseRegex
+        val flags = if (matchCase) 0 else Pattern.CASE_INSENSITIVE
+        Pattern.compile(wordRegex, flags)
+    }.getOrNull()
 
     private fun globToRegex(glob: String): Regex {
         val pattern = glob
