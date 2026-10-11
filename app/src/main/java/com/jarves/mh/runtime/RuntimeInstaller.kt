@@ -1098,7 +1098,7 @@ class RuntimeInstaller(private val context: Context) {
                 val gccVer = runCatching {
                     runGuest(runtime.proot, "gcc -dumpversion")
                 }.getOrNull()?.takeIf { it.isNotBlank() } ?: "10.2"
-                File(rootfs, ".pocket-cpp-tools-version").writeText(gccVer)
+                writeTextAtomically(File(rootfs, ".pocket-cpp-tools-version"), gccVer)
                 onProgress(RuntimeInstallProgress("C/C++ tools updated (GCC $gccVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.PHP -> {
@@ -1144,7 +1144,7 @@ class RuntimeInstaller(private val context: Context) {
                     runGuest(runtime.proot, "composer --version").split(" ").getOrNull(2)
                 }.getOrNull()
                 val phpVer = if (composerVer != null) "8.4 (Composer $composerVer)" else "8.4"
-                File(rootfs, ".pocket-php-tools-version").writeText(phpVer)
+                writeTextAtomically(File(rootfs, ".pocket-php-tools-version"), phpVer)
                 onProgress(RuntimeInstallProgress("PHP and Composer updated to latest ($phpVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.BROWSER -> {
