@@ -84,6 +84,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         var pendingCheckpointDir: File? = null
         var checkpointPublished = false
         return runCatching {
+            check(workspaceDir.isDirectory) { "Workspace is unavailable" }
             val id = "ckpt_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
             val checkpointDir = File(checkpointsBaseDir(projectId), id)
             pendingCheckpointDir = checkpointDir
