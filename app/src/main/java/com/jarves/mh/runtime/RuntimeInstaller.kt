@@ -158,6 +158,14 @@ class RuntimeInstaller(private val context: Context) {
         val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
         require(proot.canExecute()) { "The embedded PRoot launcher is unavailable" }
 
+        // Recover a prior runtime if the process died between moving the old rootfs
+        // aside and activating the staged replacement.
+        RuntimeDirectoryTransaction.recoverPrevious(
+            target = rootfs,
+            backup = File(runtimeDir, "ubuntu.previous"),
+            isTargetValid = ::isRootfsCoreValid,
+        )
+
         if (!File(rootfs, "usr/bin/bash").exists() || rootfsMarker.readTextOrNull() != ROOTFS_VERSION) {
             onProgress(RuntimeInstallProgress("Preparing the private development runtime", 0.03f))
             val archive = obtainRuntimeBundle(
@@ -169,15 +177,26 @@ class RuntimeInstaller(private val context: Context) {
             )
             onProgress(RuntimeInstallProgress("Verifying and unpacking the Core runtime", 0.28f))
             val staging = File(runtimeDir, "ubuntu.installing")
-            staging.deleteRecursively()
-            staging.mkdirs()
+            check(staging.deleteRecursively() || !staging.exists()) { "Could not clear incomplete runtime staging directory" }
+            check(staging.mkdirs() || staging.isDirectory) { "Could not create runtime staging directory" }
             extractZstdTar(archive, staging)
             stripMacosMetadataArtifacts(staging)
-            require(File(staging, "usr/bin/bash").isFile) { "Core bundle is missing Bash" }
-            rootfs.deleteRecursively()
-            check(staging.renameTo(rootfs)) { "Could not activate the Linux environment" }
-            check(ensureRootfsCompatibilityLinks()) { "Core runtime has an invalid Linux filesystem layout" }
-            writeResolver()
+            require(isRootfsCoreValid(staging)) { "Core bundle is missing Bash or the expected runtime marker" }
+            check(ensureRootfsCompatibilityLinks(staging)) { "Core runtime has an invalid Linux filesystem layout" }
+
+            RuntimeDirectoryTransaction.activate(
+                staging = staging,
+                target = rootfs,
+                backup = File(runtimeDir, "ubuntu.previous"),
+                isTargetValid = ::isRootfsCoreValid,
+                validateActivated = { activated ->
+                    check(isRootfsCoreValid(activated)) { "Activated runtime failed core validation" }
+                    check(ensureRootfsCompatibilityLinks(activated)) {
+                        "Core runtime has an invalid Linux filesystem layout"
+                    }
+                    writeResolver()
+                },
+            )
             if (archive.parentFile == downloads) archive.delete()
         }
 
@@ -2100,8 +2119,13 @@ class RuntimeInstaller(private val context: Context) {
      * making every ELF executable misleadingly fail with ENOENT. Restore only
      * the known Ubuntu compatibility links and never replace real directories.
      */
-    private fun ensureRootfsCompatibilityLinks(): Boolean {
-        if (!rootfs.isDirectory) return false
+    private fun isRootfsCoreValid(directory: File): Boolean =
+        directory.isDirectory &&
+            File(directory, "usr/bin/bash").isFile &&
+            File(directory, ".pocket-rootfs-version").readTextOrNull() == ROOTFS_VERSION
+
+    private fun ensureRootfsCompatibilityLinks(directory: File = rootfs): Boolean {
+        if (!directory.isDirectory) return false
         val links = mapOf(
             "bin" to "usr/bin",
             "lib" to "usr/lib",
@@ -2109,7 +2133,7 @@ class RuntimeInstaller(private val context: Context) {
         )
         return runCatching {
             links.forEach { (name, destination) ->
-                val link = File(rootfs, name)
+                val link = File(directory, name)
                 val path = link.toPath()
                 if (java.nio.file.Files.isSymbolicLink(path)) {
                     if (java.nio.file.Files.readSymbolicLink(path).toString() != destination) {
@@ -2122,9 +2146,9 @@ class RuntimeInstaller(private val context: Context) {
                     Os.symlink(destination, link.absolutePath)
                 }
             }
-            File(rootfs, "usr/bin/env").canExecute() &&
-                File(rootfs, "usr/bin/bash").canExecute() &&
-                File(rootfs, "lib/ld-linux-aarch64.so.1").exists()
+            File(directory, "usr/bin/env").canExecute() &&
+                File(directory, "usr/bin/bash").canExecute() &&
+                File(directory, "lib/ld-linux-aarch64.so.1").exists()
         }.onFailure {
             android.util.Log.e("RuntimeInstaller", "Could not repair Linux compatibility links", it)
         }.getOrDefault(false)
