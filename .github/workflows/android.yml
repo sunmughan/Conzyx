@@ -13,6 +13,11 @@ on:
       - v2
   workflow_dispatch:
 
+# Keep only the newest verification run active per branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   actions: read
