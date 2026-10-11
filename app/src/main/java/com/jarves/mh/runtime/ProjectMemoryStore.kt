@@ -7,9 +7,14 @@ import java.io.File
 import java.util.UUID
 
 enum class MemoryCategory {
+    PROJECT,
     ARCHITECTURE,
-    ERROR_FIX,
     USER_PREFERENCE,
+    SESSION,
+    CONVERSATION,
+    ERROR,
+    PREVIOUS_IMPLEMENTATION,
+    ERROR_FIX,
     CONVENTION,
     DEPENDENCY,
 }
@@ -79,9 +84,62 @@ class ProjectMemoryStore(private val baseDir: File) {
         return newItem
     }
 
+    fun recordProjectMetadata(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.PROJECT, key, content, confidence)
+
+    fun recordArchitectureRule(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.ARCHITECTURE, key, content, confidence)
+
+    fun recordUserPreference(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.USER_PREFERENCE, key, content, confidence)
+
+    fun recordSessionGoal(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.SESSION, key, content, confidence)
+
+    fun recordConversationDecision(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.CONVERSATION, key, content, confidence)
+
+    fun recordErrorFix(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.ERROR, key, content, confidence)
+
+    fun recordPreviousImplementation(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
+        record(projectId, MemoryCategory.PREVIOUS_IMPLEMENTATION, key, content, confidence)
+
     fun getMemories(projectId: String, category: MemoryCategory? = null): List<ProjectMemoryItem> {
         val snapshot = load(projectId)
         return if (category == null) snapshot.items else snapshot.items.filter { it.category == category }
+    }
+
+    /**
+     * Searches memories by query string across key and content, ranked by relevance and confidence.
+     */
+    fun search(projectId: String, query: String, limit: Int = 10): List<ProjectMemoryItem> {
+        val tokens = query.lowercase().split(Regex("[^a-zA-Z0-9_]")).filter { it.length > 2 }
+        if (tokens.isEmpty()) return getMemories(projectId).take(limit)
+
+        val items = load(projectId).items
+        return items.map { item ->
+            val keyLower = item.key.lowercase()
+            val contentLower = item.content.lowercase()
+            var score = 0
+            tokens.forEach { token ->
+                if (keyLower.contains(token)) score += 3
+                if (contentLower.contains(token)) score += 1
+            }
+            item to (score * item.confidence)
+        }
+            .filter { it.second > 0f }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .take(limit)
+    }
+
+    fun deleteMemory(projectId: String, id: String): Boolean {
+        val snapshot = load(projectId)
+        val filtered = snapshot.items.filterNot { it.id == id }
+        if (filtered.size == snapshot.items.size) return false
+        persist(projectId, filtered)
+        return true
     }
 
     fun clear(projectId: String) {
