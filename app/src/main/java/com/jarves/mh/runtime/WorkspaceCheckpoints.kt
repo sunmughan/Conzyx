@@ -6,7 +6,11 @@ import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.DiffLine
 import com.jarves.mh.model.DiffLineType
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 
@@ -57,6 +61,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     }
 
     fun createCheckpoint(projectId: String, workspace: File) {
+        require(workspace.isDirectory) { "Workspace is unavailable; preserving the last known-good checkpoint" }
         val checkpoint = checkpointDir(projectId)
         // Keep the original baseline until every pending file is accepted or undone.
         if (File(checkpoint, "project").isDirectory && File(checkpoint, "changes.json").isFile) {
@@ -67,30 +72,73 @@ class WorkspaceCheckpoints(private val filesDir: File) {
             }
             return
         }
-        checkpoint.deleteRecursively()
-        val backup = File(checkpoint, "project").apply { mkdirs() }
-        val workspacePath = workspace.canonicalFile.toPath()
-        workspace.walkTopDown()
-            .onEnter { directory ->
-                val relative = if (directory == workspace) "" else directory.relativeTo(workspace).invariantSeparatorsPath
-                directory == workspace || (!isInternalRuntimePath(relative) &&
-                    !java.nio.file.Files.isSymbolicLink(directory.toPath()) &&
-                        runCatching { directory.canonicalFile.toPath().startsWith(workspacePath) }.getOrDefault(false)
-                    )
+
+        val parent = checkpoint.parentFile ?: error("Checkpoint parent is unavailable")
+        check(parent.mkdirs() || parent.isDirectory) { "Could not create checkpoint parent" }
+        val staging = File(parent, "${checkpoint.name}.staging_${UUID.randomUUID()}")
+        val previous = File(parent, "${checkpoint.name}.previous_${UUID.randomUUID()}")
+        var previousMoved = false
+        try {
+            val backup = File(staging, "project")
+            check(backup.mkdirs()) { "Could not create checkpoint staging directory" }
+            val canonicalWorkspace = workspace.canonicalFile
+            val workspacePath = canonicalWorkspace.toPath()
+            canonicalWorkspace.walkTopDown()
+                .onEnter { directory ->
+                    val relative = if (directory == canonicalWorkspace) "" else directory.relativeTo(canonicalWorkspace).invariantSeparatorsPath
+                    directory == canonicalWorkspace || (!isInternalRuntimePath(relative) &&
+                        !Files.isSymbolicLink(directory.toPath()) &&
+                        runCatching { directory.canonicalFile.toPath().startsWith(workspacePath) }.getOrDefault(false))
+                }
+                .filter {
+                    it.isFile &&
+                        !isInternalRuntimePath(it.relativeTo(canonicalWorkspace).invariantSeparatorsPath) &&
+                        !Files.isSymbolicLink(it.toPath())
+                }
+                .forEach { source ->
+                    val relative = source.relativeTo(canonicalWorkspace).invariantSeparatorsPath
+                    val destination = safeWorkspaceFile(backup, relative)
+                    check(destination.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
+                        "Could not create checkpoint directory for $relative"
+                    }
+                    check(SafeFileOps.atomicCopy(source, destination)) { "Could not safely copy ${source.path}" }
+                }
+            check(SafeFileOps.atomicWriteText(File(staging, "changes.json"), "[]")) {
+                "Could not initialize checkpoint change manifest"
             }
-            .filter {
-                it.isFile &&
-                    !isInternalRuntimePath(it.relativeTo(workspace).invariantSeparatorsPath) &&
-                    !java.nio.file.Files.isSymbolicLink(it.toPath())
+
+            // Publish only a complete snapshot. The previous baseline is retained until
+            // the staged directory has been moved into place successfully.
+            if (checkpoint.exists() || Files.isSymbolicLink(checkpoint.toPath())) {
+                moveDirectory(checkpoint, previous)
+                previousMoved = true
             }
-            .forEach { source ->
-                val relative = source.relativeTo(workspace).invariantSeparatorsPath
-                val destination = safeWorkspaceFile(backup, relative)
-                destination.parentFile?.mkdirs()
-                check(SafeFileOps.atomicCopy(source, destination)) { "Could not safely copy ${source.path}" }
+            try {
+                moveDirectory(staging, checkpoint)
+            } catch (publishFailure: Exception) {
+                if (previousMoved && !checkpoint.exists()) moveDirectory(previous, checkpoint)
+                previousMoved = false
+                throw publishFailure
             }
-        check(SafeFileOps.atomicWriteText(File(checkpoint, "changes.json"), "[]")) {
-            "Could not initialize checkpoint change manifest"
+            if (previousMoved) {
+                check(previous.deleteRecursively() || !previous.exists()) {
+                    "New checkpoint published, but stale previous checkpoint could not be removed"
+                }
+                previousMoved = false
+            }
+        } finally {
+            staging.deleteRecursively()
+            if (previousMoved && !checkpoint.exists() && previous.exists()) {
+                runCatching { moveDirectory(previous, checkpoint) }
+            }
+        }
+    }
+
+    private fun moveDirectory(source: File, target: File) {
+        try {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), target.toPath())
         }
     }
 
@@ -258,12 +306,20 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     }
 
     fun safeWorkspaceFile(root: File, relative: String): File {
-        require(relative.isNotBlank() && !relative.startsWith('/')) { "Unsafe workspace path" }
-        val file = File(root, relative)
+        require(relative.isNotBlank() && !relative.startsWith('/') && !relative.contains('\\\\')) {
+            "Unsafe workspace path"
+        }
+        val segments = relative.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe workspace path" }
         val rootPath = root.canonicalFile.toPath()
-        val parentPath = (file.parentFile ?: root).canonicalFile.toPath()
-        require(parentPath.startsWith(rootPath)) { "Workspace path escapes project" }
-        return file
+        var current = root
+        for (segment in segments) {
+            current = File(current, segment)
+            require(!Files.isSymbolicLink(current.toPath())) { "Workspace path traverses a symbolic link" }
+        }
+        val filePath = current.canonicalFile.toPath()
+        require(filePath.startsWith(rootPath)) { "Workspace path escapes project" }
+        return current
     }
 
     fun snapshot(root: File): Map<String, String> = root.walkTopDown()
