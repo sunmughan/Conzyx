@@ -166,7 +166,7 @@ class RuntimeInstaller(private val context: Context) {
             isTargetValid = ::isRootfsCoreValid,
         )
 
-        if (!File(rootfs, "usr/bin/bash").exists() || rootfsMarker.readTextOrNull() != ROOTFS_VERSION) {
+        if (!isRootfsCoreValid(rootfs)) {
             onProgress(RuntimeInstallProgress("Preparing the private development runtime", 0.03f))
             val archive = obtainRuntimeBundle(
                 CORE_BUNDLE,
