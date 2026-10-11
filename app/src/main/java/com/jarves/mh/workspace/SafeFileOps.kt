@@ -33,6 +33,7 @@ object SafeFileOps {
                 fos.flush()
                 runCatching { fos.fd.sync() }
             }
+            if (target.isFile) preservePermissions(target, tempFile)
 
             replaceFromTemp(tempFile, target)
             true
@@ -61,12 +62,20 @@ object SafeFileOps {
                     runCatching { output.fd.sync() }
                 }
             }
+            preservePermissions(source, tempFile)
             replaceFromTemp(tempFile, target)
             true
         } catch (e: Exception) {
             AppCrashLogger.log("SafeFileOps atomic copy failed for ${target.path}: ${e.message}")
             runCatching { tempFile.delete() }
             false
+        }
+    }
+
+    private fun preservePermissions(source: File, target: File) {
+        runCatching {
+            val permissions = Files.getPosixFilePermissions(source.toPath())
+            Files.setPosixFilePermissions(target.toPath(), permissions)
         }
     }
 
