@@ -145,4 +145,31 @@ class FileOperationsControllerTest {
         assertTrue(moveResult.isFailure)
         assertTrue(moveResult.exceptionOrNull() is FileOperationsController.FileOpError.SecurityViolation)
     }
+
+    @Test
+    fun `file operations reject symlink targets without modifying outside files`() {
+        val outside = tempFolder.newFolder("outside_workspace")
+        val protected = File(outside, "protected.txt").apply { writeText("keep me") }
+        java.nio.file.Files.createSymbolicLink(
+            File(workspaceDir, "linked.txt").toPath(),
+            protected.toPath(),
+        )
+
+        val create = controller.createFile(workspaceDir, "linked.txt", "overwrite")
+        val delete = controller.deleteEntry(workspaceDir, "linked.txt")
+        val rename = controller.renameEntry(workspaceDir, "linked.txt", "renamed.txt")
+
+        assertTrue(create.isFailure)
+        assertTrue(delete.isFailure)
+        assertTrue(rename.isFailure)
+        assertEquals("keep me", protected.readText())
+        assertTrue(java.nio.file.Files.isSymbolicLink(File(workspaceDir, "linked.txt").toPath()))
+    }
+
+    @Test
+    fun `file operations reject absolute and dot-segment paths`() {
+        assertTrue(controller.createFile(workspaceDir, "/absolute.txt", "bad").isFailure)
+        assertTrue(controller.createFile(workspaceDir, "nested/../escape.txt", "bad").isFailure)
+        assertFalse(File(workspaceDir, "escape.txt").exists())
+    }
 }
