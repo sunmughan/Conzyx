@@ -687,7 +687,7 @@ class RuntimeInstaller(private val context: Context) {
         val claude = File(rootfs, CLAUDE_GUEST_PATH.removePrefix("/"))
         claude.parentFile?.mkdirs()
         val staged = File(claude.parentFile, ".claude-$latest.installing")
-        check(SafeFileOps.atomicCopy(downloaded, staged)) { "Could not safely activate downloaded ${label} binary" }
+        check(SafeFileOps.atomicCopy(downloaded, staged)) { "Could not safely activate downloaded Claude Code binary" }
         Os.chmod(staged.absolutePath, 0b111101101)
         Os.rename(staged.absolutePath, claude.absolutePath)
         downloaded.delete()
