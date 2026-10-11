@@ -244,6 +244,16 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         check(SafeFileOps.atomicWriteText(indexFile(projectId), arr.toString(2))) { "Could not persist checkpoint index" }
     }
 
+    private fun safeWorkspaceFile(root: File, relativePath: String): File {
+        require(relativePath.isNotBlank() && !relativePath.startsWith('/')) { "Unsafe checkpoint path" }
+        require(relativePath.split('/').none { it == ".." }) { "Unsafe checkpoint path" }
+        val destination = File(root, relativePath)
+        val rootPath = root.canonicalFile.toPath()
+        val parentPath = (destination.parentFile ?: root).canonicalFile.toPath()
+        require(parentPath.startsWith(rootPath)) { "Checkpoint path escapes workspace" }
+        return destination
+    }
+
     private fun isIgnored(file: File, base: File): Boolean {
         val rel = file.relativeTo(base).invariantSeparatorsPath
         return rel.startsWith(".git/") ||
