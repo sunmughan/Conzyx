@@ -167,9 +167,14 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                 .toList()
             if (backupFiles.size != metadata.optInt("fileCount", -1)) return false
 
+            // Validate every destination before the first write. A single symlink or
+            // traversal entry must not leave the workspace partially rolled back.
+            val relativePaths = backupFiles.map { it.relativeTo(backupDir).invariantSeparatorsPath }
+            relativePaths.forEach { safeWorkspaceFile(canonicalWorkspace, it) }
+
             // Restore every backed-up file atomically first. If any write fails, do not
             // delete newer workspace files; the user can retry without losing them.
-            val restoredPaths = backupFiles.map { it.relativeTo(backupDir).invariantSeparatorsPath }.toSet()
+            val restoredPaths = relativePaths.toSet()
             for (sourceFile in backupFiles) {
                 val relativePath = sourceFile.relativeTo(backupDir).invariantSeparatorsPath
                 if (isIgnored(File(canonicalWorkspace, relativePath), canonicalWorkspace)) continue
@@ -303,12 +308,24 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
     }
 
     private fun safeWorkspaceFile(root: File, relativePath: String): File {
-        require(relativePath.isNotBlank() && !relativePath.startsWith('/')) { "Unsafe checkpoint path" }
-        require(relativePath.split('/').none { it == ".." }) { "Unsafe checkpoint path" }
-        val destination = File(root, relativePath)
+        require(
+            relativePath.isNotBlank() &&
+                !relativePath.startsWith('/') &&
+                !relativePath.contains('\\\\'),
+        ) { "Unsafe checkpoint path" }
+        val segments = relativePath.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe checkpoint path" }
         val rootPath = root.canonicalFile.toPath()
-        val parentPath = (destination.parentFile ?: root).canonicalFile.toPath()
-        require(parentPath.startsWith(rootPath)) { "Checkpoint path escapes workspace" }
+        var destination = root
+        for (segment in segments) {
+            destination = File(destination, segment)
+            require(!java.nio.file.Files.isSymbolicLink(destination.toPath())) {
+                "Checkpoint path traverses a symbolic link"
+            }
+        }
+        require(destination.canonicalFile.toPath().startsWith(rootPath)) {
+            "Checkpoint path escapes workspace"
+        }
         return destination
     }
 
