@@ -29,6 +29,9 @@ class WorkspaceCheckpoints(private val filesDir: File) {
         validateProjectId(projectId)
         val storageRoot = filesDir.canonicalFile
         val workspacesRoot = File(storageRoot, "workspaces")
+        require(!Files.isSymbolicLink(workspacesRoot.toPath())) {
+            "Workspace storage root cannot be a symbolic link"
+        }
         check(workspacesRoot.mkdirs() || workspacesRoot.isDirectory) { "Workspace storage is unavailable" }
         val canonicalWorkspacesRoot = workspacesRoot.canonicalFile
         require(canonicalWorkspacesRoot.toPath().startsWith(storageRoot.toPath())) {
@@ -70,9 +73,17 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     fun checkpointDir(projectId: String): File {
         validateProjectId(projectId)
         val storageRoot = filesDir.canonicalFile.toPath()
-        val checkpointsRoot = File(filesDir, "checkpoints").canonicalFile
+        val checkpointsRootFile = File(filesDir, "checkpoints")
+        require(!Files.isSymbolicLink(checkpointsRootFile.toPath())) {
+            "Checkpoint storage root cannot be a symbolic link"
+        }
+        val checkpointsRoot = checkpointsRootFile.canonicalFile
         require(checkpointsRoot.toPath().startsWith(storageRoot)) { "Checkpoint storage escapes app storage" }
-        val projectRoot = File(checkpointsRoot, projectId).canonicalFile
+        val projectRootFile = File(checkpointsRoot, projectId)
+        require(!Files.isSymbolicLink(projectRootFile.toPath())) {
+            "Checkpoint project directory cannot be a symbolic link"
+        }
+        val projectRoot = projectRootFile.canonicalFile
         require(projectRoot.toPath().startsWith(checkpointsRoot.toPath())) { "Checkpoint project path escapes storage" }
         val latest = File(projectRoot, "latest")
         require(!Files.isSymbolicLink(latest.toPath())) { "Checkpoint path must not be a symbolic link" }
