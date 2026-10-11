@@ -24,8 +24,11 @@ data class WorkspaceCheckpoint(
 
 class WorkspaceCheckpointManager(private val filesDir: File) {
 
-    private fun checkpointsBaseDir(projectId: String): File =
-        File(filesDir, "checkpoints/$projectId/snapshots").apply { mkdirs() }
+    private fun checkpointsBaseDir(projectId: String): File {
+        require(projectId.isNotBlank() && !projectId.contains('/') && !projectId.contains('\\\\') &&
+            projectId != "." && projectId != "..") { "Invalid project ID" }
+        return File(filesDir, "checkpoints/$projectId/snapshots").apply { mkdirs() }
+    }
 
     private fun indexFile(projectId: String): File =
         File(checkpointsBaseDir(projectId), "checkpoints_index.json")
@@ -198,7 +201,11 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         if (!metaFile.isFile || !backupDir.isDirectory) return false
         return runCatching {
             val json = JSONObject(metaFile.readText())
-            json.getString("id") == checkpointId && json.getString("projectId") == projectId
+            val actualFileCount = backupDir.walkTopDown()
+                .count { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+            json.getString("id") == checkpointId &&
+                json.getString("projectId") == projectId &&
+                json.optInt("fileCount", -1) == actualFileCount
         }.getOrDefault(false)
     }
 
