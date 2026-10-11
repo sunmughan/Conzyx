@@ -311,7 +311,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         require(
             relativePath.isNotBlank() &&
                 !relativePath.startsWith('/') &&
-                !relativePath.contains('\\\\'),
+                !relativePath.contains('\\'),
         ) { "Unsafe checkpoint path" }
         val segments = relativePath.split('/')
         require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe checkpoint path" }
