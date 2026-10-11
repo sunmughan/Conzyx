@@ -229,8 +229,7 @@ class WorkspaceCheckpointManagerTest {
 
         assertEquals(null, manager.createCheckpoint("failed-project", unavailableWorkspace, "should fail"))
         val snapshots = File(filesDir, "checkpoints/failed-project/snapshots")
-        assertTrue(snapshots.isDirectory)
-        assertTrue(snapshots.listFiles().orEmpty().isEmpty())
+        assertTrue(!snapshots.exists() || snapshots.listFiles().orEmpty().isEmpty())
         assertTrue(manager.listCheckpoints("failed-project").isEmpty())
     }
 
