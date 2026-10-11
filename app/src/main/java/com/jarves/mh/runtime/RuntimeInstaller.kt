@@ -1539,7 +1539,7 @@ class RuntimeInstaller(private val context: Context) {
                 rootfs = rootfs,
                 backupRoot = File(runtimeDir, "overlay-$overlayName.backup"),
             ),
-        ) { "Could not safely apply ${bundle.label} overlay; the previous files were restored" }
+        ) { "Could not safely apply ${bundle.label} overlay; rollback was attempted. Inspect retained backup data if recovery is incomplete." }
         overlayStaging.deleteRecursively()
         if (archive.parentFile == downloads) archive.delete()
         onProgress(RuntimeInstallProgress("${bundle.label} tools installed", to))
