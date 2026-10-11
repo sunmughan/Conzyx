@@ -13,15 +13,23 @@ class OnlineGoogleSignInHandler : GoogleSignInHandler {
 
     override suspend fun requestGoogleIdToken(context: Context): Result<String> {
         return runCatching {
-            val pkgResId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            val namespaceResId = if (pkgResId == 0) {
-                context.resources.getIdentifier("default_web_client_id", "string", "com.jarves.mh")
-            } else 0
-            val resId = if (pkgResId != 0) pkgResId else namespaceResId
-            val serverClientId = if (resId != 0) {
-                context.getString(resId)
-            } else {
-                "1002286704211-lbuun3ktfpg16j7puv6ndc78pdlp3fcm.apps.googleusercontent.com"
+            // The Google Services Gradle plugin generates this from the Web OAuth
+            // client (client_type = 3) in app/google-services.json. Do not silently
+            // fall back to a hard-coded client ID: a stale ID can hide Firebase
+            // project/package configuration errors.
+            val resourceId = context.resources.getIdentifier(
+                "default_web_client_id",
+                "string",
+                context.packageName,
+            )
+            check(resourceId != 0) {
+                "Google Sign-In is not configured in this build: default_web_client_id is missing. " +
+                    "Verify app/google-services.json belongs to Firebase project codeair-tech, " +
+                    "contains the Web OAuth client, and the Google Services Gradle plugin ran."
+            }
+            val serverClientId = context.getString(resourceId).trim()
+            check(serverClientId.endsWith(".apps.googleusercontent.com")) {
+                "Google Sign-In configuration is invalid: default_web_client_id is not a valid OAuth client ID."
             }
 
             val credentialManager = CredentialManager.create(context)
@@ -42,14 +50,28 @@ class OnlineGoogleSignInHandler : GoogleSignInHandler {
             if (throwable is GetCredentialCancellationException) {
                 throw GoogleSignInCancelledException()
             }
-            AppCrashLogger.log("GoogleSignIn failed: ${throwable.message}")
+
+            AppCrashLogger.log("GoogleSignIn failed: ${throwable.javaClass.name}: ${throwable.message}")
             val message = throwable.message.orEmpty()
-            if (message.contains("10") || message.contains("Developer error", ignoreCase = true) || message.contains("DEVELOPER_ERROR", ignoreCase = true)) {
-                throw Exception("Google Sign-In configuration error (Developer Error 10): App's SHA-1 fingerprint is missing in Firebase Console for package 'com.codeair.mhe' under project 'codeair-tech'. Add your SHA-1 fingerprint under Firebase Console → Project Settings → Android apps.")
-            } else if (message.contains("16") || message.contains("Cannot find a matching credential", ignoreCase = true) || message.contains("No credential", ignoreCase = true)) {
-                throw Exception("No Google account selected or credentials unavailable on this device.")
+            val isDeveloperError10 =
+                message.contains("DEVELOPER_ERROR", ignoreCase = true) ||
+                    Regex("""(?i)(?:error|status)(?: code)?\s*[:=]?\s*10(?:\D|$)""").containsMatchIn(message)
+
+            when {
+                isDeveloperError10 -> throw Exception(
+                    "Google Sign-In returned Developer Error 10. Check that Google Sign-In is enabled " +
+                        "in Firebase Authentication, and that the Android OAuth client for package " +
+                        "'com.codeair.mhe' has the SHA-1 fingerprint of the certificate that signed " +
+                        "this exact APK (debug, CI, or release). Then download a fresh google-services.json."
+                )
+                message.contains("Cannot find a matching credential", ignoreCase = true) ||
+                    message.contains("No credential", ignoreCase = true) ->
+                    throw Exception(
+                        "No eligible Google credential was returned. Confirm a Google account is available " +
+                            "on the device and Google Play services/credential providers are up to date."
+                    )
+                else -> throw throwable
             }
-            throw throwable
         }
     }
 }
