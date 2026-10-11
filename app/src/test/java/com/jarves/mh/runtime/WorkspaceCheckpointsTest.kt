@@ -33,6 +33,31 @@ class WorkspaceCheckpointsTest {
         assertEquals(listOf("src/App.kt"), checkpoints.readChangedPaths("project-1"))
     }
 
+
+    @Test
+    fun `checkpoint recovers changed paths after a crash before manifest update`() {
+        val filesDir = tempFolder.newFolder("crash-recovery-files")
+        val workspace = tempFolder.newFolder("crash-recovery-workspace")
+        val source = File(workspace, "src/App.kt").apply {
+            parentFile!!.mkdirs()
+            writeText("fun main() = println(1)")
+        }
+        val firstProcess = WorkspaceCheckpoints(filesDir)
+        firstProcess.createCheckpoint("project-crash", workspace)
+        assertTrue(File(firstProcess.checkpointDir("project-crash"), "changes.json").isFile)
+
+        // Simulate an agent changing a file, then process death before saveChangedPaths().
+        source.writeText("fun main() = println(2)")
+        val restarted = WorkspaceCheckpoints(filesDir)
+        restarted.createCheckpoint("project-crash", workspace)
+
+        assertEquals(listOf("src/App.kt"), restarted.readChangedPaths("project-crash"))
+        assertEquals(
+            "fun main() = println(1)",
+            File(restarted.checkpointDir("project-crash"), "project/src/App.kt").readText(),
+        )
+    }
+
     @Test
     fun `changed path manifest merges unique safe paths and persists across instances`() {
         val filesDir = tempFolder.newFolder("app-files")
