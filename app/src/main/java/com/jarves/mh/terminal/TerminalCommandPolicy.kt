@@ -5,6 +5,11 @@ package com.jarves.mh.terminal
  * detection, package-manager interaction rules and URL parsing can be tested directly.
  */
 object TerminalCommandPolicy {
+    private val ansiTerminalSequence = Regex("\\u001B(?:\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)|\\[[0-?]*[ -/]*[@-~]|[()][A-Z0-9])")
+
+    fun sanitizeTerminalOutput(text: String): String = text
+        .replace(ansiTerminalSequence, "")
+        .filter { it == '\n' || it == '\r' || it == '\t' || it.code >= 0x20 }
 
     /**
      * Package management must never block on Y/N, locale, timezone, service-restart,
