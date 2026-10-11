@@ -314,6 +314,7 @@ fun PocketDevApp(
     var showTeamStudioScreen by rememberSaveable { mutableStateOf(false) }
     var showCloudHybridScreen by rememberSaveable { mutableStateOf(false) }
     var showCollaborationScreen by rememberSaveable { mutableStateOf(false) }
+    var showMarketplaceScreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -402,6 +403,19 @@ fun PocketDevApp(
         return
     }
 
+    if (showMarketplaceScreen) {
+        MarketplaceScreen(
+            onBack = { showMarketplaceScreen = false },
+            onInstallItem = { item ->
+                viewModel.showToast("Marketplace: installed ${item.name}")
+            },
+            onUninstallItem = { item ->
+                viewModel.showToast("Marketplace: uninstalled ${item.name}")
+            },
+        )
+        return
+    }
+
     when {
         state.startupStage == StartupStage.CHECKING -> StartupLoadingScreen(
             state = state,
@@ -470,6 +484,10 @@ fun PocketDevApp(
                 themeMode = state.themeMode,
                 onToggleTheme = viewModel::toggleTheme,
                 onContinue = viewModel::finishBackgroundSetup,
+            )
+        state.showAppTour && state.startupStage == StartupStage.READY ->
+            ProductOnboardingScreen(
+                onComplete = viewModel::finishAppTour,
             )
         state.readOnlyProject != null -> ReadOnlyProjectScreen(
             state = state,
@@ -555,6 +573,7 @@ fun PocketDevApp(
             onOpenTeamStudio = { showTeamStudioScreen = true },
             onOpenCloudHybrid = { showCloudHybridScreen = true },
             onOpenCollaboration = { showCollaborationScreen = true },
+            onOpenMarketplace = { showMarketplaceScreen = true },
         )
         else -> RootScreenHost(
             state = state,
@@ -2516,6 +2535,9 @@ private fun RootScreenHost(
                     onInstallItem = { item ->
                         viewModel.showToast("Marketplace: installed ${item.name}")
                     },
+                    onUninstallItem = { item ->
+                        viewModel.showToast("Marketplace: uninstalled ${item.name}")
+                    },
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
@@ -2564,6 +2586,7 @@ private fun RootScreenHost(
                     onRestoreWorkspaces = { viewModel.restoreAllWorkspaces() },
                     onTogglePermissionPolicy = viewModel::updatePermissionPolicy,
                     onClearSecurityAuditLogs = viewModel::clearSecurityAuditLogs,
+                    onReplayAppTour = viewModel::replayAppTour,
                 )
             }
         }
@@ -4748,6 +4771,7 @@ private fun WorkspaceScreen(
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
     onOpenCollaboration: () -> Unit = {},
+    onOpenMarketplace: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4905,6 +4929,7 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.MULTI_AGENT_TEAM -> onOpenTeamStudio()
                     WorkspaceCommand.CLOUD_HYBRID -> onOpenCloudHybrid()
                     WorkspaceCommand.COLLABORATION -> onOpenCollaboration()
+                    WorkspaceCommand.MARKETPLACE -> onOpenMarketplace()
                 }
             },
         )
@@ -5300,6 +5325,7 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     MULTI_AGENT_TEAM("Multi-Agent Engineering Team", "agent team manager architect qa devops multi-agent studio"),
     CLOUD_HYBRID("Cloud + Phone Hybrid", "cloud worker offload remote build gpu runner hybrid"),
     COLLABORATION("Team Collaboration", "share collab team comments review invite organization"),
+    MARKETPLACE("AI Developer Marketplace", "marketplace agents mcp skills templates catalog install store"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

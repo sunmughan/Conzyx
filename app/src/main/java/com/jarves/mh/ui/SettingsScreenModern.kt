@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import com.jarves.mh.runtime.BackgroundProtectionHelper
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -131,6 +132,7 @@ import com.jarves.mh.runtime.EnvironmentManifestComponent
 import com.jarves.mh.runtime.EnvironmentUpdateManager
 import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.ui.theme.AppThemeMode
+import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -197,6 +199,7 @@ fun SettingsScreen(
     onRestoreWorkspaces: () -> Unit = {},
     onTogglePermissionPolicy: (com.jarves.mh.security.PermissionCategory, Boolean) -> Unit = { _, _ -> },
     onClearSecurityAuditLogs: () -> Unit = {},
+    onReplayAppTour: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val runtimeInstaller = remember { RuntimeInstaller(context) }
@@ -412,169 +415,252 @@ fun SettingsScreen(
                     expanded = expanded == SettingsSection.TOOLS,
                     onClick = { toggle(SettingsSection.TOOLS) },
                 ) {
-                    Text("Node.js, npm, Git, and Claude Code are included.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                    // Top Overview Card matching EnvironmentUpdateCenter
+                    Surface(
+                        shape = RoundedCornerShape(13.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                     ) {
-                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text("Auto-update tools & skills", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Column(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text("Runtime resources", fontWeight = FontWeight.SemiBold)
                             Text(
-                                state.toolsAutoUpdateMessage ?: "Automatically keep installed toolchains, tools, and skills up to date",
+                                "Core Linux tooling is included. Optional development stacks are isolated in PRoot userspace.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            listOf(
+                                "Ubuntu 20.04 ARM64" to "Included",
+                                "Node.js + npm" to "Included",
+                                "Git + OpenSSL + curl" to "Included",
+                                "Claude Code Engine" to "Included",
+                            ).forEach { (label, detail) ->
+                                RuntimeInfoRow(label, detail)
+                            }
                         }
-                        Switch(
-                            checked = state.autoUpdateToolsAndSkills,
-                            onCheckedChange = onToggleAutoUpdateToolsAndSkills,
-                            enabled = !state.autoUpdatingToolsOrSkills,
-                        )
                     }
-                    if (state.autoUpdatingToolsOrSkills) {
-                        LinearProgressIndicator(
-                            modifier = Modifier.fillMaxWidth().height(4.dp),
-                            color = PocketOrange,
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    DevStack.entries.forEachIndexed { index, stack ->
-                        val installed = stack in state.installedDevStacks
-                        val installing = state.devStackInstalling == stack
-                        val removing = installing && state.devStackRemoving
-                        Column(Modifier.fillMaxWidth()) {
+
+                    // Auto-update Card matching EnvironmentUpdateCenter card style
+                    Surface(
+                        shape = RoundedCornerShape(13.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
                             Row(
-                                Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        Text(stack.label, fontWeight = FontWeight.SemiBold)
-                                        if (installed) {
-                                            val versionBadge = when (stack) {
-                                                DevStack.WEB -> "v24"
-                                                DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "v2026.09.2"
-                                                DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
-                                                DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
-                                                DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
-                                                DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "v1.0"
-                                            }
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                            ) {
-                                                Text(
-                                                    versionBadge,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                )
-                                            }
-                                        }
-                                    }
+                                    Text("Auto-update tools & skills", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                                     Text(
-                                        stack.installsSummary,
-                                        fontSize = 12.sp,
+                                        state.toolsAutoUpdateMessage ?: "Automatically keep installed toolchains, tools, and skills up to date",
+                                        fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                when {
-                                    removing -> Text("Removing…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    installing -> Text("${(state.devStackProgress * 100).toInt()}%", color = PocketOrange, fontWeight = FontWeight.Bold)
-                                    installed && stack == DevStack.WEB -> Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                                    ) {
-                                        Text(
-                                            "Included",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        )
-                                    }
-                                    installed -> {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            if (stack != DevStack.WEB) {
-                                                TextButton(
-                                                    onClick = { onUpdateDevStack(stack) },
-                                                    enabled = state.devStackInstalling == null,
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                                ) { Text("Update", color = PocketOrange, fontSize = 12.sp) }
-                                            }
-                                            TextButton(
-                                                onClick = { stackPendingRemoval = stack },
-                                                enabled = state.devStackInstalling == null,
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                            ) { Text("Remove", color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                                        }
-                                    }
-                                    else -> OutlinedButton(
-                                        onClick = { onInstallDevStack(stack) },
-                                        enabled = state.devStackInstalling == null,
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                    ) { Text("Add", fontSize = 12.sp) }
-                                }
-                            }
-                            if (installing) {
-                                Spacer(Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { state.devStackProgress.coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth().height(7.dp),
-                                    color = PocketOrange,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                Switch(
+                                    checked = state.autoUpdateToolsAndSkills,
+                                    onCheckedChange = onToggleAutoUpdateToolsAndSkills,
+                                    enabled = !state.autoUpdatingToolsOrSkills,
                                 )
-                                Spacer(Modifier.height(8.dp))
-                                state.devStackBytes?.let { (downloaded, total) ->
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                    ) {
-                                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                Text(
-                                                    "${formatTransferMb(downloaded)} of ${formatTransferMb(total)}",
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontFamily = FontFamily.Monospace,
-                                                )
-                                                state.devStackBytesPerSecond?.takeIf { it > 0L }?.let { speed ->
-                                                    Text(
-                                                        "${formatTransferSpeed(speed)} · ${formatTransferEta(downloaded, total, speed)} left",
-                                                        fontSize = 11.sp,
-                                                        color = PocketOrange,
-                                                        fontFamily = FontFamily.Monospace,
-                                                    )
-                                                }
-                                            }
-                                            Text(
-                                                state.devStackMessage ?: "Downloading…",
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                    }
-                                } ?: Text(
-                                    state.devStackMessage ?: "Processing…",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                            }
+                            if (state.autoUpdatingToolsOrSkills) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                    color = PocketOrange,
                                 )
                             }
                         }
-                        if (index != DevStack.entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
+
+                    // Each Toolchain Stack rendered as an individual Card matching EnvironmentUpdateCenter
+                    DevStack.entries.forEach { stack ->
+                        val installed = stack in state.installedDevStacks
+                        val installing = state.devStackInstalling == stack
+                        val removing = installing && state.devStackRemoving
+
+                        val versionBadge = if (installed) {
+                            when (stack) {
+                                DevStack.WEB -> "v24"
+                                DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "v2026.09.2"
+                                DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
+                                DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
+                                DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
+                                DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "v1.0"
+                            }
+                        } else null
+
+                        Surface(
+                            shape = RoundedCornerShape(13.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        ) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Text(stack.label, fontWeight = FontWeight.SemiBold)
+                                            if (versionBadge != null) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                                ) {
+                                                    Text(
+                                                        versionBadge,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            when {
+                                                !installed -> "Not installed · Available on demand"
+                                                stack == DevStack.WEB -> "Included in base rootfs"
+                                                else -> "Installed & ready in PRoot"
+                                            },
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        when {
+                                            removing -> "REMOVING"
+                                            installing -> "INSTALLING"
+                                            installed && stack == DevStack.WEB -> "INCLUDED"
+                                            installed -> "INSTALLED"
+                                            else -> "AVAILABLE"
+                                        },
+                                        fontSize = 10.sp,
+                                        color = if (installed) PocketGreen else PocketOrange,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+
+                                Text(
+                                    stack.installsSummary,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    "Target environment: PRoot Debian/Ubuntu userspace",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+
+                                when {
+                                    removing -> {
+                                        Text("Removing toolchain…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                    installing -> {
+                                        Text("${(state.devStackProgress * 100).toInt()}%", color = PocketOrange, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Spacer(Modifier.height(4.dp))
+                                        LinearProgressIndicator(
+                                            progress = { state.devStackProgress.coerceIn(0f, 1f) },
+                                            modifier = Modifier.fillMaxWidth().height(7.dp),
+                                            color = PocketOrange,
+                                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                        state.devStackBytes?.let { (downloaded, total) ->
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            ) {
+                                                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                        Text(
+                                                            "${formatTransferMb(downloaded)} of ${formatTransferMb(total)}",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            fontFamily = FontFamily.Monospace,
+                                                        )
+                                                        state.devStackBytesPerSecond?.takeIf { it > 0L }?.let { speed ->
+                                                            Text(
+                                                                "${formatTransferSpeed(speed)} · ${formatTransferEta(downloaded, total, speed)} left",
+                                                                fontSize = 11.sp,
+                                                                color = PocketOrange,
+                                                                fontFamily = FontFamily.Monospace,
+                                                            )
+                                                        }
+                                                    }
+                                                    Text(
+                                                        state.devStackMessage ?: "Downloading…",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                }
+                                            }
+                                        } ?: Text(
+                                            state.devStackMessage ?: "Processing…",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    installed && stack == DevStack.WEB -> {
+                                        OutlinedButton(
+                                            onClick = {},
+                                            enabled = false,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text("Bundled in Core Rootfs", fontSize = 12.sp)
+                                        }
+                                    }
+                                    installed -> {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Button(
+                                                onClick = { onUpdateDevStack(stack) },
+                                                enabled = state.devStackInstalling == null,
+                                                modifier = Modifier.weight(1f),
+                                            ) {
+                                                Text("Update", fontSize = 12.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { stackPendingRemoval = stack },
+                                                enabled = state.devStackInstalling == null,
+                                                modifier = Modifier.weight(1f),
+                                            ) {
+                                                Text("Remove", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        Button(
+                                            onClick = { onInstallDevStack(stack) },
+                                            enabled = state.devStackInstalling == null,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text("Install Stack", fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     state.devStackMessage?.takeIf { state.devStackInstalling == null && it.isNotBlank() }?.let { statusMsg ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -915,6 +1001,33 @@ fun SettingsScreen(
             }
 
             item {
+                Surface(
+                    shape = RoundedCornerShape(13.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onReplayAppTour() }
+                        .padding(vertical = 4.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = PocketOrange,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("What's New in v3.0.0", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Replay the interactive feature tour covering all 14 phases", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
                 Surface(
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

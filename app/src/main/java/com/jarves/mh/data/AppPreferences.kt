@@ -29,6 +29,10 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("onboarding_complete", false)
         set(value) { preferences.edit().putBoolean("onboarding_complete", value).apply() }
 
+    var appTourCompleted: Boolean
+        get() = preferences.getBoolean("app_tour_completed_v3", false)
+        set(value) { preferences.edit().putBoolean("app_tour_completed_v3", value).apply() }
+
     var runtimeSetupComplete: Boolean
         get() = preferences.getBoolean("runtime_setup_complete", false)
         set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).apply() }

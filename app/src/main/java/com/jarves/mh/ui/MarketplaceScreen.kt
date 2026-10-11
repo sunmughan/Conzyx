@@ -39,6 +39,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -48,6 +49,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.jarves.mh.ui.theme.PocketGreen
+import com.jarves.mh.ui.theme.PocketOrange
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,24 +74,36 @@ import com.jarves.mh.marketplace.MarketplaceItem
 fun MarketplaceScreen(
     onBack: (() -> Unit)? = null,
     onInstallItem: (MarketplaceItem) -> Unit = {},
+    onUninstallItem: (MarketplaceItem) -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<MarketplaceCategory?>(null) }
+    var showOnlyInstalled by rememberSaveable { mutableStateOf(false) }
     var installedSet by remember { mutableStateOf(setOf<String>()) }
     var showPublishDialog by rememberSaveable { mutableStateOf(false) }
     var catalogVersion by remember { mutableStateOf(0) }
 
-    val allItems = remember(searchQuery, selectedCategory, catalogVersion) {
+    val allItems = remember(searchQuery, selectedCategory, showOnlyInstalled, catalogVersion, installedSet) {
         val base = if (selectedCategory == null) {
             DeveloperMarketplaceCatalog.getAllItems()
         } else {
             DeveloperMarketplaceCatalog.filterByCategory(selectedCategory!!)
         }
-        if (searchQuery.isBlank()) {
+        val searched = if (searchQuery.isBlank()) {
             base
         } else {
             val q = searchQuery.trim().lowercase()
-            base.filter { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
+            base.filter {
+                it.name.lowercase().contains(q) ||
+                    it.description.lowercase().contains(q) ||
+                    it.author.lowercase().contains(q) ||
+                    it.tags.any { tag -> tag.lowercase().contains(q) }
+            }
+        }
+        if (showOnlyInstalled) {
+            searched.filter { installedSet.contains(it.id) || DeveloperMarketplaceCatalog.isInstalled(it.id) }
+        } else {
+            searched
         }
     }
 
@@ -156,7 +171,7 @@ fun MarketplaceScreen(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search catalog or custom items...") },
+                placeholder = { Text("Search catalog by name, author, or tags...") },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
@@ -164,7 +179,7 @@ fun MarketplaceScreen(
                 shape = RoundedCornerShape(12.dp),
             )
 
-            // Category Filter Chips
+            // Category & Installed Filter Chips
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -172,19 +187,36 @@ fun MarketplaceScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilterChip(
-                    selected = selectedCategory == null,
-                    onClick = { selectedCategory = null },
+                    selected = selectedCategory == null && !showOnlyInstalled,
+                    onClick = {
+                        selectedCategory = null
+                        showOnlyInstalled = false
+                    },
                     label = { Text("All (${DeveloperMarketplaceCatalog.getAllItems().size})") },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                     ),
                 )
+                FilterChip(
+                    selected = showOnlyInstalled,
+                    onClick = { showOnlyInstalled = !showOnlyInstalled },
+                    label = {
+                        val installedCount = DeveloperMarketplaceCatalog.getInstalledItems().size.coerceAtLeast(installedSet.size)
+                        Text("Installed ($installedCount)")
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                )
                 MarketplaceCategory.entries.forEach { cat ->
-                    val isSelected = selectedCategory == cat
+                    val isSelected = selectedCategory == cat && !showOnlyInstalled
                     val count = DeveloperMarketplaceCatalog.filterByCategory(cat).size
                     FilterChip(
                         selected = isSelected,
-                        onClick = { selectedCategory = if (isSelected) null else cat },
+                        onClick = {
+                            selectedCategory = if (isSelected) null else cat
+                            showOnlyInstalled = false
+                        },
                         label = {
                             Text(
                                 when (cat) {
@@ -218,6 +250,11 @@ fun MarketplaceScreen(
                             installedSet = installedSet + item.id
                             onInstallItem(item)
                         },
+                        onUninstall = {
+                            DeveloperMarketplaceCatalog.uninstallItem(item.id)
+                            installedSet = installedSet - item.id
+                            onUninstallItem(item)
+                        },
                         onDeleteCustom = if (item.isCustom) {
                             {
                                 DeveloperMarketplaceCatalog.removeCustomItem(item.id)
@@ -236,6 +273,7 @@ private fun MarketplaceItemCard(
     item: MarketplaceItem,
     isInstalled: Boolean,
     onInstall: () -> Unit,
+    onUninstall: () -> Unit = {},
     onDeleteCustom: (() -> Unit)? = null,
 ) {
     Card(
@@ -334,6 +372,29 @@ private fun MarketplaceItemCard(
                 lineHeight = 18.sp,
             )
 
+            if (item.tags.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    item.tags.forEach { tag ->
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                        ) {
+                            Text(
+                                text = "#$tag",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -365,30 +426,54 @@ private fun MarketplaceItemCard(
                     )
                 }
 
-                Button(
-                    onClick = onInstall,
-                    enabled = !isInstalled,
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isInstalled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary,
-                        contentColor = if (isInstalled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
-                    ),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                if (isInstalled) {
+                    OutlinedButton(
+                        onClick = onUninstall,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     ) {
-                        Icon(
-                            if (isInstalled) Icons.Default.Check else Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Text(
-                            text = if (isInstalled) "Installed" else "Install",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp),
+                                tint = PocketGreen,
+                            )
+                            Text(
+                                text = "Installed · Remove",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onInstall,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp),
+                            )
+                            Text(
+                                text = "Install",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }

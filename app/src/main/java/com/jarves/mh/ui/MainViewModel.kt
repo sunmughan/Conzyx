@@ -180,6 +180,8 @@ data class AppUiState(
     val showDetailedSetupProgress: Boolean = false,
     val onboardingComplete: Boolean = false,
     val backgroundSetupComplete: Boolean = false,
+    val appTourCompleted: Boolean = false,
+    val showAppTour: Boolean = false,
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
     val themeMode: com.jarves.mh.ui.theme.AppThemeMode = com.jarves.mh.ui.theme.AppThemeMode.DARK,
@@ -499,6 +501,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startupProgress = if (isWarmReady) 1f else 0f,
             onboardingComplete = preferences.onboardingComplete,
             backgroundSetupComplete = preferences.backgroundSetupComplete,
+            appTourCompleted = preferences.appTourCompleted,
+            showAppTour = isWarmReady && !preferences.appTourCompleted,
             agentKind = initialAgentKind,
             primaryAgentKind = initialPrimaryAgentKind,
             provider = initialProvider,
@@ -1931,7 +1935,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun finishBackgroundSetup() {
         preferences.backgroundSetupComplete = true
-        _state.update { it.copy(backgroundSetupComplete = true) }
+        _state.update {
+            it.copy(
+                backgroundSetupComplete = true,
+                showAppTour = !preferences.appTourCompleted,
+            )
+        }
+    }
+
+    fun finishAppTour() {
+        preferences.appTourCompleted = true
+        _state.update { it.copy(appTourCompleted = true, showAppTour = false) }
+    }
+
+    fun replayAppTour() {
+        _state.update { it.copy(showAppTour = true) }
     }
 
     /** Called from the first-launch setup screen; persists the agent choice for setup and Settings. */
