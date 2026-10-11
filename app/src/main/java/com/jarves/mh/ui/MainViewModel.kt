@@ -6243,7 +6243,11 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                         appFactoryBuilding = false,
                         appFactoryBuildResult = result,
                         appFactoryLogs = result.logs,
-                        appFactoryMessage = if (result.success) "Build completed successfully!" else "Build failed: ${result.errorMessage}"
+                        appFactoryMessage = when {
+                            !result.success -> "Build failed: ${result.errorMessage}"
+                            result.ciWorkflowFile != null -> "Generated ${result.ciWorkflowFile.name}; commit and push to run the remote build."
+                            else -> "Build completed successfully!"
+                        }
                     )
                 }
             } catch (e: Exception) {
