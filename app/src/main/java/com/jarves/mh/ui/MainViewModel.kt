@@ -1,6 +1,7 @@
 package com.jarves.mh.ui
 
 import com.jarves.mh.terminal.TerminalCommandPolicy
+import com.jarves.mh.workspace.SafeFileOps
 
 import android.app.Application
 import android.content.Intent
@@ -4354,7 +4355,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 check(target.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
                     "Could not create the file's parent directory"
                 }
-                check(editorCheckpoints.atomicWriteFile(target, content)) {
+                check(SafeFileOps.atomicWriteText(target, content)) {
                     "Could not safely save $path"
                 }
                 editorCheckpoints.saveChangedPaths(project.id, listOf(path))
