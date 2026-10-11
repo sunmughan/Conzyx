@@ -36,6 +36,9 @@ data class CodeSymbol(
     val signature: String? = null,
     val visibility: String = "public",
     val isAsync: Boolean = false,
+    val superTypes: List<String> = emptyList(),
+    val docComment: String? = null,
+    val isExported: Boolean = true,
 )
 
 data class SymbolReference(
@@ -80,6 +83,8 @@ object SemanticCodeEngine {
             "rs" -> "Rust"
             "c", "h" -> "C"
             "cpp", "cc", "cxx", "hpp" -> "C++"
+            "php", "phtml" -> "PHP"
+            "dart" -> "Dart"
             "sh", "bash", "zsh" -> "Shell"
             "json" -> "JSON"
             "yaml", "yml" -> "YAML"
@@ -112,6 +117,8 @@ object SemanticCodeEngine {
             "Go" -> parseGo(content, symbols, imports, calls)
             "Rust" -> parseRust(content, symbols, imports, calls)
             "C", "C++" -> parseCpp(content, symbols, imports, calls)
+            "PHP" -> parsePhp(content, symbols, imports, calls)
+            "Dart" -> parseDart(content, symbols, imports, calls)
             "Shell" -> parseShell(content, symbols, imports, calls)
             else -> parseGeneric(content, symbols, imports, calls)
         }
@@ -292,18 +299,30 @@ object SemanticCodeEngine {
         val callRegex = Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
 
         var currentClass: String? = null
+        var lastDocComment: String? = null
+        val docBuffer = StringBuilder()
         var offset = 0
 
         content.lines().forEachIndexed { idx, line ->
             val lineNum = idx + 1
             val trimmed = line.trim()
 
+            if (trimmed.startsWith("/**") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                docBuffer.append(trimmed.removePrefix("/**").removePrefix("*").removePrefix("/*").removeSuffix("*/").trim()).append(" ")
+            } else if (trimmed.isNotBlank()) {
+                lastDocComment = if (docBuffer.isNotEmpty()) docBuffer.toString().trim() else null
+                docBuffer.setLength(0)
+            } else {
+                docBuffer.setLength(0)
+                lastDocComment = null
+            }
+
             packageRegex.find(line)?.groupValues?.getOrNull(1)?.let {
-                symbols.add(CodeSymbol(it, SymbolKind.PACKAGE, lineNum, offset))
+                symbols.add(CodeSymbol(it, SymbolKind.PACKAGE, lineNum, offset, docComment = lastDocComment))
             }
             importRegex.find(line)?.groupValues?.getOrNull(1)?.let {
                 imports.add(it)
-                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset))
+                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset, docComment = lastDocComment))
             }
             classRegex.find(line)?.let { m ->
                 val kindStr = m.groupValues[1]
@@ -315,18 +334,39 @@ object SemanticCodeEngine {
                     else -> SymbolKind.CLASS
                 }
                 currentClass = name
-                symbols.add(CodeSymbol(name, kind, lineNum, offset, signature = trimmed))
+                val supers = run {
+                    val nameIdx = line.indexOf(name)
+                    if (nameIdx >= 0) {
+                        val afterName = line.substring(nameIdx + name.length)
+                        var depth = 0
+                        var colonIdx = -1
+                        for (i in afterName.indices) {
+                            when (afterName[i]) {
+                                '(', '<', '[' -> depth++
+                                ')', '>', ']' -> if (depth > 0) depth--
+                                ':' -> if (depth == 0) { colonIdx = i; break }
+                                '{' -> if (depth == 0) break
+                            }
+                        }
+                        if (colonIdx >= 0) {
+                            afterName.substring(colonIdx + 1).substringBefore("{").split(",")
+                                .map { it.trim().substringBefore("(").substringBefore("<").trim() }
+                                .filter { it.isNotEmpty() && !it.startsWith("val ") && !it.startsWith("var ") }
+                        } else emptyList()
+                    } else emptyList()
+                }
+                symbols.add(CodeSymbol(name, kind, lineNum, offset, signature = trimmed, superTypes = supers, docComment = lastDocComment))
             }
             funRegex.find(line)?.let { m ->
                 val name = m.groupValues[1]
                 val kind = if (currentClass != null) SymbolKind.METHOD else SymbolKind.FUNCTION
                 val isAsync = line.contains("suspend ")
-                symbols.add(CodeSymbol(name, kind, lineNum, offset, containerName = currentClass, signature = trimmed, isAsync = isAsync))
+                symbols.add(CodeSymbol(name, kind, lineNum, offset, containerName = currentClass, signature = trimmed, isAsync = isAsync, docComment = lastDocComment))
             }
             propRegex.find(line)?.let { m ->
                 val name = m.groupValues[2]
                 val kind = if (m.groupValues[1] == "val") SymbolKind.CONSTANT else SymbolKind.PROPERTY
-                symbols.add(CodeSymbol(name, kind, lineNum, offset, containerName = currentClass, signature = trimmed))
+                symbols.add(CodeSymbol(name, kind, lineNum, offset, containerName = currentClass, signature = trimmed, docComment = lastDocComment))
             }
 
             // Extract calls
@@ -351,13 +391,27 @@ object SemanticCodeEngine {
         val callRegex = Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
 
         var currentClass: String? = null
+        var lastDocComment: String? = null
+        val docBuffer = StringBuilder()
         var offset = 0
 
         content.lines().forEachIndexed { idx, line ->
             val lineNum = idx + 1
+            val trimmed = line.trim()
+
+            if (trimmed.startsWith("/**") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                docBuffer.append(trimmed.removePrefix("/**").removePrefix("*").removePrefix("/*").removeSuffix("*/").trim()).append(" ")
+            } else if (trimmed.isNotBlank()) {
+                lastDocComment = if (docBuffer.isNotEmpty()) docBuffer.toString().trim() else null
+                docBuffer.setLength(0)
+            } else {
+                docBuffer.setLength(0)
+                lastDocComment = null
+            }
+
             importRegex.find(line)?.groupValues?.getOrNull(1)?.let {
                 imports.add(it)
-                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset))
+                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset, docComment = lastDocComment))
             }
             classRegex.find(line)?.let { m ->
                 val kindStr = m.groupValues[1]
@@ -368,11 +422,14 @@ object SemanticCodeEngine {
                     else -> SymbolKind.CLASS
                 }
                 currentClass = name
-                symbols.add(CodeSymbol(name, kind, lineNum, offset, signature = line.trim()))
+                val extendsMatch = Regex("""\bextends\s+([A-Za-z0-9_]+)""").find(line)?.groupValues?.getOrNull(1)
+                val implementsMatch = Regex("""\bimplements\s+([A-Za-z0-9_,\s]+)""").find(line)?.groupValues?.getOrNull(1)
+                val supers = listOfNotNull(extendsMatch) + (implementsMatch?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList())
+                symbols.add(CodeSymbol(name, kind, lineNum, offset, signature = line.trim(), superTypes = supers, docComment = lastDocComment))
             }
             methodRegex.find(line)?.let { m ->
                 val name = m.groupValues[1]
-                symbols.add(CodeSymbol(name, SymbolKind.METHOD, lineNum, offset, containerName = currentClass, signature = line.trim()))
+                symbols.add(CodeSymbol(name, SymbolKind.METHOD, lineNum, offset, containerName = currentClass, signature = line.trim(), docComment = lastDocComment))
             }
             callRegex.findAll(line).forEach { m ->
                 val callName = m.groupValues[1]
@@ -405,11 +462,16 @@ object SemanticCodeEngine {
                     symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset))
                 }
             }
-            classRegex.find(line)?.groupValues?.getOrNull(1)?.let {
-                symbols.add(CodeSymbol(it, SymbolKind.CLASS, lineNum, offset, signature = line.trim()))
+            classRegex.find(line)?.groupValues?.getOrNull(1)?.let { name ->
+                val extendsMatch = Regex("""\bextends\s+([A-Za-z0-9_]+)""").find(line)?.groupValues?.getOrNull(1)
+                val implementsMatch = Regex("""\bimplements\s+([A-Za-z0-9_,\s]+)""").find(line)?.groupValues?.getOrNull(1)
+                val supers = listOfNotNull(extendsMatch) + (implementsMatch?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList())
+                symbols.add(CodeSymbol(name, SymbolKind.CLASS, lineNum, offset, signature = line.trim(), superTypes = supers))
             }
             ifaceRegex.find(line)?.groupValues?.getOrNull(1)?.let {
-                symbols.add(CodeSymbol(it, SymbolKind.INTERFACE, lineNum, offset, signature = line.trim()))
+                val extendsMatch = Regex("""\bextends\s+([A-Za-z0-9_,\s]+)""").find(line)?.groupValues?.getOrNull(1)
+                val supers = extendsMatch?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                symbols.add(CodeSymbol(it, SymbolKind.INTERFACE, lineNum, offset, signature = line.trim(), superTypes = supers))
             }
             typeRegex.find(line)?.groupValues?.getOrNull(1)?.let {
                 symbols.add(CodeSymbol(it, SymbolKind.TYPE_ALIAS, lineNum, offset, signature = line.trim()))
@@ -455,7 +517,9 @@ object SemanticCodeEngine {
             classRegex.find(line)?.groupValues?.getOrNull(1)?.let { name ->
                 currentClass = name
                 classIndent = line.takeWhile { it.isWhitespace() }.length
-                symbols.add(CodeSymbol(name, SymbolKind.CLASS, lineNum, offset, signature = line.trim()))
+                val supers = Regex("""class\s+[A-Za-z0-9_]+\s*\(([^)]+)\)""").find(line)?.groupValues?.getOrNull(1)
+                    ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() && it != "object" } ?: emptyList()
+                symbols.add(CodeSymbol(name, SymbolKind.CLASS, lineNum, offset, signature = line.trim(), superTypes = supers))
             }
             defRegex.find(line)?.let { m ->
                 val indent = m.groupValues[1].length
@@ -593,6 +657,213 @@ object SemanticCodeEngine {
         }
     }
 
+    private fun parsePhp(
+        content: String,
+        symbols: MutableList<CodeSymbol>,
+        imports: MutableList<String>,
+        calls: MutableList<String>,
+    ) {
+        val nsRegex = Regex("""^\s*namespace\s+([A-Za-z0-9_\\]+)\s*;""")
+        val useRegex = Regex("""^\s*use\s+([A-Za-z0-9_\\]+)(?:\s+as\s+([A-Za-z0-9_]+))?\s*;""")
+        val requireRegex = Regex("""^\s*(?:require|require_once|include|include_once)\s*\(?['"]([^'"]+)['"]\)?\s*;""")
+        val classRegex = Regex("""^\s*(?:(?:final|abstract|readonly)\s+)*(class|interface|trait|enum)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+extends\s+([A-Za-z0-9_\\]+))?(?:\s+implements\s+([^{]+))?""")
+        val fnRegex = Regex("""^\s*(?:(?:public|protected|private|static|final|abstract)\s+)*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
+        val constRegex = Regex("""^\s*(?:(?:public|protected|private)\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=""")
+        val propRegex = Regex("""^\s*(?:(?:public|protected|private|static|readonly)\s+)+(?:[A-Za-z0-9_\\?]+\s+)?\$([A-Za-z_][A-Za-z0-9_]*)""")
+        val callRegex = Regex("""(?:->|::|\b)([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
+
+        var currentClass: String? = null
+        var lastDocComment: String? = null
+        val docBuffer = StringBuilder()
+        var offset = 0
+
+        content.lines().forEachIndexed { idx, line ->
+            val lineNum = idx + 1
+            val trimmed = line.trim()
+
+            if (trimmed.startsWith("/**") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                docBuffer.append(trimmed.removePrefix("/**").removePrefix("*").removePrefix("/*").removeSuffix("*/").trim()).append(" ")
+            } else if (trimmed.isNotBlank()) {
+                lastDocComment = if (docBuffer.isNotEmpty()) docBuffer.toString().trim() else null
+                docBuffer.setLength(0)
+            } else {
+                docBuffer.setLength(0)
+                lastDocComment = null
+            }
+
+            nsRegex.find(line)?.groupValues?.getOrNull(1)?.let {
+                symbols.add(CodeSymbol(it, SymbolKind.PACKAGE, lineNum, offset, docComment = lastDocComment))
+            }
+            useRegex.find(line)?.groupValues?.getOrNull(1)?.let {
+                imports.add(it)
+                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset, docComment = lastDocComment))
+            }
+            requireRegex.find(line)?.groupValues?.getOrNull(1)?.let {
+                imports.add(it)
+                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset, docComment = lastDocComment))
+            }
+            classRegex.find(line)?.let { m ->
+                val kindStr = m.groupValues[1]
+                val name = m.groupValues[2]
+                val extendsName = m.groupValues.getOrNull(3)?.trim()?.takeIf { it.isNotEmpty() }
+                val implementsNames = m.groupValues.getOrNull(4)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                val supers = listOfNotNull(extendsName) + implementsNames
+
+                val kind = when (kindStr) {
+                    "interface", "trait" -> SymbolKind.INTERFACE
+                    "enum" -> SymbolKind.ENUM
+                    else -> SymbolKind.CLASS
+                }
+                currentClass = name
+                symbols.add(
+                    CodeSymbol(
+                        name = name,
+                        kind = kind,
+                        line = lineNum,
+                        characterOffset = offset,
+                        signature = trimmed,
+                        superTypes = supers,
+                        docComment = lastDocComment,
+                    )
+                )
+            }
+            fnRegex.find(line)?.let { m ->
+                val name = m.groupValues[1]
+                val kind = if (currentClass != null) {
+                    if (name == "__construct") SymbolKind.CONSTRUCTOR else SymbolKind.METHOD
+                } else SymbolKind.FUNCTION
+                symbols.add(
+                    CodeSymbol(
+                        name = name,
+                        kind = kind,
+                        line = lineNum,
+                        characterOffset = offset,
+                        containerName = currentClass,
+                        signature = trimmed,
+                        docComment = lastDocComment,
+                    )
+                )
+            }
+            constRegex.find(line)?.let { m ->
+                val name = m.groupValues[1]
+                symbols.add(CodeSymbol(name, SymbolKind.CONSTANT, lineNum, offset, containerName = currentClass, signature = trimmed, docComment = lastDocComment))
+            }
+            propRegex.find(line)?.let { m ->
+                val name = m.groupValues[1]
+                symbols.add(CodeSymbol(name, SymbolKind.PROPERTY, lineNum, offset, containerName = currentClass, signature = trimmed, docComment = lastDocComment))
+            }
+
+            callRegex.findAll(line).forEach { m ->
+                val c = m.groupValues[1]
+                if (c !in PHP_KEYWORDS && c != "function") calls.add(c)
+            }
+
+            offset += line.length + 1
+        }
+    }
+
+    private fun parseDart(
+        content: String,
+        symbols: MutableList<CodeSymbol>,
+        imports: MutableList<String>,
+        calls: MutableList<String>,
+    ) {
+        val importRegex = Regex("""^\s*import\s+['"]([^'"]+)['"]""")
+        val partRegex = Regex("""^\s*part\s+(?:of\s+)?['"]([^'"]+)['"]""")
+        val classRegex = Regex("""^\s*(?:abstract\s+)?(class|mixin|enum|extension)\s+([A-Za-z_][A-Za-z0-9_]*)""")
+        val fnRegex = Regex("""^\s*(?:(?:static|final|const|late)\s+)*(?:(?:void|Future<[^>]+>|Stream<[^>]+>|[A-Za-z0-9_<>?]+)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:async\s*)?[{=>]""")
+        val callRegex = Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
+
+        var currentClass: String? = null
+        var lastDocComment: String? = null
+        val docBuffer = StringBuilder()
+        var offset = 0
+
+        content.lines().forEachIndexed { idx, line ->
+            val lineNum = idx + 1
+            val trimmed = line.trim()
+
+            if (trimmed.startsWith("///") || trimmed.startsWith("//")) {
+                docBuffer.append(trimmed.removePrefix("///").removePrefix("//").trim()).append(" ")
+            } else if (trimmed.startsWith("/**") || trimmed.startsWith("*")) {
+                docBuffer.append(trimmed.removePrefix("/**").removePrefix("*").removeSuffix("*/").trim()).append(" ")
+            } else if (trimmed.isNotBlank()) {
+                lastDocComment = if (docBuffer.isNotEmpty()) docBuffer.toString().trim() else null
+                docBuffer.setLength(0)
+            } else {
+                docBuffer.setLength(0)
+                lastDocComment = null
+            }
+
+            importRegex.find(line)?.groupValues?.getOrNull(1)?.let {
+                imports.add(it)
+                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset, docComment = lastDocComment))
+            }
+            partRegex.find(line)?.groupValues?.getOrNull(1)?.let {
+                imports.add(it)
+                symbols.add(CodeSymbol(it, SymbolKind.IMPORT, lineNum, offset, docComment = lastDocComment))
+            }
+            classRegex.find(line)?.let { m ->
+                val kindStr = m.groupValues[1]
+                val name = m.groupValues[2]
+                val afterName = line.substringAfter(name).substringBefore("{")
+                val extendsName = Regex("""\bextends\s+([A-Za-z0-9_]+)""").find(afterName)?.groupValues?.getOrNull(1)
+                val withMixins = Regex("""\bwith\s+([A-Za-z0-9_,\s]+?)(?=\s+implements|\s*\{|$)""").find(afterName)
+                    ?.groupValues?.getOrNull(1)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                val implementsNames = Regex("""\bimplements\s+([A-Za-z0-9_,\s]+?)(?=\s*\{|$)""").find(afterName)
+                    ?.groupValues?.getOrNull(1)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                val supers = listOfNotNull(extendsName) + withMixins + implementsNames
+
+                val kind = when (kindStr) {
+                    "enum" -> SymbolKind.ENUM
+                    "mixin" -> SymbolKind.INTERFACE
+                    "extension" -> SymbolKind.OBJECT
+                    else -> SymbolKind.CLASS
+                }
+                currentClass = name
+                symbols.add(
+                    CodeSymbol(
+                        name = name,
+                        kind = kind,
+                        line = lineNum,
+                        characterOffset = offset,
+                        signature = trimmed,
+                        superTypes = supers,
+                        docComment = lastDocComment,
+                    )
+                )
+            }
+            fnRegex.find(line)?.let { m ->
+                val name = m.groupValues[1]
+                if (name !in DART_KEYWORDS && name != "class" && name != "mixin") {
+                    val kind = if (currentClass != null) {
+                        if (name == currentClass) SymbolKind.CONSTRUCTOR else SymbolKind.METHOD
+                    } else SymbolKind.FUNCTION
+                    val isAsync = line.contains("async")
+                    symbols.add(
+                        CodeSymbol(
+                            name = name,
+                            kind = kind,
+                            line = lineNum,
+                            characterOffset = offset,
+                            containerName = currentClass,
+                            signature = trimmed,
+                            isAsync = isAsync,
+                            docComment = lastDocComment,
+                        )
+                    )
+                }
+            }
+
+            callRegex.findAll(line).forEach { m ->
+                val c = m.groupValues[1]
+                if (c !in DART_KEYWORDS) calls.add(c)
+            }
+
+            offset += line.length + 1
+        }
+    }
+
     private fun parseGeneric(
         content: String,
         symbols: MutableList<CodeSymbol>,
@@ -638,4 +909,6 @@ object SemanticCodeEngine {
     private val PY_KEYWORDS = setOf("if", "elif", "else", "for", "while", "return", "yield", "raise", "with", "print")
     private val GO_KEYWORDS = setOf("if", "else", "switch", "for", "return", "panic", "make", "new", "len", "cap")
     private val RUST_KEYWORDS = setOf("if", "else", "match", "for", "while", "return", "loop", "panic")
+    private val PHP_KEYWORDS = setOf("if", "else", "elseif", "for", "foreach", "while", "return", "throw", "new", "echo", "die", "exit")
+    private val DART_KEYWORDS = setOf("if", "else", "switch", "for", "while", "return", "throw", "new", "super", "this", "await", "yield")
 }

@@ -43,8 +43,12 @@ import com.jarves.mh.editor.DiagnosticSeverity
 import com.jarves.mh.editor.EditorDiagnostic
 import com.jarves.mh.editor.EditorDiagnosticsEngine
 import com.jarves.mh.editor.FoldableRange
+import com.jarves.mh.lsp.LspCodeAction
+import com.jarves.mh.lsp.LspManager
 import com.jarves.mh.runtime.CodeSymbol
+import com.jarves.mh.runtime.SymbolGraph
 import com.jarves.mh.runtime.SymbolKind
+import com.jarves.mh.runtime.SymbolNode
 import com.jarves.mh.runtime.SymbolReference
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -185,6 +189,17 @@ fun CodeEditorScreen(
     var activeReferences by remember(filePath) { mutableStateOf(emptyList<SymbolReference>()) }
     var activeFolds by remember(filePath) { mutableStateOf(emptySet<FoldableRange>()) }
 
+    val lspManager = remember(workspaceDir) { LspManager(workspaceDir) }
+    var hoverDialogOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var hoverContent by rememberSaveable(filePath) { mutableStateOf("") }
+    var codeActionsOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var activeCodeActions by remember(filePath) { mutableStateOf(emptyList<LspCodeAction>()) }
+    var implementationsOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var activeImplementations by remember(filePath) { mutableStateOf(emptyList<SymbolNode>()) }
+    var callHierarchyOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var activeCallers by remember(filePath) { mutableStateOf(emptyList<SymbolNode>()) }
+    var activeCallees by remember(filePath) { mutableStateOf(emptyList<SymbolNode>()) }
+
     val language = remember(filePath) { SemanticCodeEngine.detectLanguage(filePath) }
     val foldableRanges = remember(value.text, language) {
         CodeFoldingEngine.findFoldableRanges(value.text, language)
@@ -248,6 +263,56 @@ fun CodeEditorScreen(
             renameNewName = sym
             renameDialogOpen = true
         }
+    }
+
+    fun triggerHover() {
+        val sym = getSymbolUnderCursor()
+        if (sym.isBlank()) return
+        val currentLine = value.text.take(value.selection.start.coerceIn(0, value.text.length)).count { it == '\n' } + 1
+        val hover = lspManager.requestHover(language, filePath, currentLine, value.selection.start, value.text)
+        hoverContent = hover?.contents ?: "Symbol: $sym ($language identifier)"
+        hoverDialogOpen = true
+    }
+
+    fun triggerCodeActions() {
+        val currentLine = value.text.take(value.selection.start.coerceIn(0, value.text.length)).count { it == '\n' } + 1
+        activeCodeActions = lspManager.requestCodeActions(language, filePath, currentLine, value.selection.start, value.text)
+        codeActionsOpen = true
+    }
+
+    fun findImplementationsForSymbol() {
+        val sym = getSymbolUnderCursor()
+        if (sym.isBlank()) return
+        val graph = if (workspaceDir != null) {
+            val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 800_000 }.take(40).associate {
+                it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+            }
+            val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+            SymbolGraph.buildFromSummaries(summaries)
+        } else {
+            val summary = SemanticCodeEngine.parseFile(filePath, value.text)
+            SymbolGraph.buildFromSummaries(listOf(summary))
+        }
+        activeImplementations = graph.getImplementations(sym)
+        implementationsOpen = true
+    }
+
+    fun showCallHierarchyForSymbol() {
+        val sym = getSymbolUnderCursor()
+        if (sym.isBlank()) return
+        val graph = if (workspaceDir != null) {
+            val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 800_000 }.take(40).associate {
+                it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+            }
+            val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+            SymbolGraph.buildFromSummaries(summaries)
+        } else {
+            val summary = SemanticCodeEngine.parseFile(filePath, value.text)
+            SymbolGraph.buildFromSummaries(listOf(summary))
+        }
+        activeCallers = graph.getCallers(sym)
+        activeCallees = graph.getCallees(sym)
+        callHierarchyOpen = true
     }
 
     fun toggleFoldAtCursor() {
@@ -656,6 +721,148 @@ fun CodeEditorScreen(
         }
     }
 
+    if (hoverDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { hoverDialogOpen = false },
+            title = { Text("Symbol Info: ${getSymbolUnderCursor()}") },
+            text = {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    Text(
+                        text = hoverContent,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { hoverDialogOpen = false }) { Text("Close") }
+            },
+        )
+    }
+
+    if (codeActionsOpen) {
+        ModalBottomSheet(onDismissRequest = { codeActionsOpen = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height(380.dp)
+                    .padding(horizontal = 18.dp),
+            ) {
+                Text("Code Actions & Quick Fixes", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                if (activeCodeActions.isEmpty()) {
+                    Text("No code actions available at cursor line.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(activeCodeActions.size) { idx ->
+                            val action = activeCodeActions[idx]
+                            Surface(
+                                onClick = { codeActionsOpen = false },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Column {
+                                        Text(action.title, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        Text(action.kind, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (implementationsOpen) {
+        ModalBottomSheet(onDismissRequest = { implementationsOpen = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height(440.dp)
+                    .padding(horizontal = 18.dp),
+            ) {
+                Text("Implementations of '${getSymbolUnderCursor()}'", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                if (activeImplementations.isEmpty()) {
+                    Text("No implementations found in workspace.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(activeImplementations.size) { idx ->
+                            val impl = activeImplementations[idx]
+                            Surface(
+                                onClick = {
+                                    implementationsOpen = false
+                                    if (workspaceDir != null) {
+                                        onNavigateToFileLine?.invoke(File(workspaceDir, impl.filePath).absolutePath, impl.line)
+                                    } else {
+                                        goToLine(impl.line)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            ) {
+                                Column(Modifier.padding(10.dp)) {
+                                    Text(impl.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("${impl.filePath}:${impl.line} (${impl.kind.name.lowercase()})", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (callHierarchyOpen) {
+        ModalBottomSheet(onDismissRequest = { callHierarchyOpen = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height(460.dp)
+                    .padding(horizontal = 18.dp),
+            ) {
+                Text("Call Hierarchy: '${getSymbolUnderCursor()}'", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                Text("Incoming Callers (${activeCallers.size}):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                if (activeCallers.isEmpty()) {
+                    Text("No incoming callers detected.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    activeCallers.take(6).forEach { caller ->
+                        Text("• ${caller.name} in ${caller.filePath}:${caller.line}", fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Outgoing Calls (${activeCallees.size}):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                if (activeCallees.isEmpty()) {
+                    Text("No outgoing calls detected.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    activeCallees.take(6).forEach { callee ->
+                        Text("• ${callee.name} in ${callee.filePath}:${callee.line}", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+
     // The parent owns navigation; the editor owns dirty-state confirmation.
     Scaffold(
         topBar = {
@@ -742,6 +949,34 @@ fun CodeEditorScreen(
                             onClick = {
                                 menuOpen = false
                                 triggerRenameSymbol()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Hover doc & info") },
+                            onClick = {
+                                menuOpen = false
+                                triggerHover()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Code actions & fixes") },
+                            onClick = {
+                                menuOpen = false
+                                triggerCodeActions()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Find implementations") },
+                            onClick = {
+                                menuOpen = false
+                                findImplementationsForSymbol()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Call hierarchy") },
+                            onClick = {
+                                menuOpen = false
+                                showCallHierarchyForSymbol()
                             },
                         )
                         DropdownMenuItem(
