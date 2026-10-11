@@ -306,7 +306,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     }
 
     fun safeWorkspaceFile(root: File, relative: String): File {
-        require(relative.isNotBlank() && !relative.startsWith('/') && !relative.contains('\\\\')) {
+        require(relative.isNotBlank() && !relative.startsWith('/') && !relative.contains('\\')) {
             "Unsafe workspace path"
         }
         val segments = relative.split('/')
