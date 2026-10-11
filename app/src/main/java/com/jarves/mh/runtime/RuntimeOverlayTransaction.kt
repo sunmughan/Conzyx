@@ -75,7 +75,8 @@ internal object RuntimeOverlayTransaction {
                 .toList()
         }.getOrElse { return false }
 
-        if (runCatching { backupRoot.deleteRecursively() }.getOrDefault(false).not() && backupRoot.exists()) return false
+        // Never erase a retained backup from an earlier incomplete rollback.
+        if (backupRoot.exists()) return false
         if (!backupRoot.mkdirs() && !backupRoot.isDirectory) return false
 
         val originals = mutableListOf<OriginalState>()
