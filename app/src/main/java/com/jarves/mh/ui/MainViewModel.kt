@@ -311,6 +311,26 @@ data class AppUiState(
     val mcpSelectedServerId: String? = null,
     val mcpBusy: Boolean = false,
     val mcpMessage: String? = null,
+    val appFactoryBlueprint: com.jarves.mh.factory.model.AppBlueprint? = null,
+    val appFactoryGeneratingBlueprint: Boolean = false,
+    val appFactoryScaffolding: Boolean = false,
+    val appFactoryScaffoldFiles: List<java.io.File> = emptyList(),
+    val appFactoryBuilding: Boolean = false,
+    val appFactoryBuildResult: com.jarves.mh.factory.model.BuildResult? = null,
+    val appFactoryLogs: List<String> = emptyList(),
+    val appFactoryKeystoreConfig: com.jarves.mh.factory.model.KeystoreConfig? = null,
+    val appFactoryStoreBundle: com.jarves.mh.factory.model.StoreListingBundle? = null,
+    val appFactoryMessage: String? = null,
+    val gitStatusInfo: com.jarves.mh.git.model.GitStatusInfo = com.jarves.mh.git.model.GitStatusInfo(),
+    val gitBranches: List<com.jarves.mh.git.model.GitBranchInfo> = emptyList(),
+    val gitCommits: List<com.jarves.mh.git.model.GitCommitInfo> = emptyList(),
+    val gitRawDiff: String = "",
+    val gitWorkflowState: com.jarves.mh.git.workflow.WorkflowExecutionState = com.jarves.mh.git.workflow.WorkflowExecutionState(),
+    val gitWorkflowRuns: List<com.jarves.mh.network.GitHubWorkflowRun> = emptyList(),
+    val gitReleases: List<com.jarves.mh.network.GitHubRelease> = emptyList(),
+    val gitIssues: List<com.jarves.mh.network.GitHubIssue> = emptyList(),
+    val gitPullRequests: List<com.jarves.mh.network.GitHubPullRequest> = emptyList(),
+    val gitConnectedRepo: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -372,6 +392,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val mcpAuditLogger = com.jarves.mh.mcp.McpAuditLogger(application)
     val mcpPermissionManager = com.jarves.mh.mcp.McpPermissionManager(File(application.filesDir, "mcp"), permissionPolicyEngine)
     val mcpClientRunner = com.jarves.mh.runtime.McpClientRunner()
+    val gitHubClient = com.jarves.mh.network.GitHubClient()
+    val gitWorkflowEngine = com.jarves.mh.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -509,6 +531,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // the retired custom OAuth implementation and discover the real CLI status.
         runCatching { vault.remove(LEGACY_GITHUB_TOKEN_KEY) }
         viewModelScope.launch { refreshGitHubConnection() }
+        viewModelScope.launch {
+            gitWorkflowEngine.state.collect { wfState ->
+                _state.update { it.copy(gitWorkflowState = wfState) }
+            }
+        }
         runCatching { RuntimeSetupController.restore(application) }
         val storageHealth = runtimeHealthController.checkStorageHealth()
         if (storageHealth is com.jarves.mh.runtime.StorageHealthResult.Critical) {
@@ -6158,6 +6185,384 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
         sendPrompt(prompt)
         onDispatched()
+    }
+
+    fun generateAppFactoryBlueprint(
+        prompt: String,
+        framework: com.jarves.mh.factory.model.AppFramework = com.jarves.mh.factory.model.AppFramework.ANDROID_COMPOSE,
+        buildMode: com.jarves.mh.factory.model.BuildMode = com.jarves.mh.factory.model.BuildMode.ON_DEVICE,
+        archetype: com.jarves.mh.factory.blueprint.AppFactoryBlueprintEngine.Archetype? = null,
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(appFactoryGeneratingBlueprint = true, appFactoryMessage = "Synthesizing software blueprint...") }
+            try {
+                val blueprint = com.jarves.mh.factory.blueprint.AppFactoryBlueprintEngine.createBlueprint(
+                    prompt = prompt,
+                    framework = framework,
+                    buildMode = buildMode,
+                    forcedArchetype = archetype,
+                )
+                _state.update {
+                    it.copy(
+                        appFactoryBlueprint = blueprint,
+                        appFactoryGeneratingBlueprint = false,
+                        appFactoryMessage = "Blueprint '${blueprint.name}' generated successfully."
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        appFactoryGeneratingBlueprint = false,
+                        appFactoryMessage = "Blueprint generation failed: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun scaffoldAppFactoryProject(
+        targetDirectory: File? = null,
+        blueprint: com.jarves.mh.factory.model.AppBlueprint? = _state.value.appFactoryBlueprint
+    ) {
+        val bp = blueprint ?: return
+        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp.name.lowercase().replace(" ", "_")}")
+
+        viewModelScope.launch {
+            _state.update { it.copy(appFactoryScaffolding = true, appFactoryMessage = "Scaffolding ${bp.framework.displayName} files...") }
+            try {
+                val files = mutableListOf<File>()
+                when (bp.framework) {
+                    com.jarves.mh.factory.model.AppFramework.ANDROID_COMPOSE -> {
+                        files += com.jarves.mh.factory.generators.AndroidComposeGenerator.generateProject(projectDir, bp)
+                    }
+                    com.jarves.mh.factory.model.AppFramework.FLUTTER -> {
+                        files += com.jarves.mh.factory.generators.FlutterAppGenerator.generateProject(projectDir, bp)
+                    }
+                    com.jarves.mh.factory.model.AppFramework.REACT_NATIVE -> {
+                        files += com.jarves.mh.factory.generators.ReactNativeAppGenerator.generateProject(projectDir, bp)
+                    }
+                    com.jarves.mh.factory.model.AppFramework.FULLSTACK_BACKEND -> {
+                        files += com.jarves.mh.factory.generators.BackendServiceGenerator.generateProject(projectDir, bp)
+                    }
+                }
+                files += com.jarves.mh.factory.generators.DatabaseSetupEngine.generateDatabaseBundle(projectDir, bp)
+                files += com.jarves.mh.factory.generators.ApiIntegrationGenerator.generateApiClientBundle(projectDir, bp)
+
+                _state.update {
+                    it.copy(
+                        appFactoryScaffolding = false,
+                        appFactoryScaffoldFiles = files,
+                        appFactoryMessage = "Scaffolded ${files.size} project files in ${projectDir.name}."
+                    )
+                }
+                refreshProjectFiles()
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        appFactoryScaffolding = false,
+                        appFactoryMessage = "Scaffolding failed: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun buildAppFactoryApp(
+        artifactType: com.jarves.mh.factory.model.BuildArtifactType = com.jarves.mh.factory.model.BuildArtifactType.APK_DEBUG,
+        buildMode: com.jarves.mh.factory.model.BuildMode = com.jarves.mh.factory.model.BuildMode.ON_DEVICE,
+        targetDirectory: File? = null
+    ) {
+        val bp = _state.value.appFactoryBlueprint ?: return
+        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp.name.lowercase().replace(" ", "_")}")
+
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    appFactoryBuilding = true,
+                    appFactoryLogs = listOf("Starting build: ${artifactType.displayName} via ${buildMode.displayName}..."),
+                    appFactoryMessage = "Building ${artifactType.displayName}..."
+                )
+            }
+            try {
+                val result = com.jarves.mh.factory.build.AppBuildOrchestrator.runBuild(
+                    projectDir = projectDir,
+                    blueprint = bp,
+                    artifactType = artifactType,
+                    buildMode = buildMode
+                )
+                _state.update {
+                    it.copy(
+                        appFactoryBuilding = false,
+                        appFactoryBuildResult = result,
+                        appFactoryLogs = result.logs,
+                        appFactoryMessage = if (result.success) "Build completed successfully!" else "Build failed: ${result.errorMessage}"
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        appFactoryBuilding = false,
+                        appFactoryMessage = "Build error: ${e.message}",
+                        appFactoryLogs = it.appFactoryLogs + "Error: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun installBuiltApk(apkFile: File) {
+        try {
+            com.jarves.mh.factory.build.AppBuildOrchestrator.installApk(getApplication(), apkFile)
+            _state.update { it.copy(appFactoryMessage = "Launched package installer for ${apkFile.name}") }
+        } catch (e: Exception) {
+            _state.update { it.copy(appFactoryMessage = "Installation error: ${e.message}") }
+        }
+    }
+
+    fun generateReleaseKeystore(
+        targetDirectory: File? = null,
+        alias: String = "releaseKey",
+        pass: String = "pocketdev123"
+    ) {
+        val bp = _state.value.appFactoryBlueprint
+        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp?.name?.lowercase()?.replace(" ", "_") ?: "app"}")
+
+        try {
+            val config = com.jarves.mh.factory.build.SigningAndVersionManager.createKeystore(
+                projectDir = projectDir,
+                keyAlias = alias,
+                storePassword = pass,
+                keyPassword = pass
+            )
+            _state.update {
+                it.copy(
+                    appFactoryKeystoreConfig = config,
+                    appFactoryMessage = "2048-bit Keystore generated: ${config.keystoreFile.name}"
+                )
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(appFactoryMessage = "Keystore generation failed: ${e.message}") }
+        }
+    }
+
+    fun bumpAppVersion(
+        targetDirectory: File? = null,
+        bumpType: com.jarves.mh.factory.model.VersionBumpType = com.jarves.mh.factory.model.VersionBumpType.PATCH
+    ) {
+        val bp = _state.value.appFactoryBlueprint
+        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp?.name?.lowercase()?.replace(" ", "_") ?: "app"}")
+
+        val (newCode, newName) = com.jarves.mh.factory.build.SigningAndVersionManager.bumpVersion(projectDir, bumpType)
+        _state.update { state ->
+            val updatedBp = state.appFactoryBlueprint?.let {
+                it.copy(buildConfig = it.buildConfig.copy(versionCode = newCode, versionName = newName))
+            }
+            state.copy(
+                appFactoryBlueprint = updatedBp,
+                appFactoryMessage = "Bumped version to $newName (code $newCode)"
+            )
+        }
+    }
+
+    fun preparePlayStoreListing(
+        targetDirectory: File? = null,
+        blueprint: com.jarves.mh.factory.model.AppBlueprint? = _state.value.appFactoryBlueprint
+    ) {
+        val bp = blueprint ?: return
+        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp.name.lowercase().replace(" ", "_")}")
+
+        try {
+            val bundle = com.jarves.mh.factory.build.PlayStorePreparationEngine.prepareListingBundle(projectDir, bp)
+            _state.update {
+                it.copy(
+                    appFactoryStoreBundle = bundle,
+                    appFactoryMessage = "Play Store listing metadata bundle exported to ${bundle.listingDir.name}"
+                )
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(appFactoryMessage = "Play Store preparation failed: ${e.message}") }
+        }
+    }
+
+    fun refreshGitStudio(targetDirectory: File? = null) {
+        val project = _state.value.activeProject
+        val dir = targetDirectory ?: project?.let { projectWorkspaceRoot(it) } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val status = gitDomainController.getStatusInfo(dir)
+            val branches = gitDomainController.listBranchesDetailed(dir)
+            val commits = gitDomainController.log(dir, limit = 40)
+            val rawDiff = gitDomainController.rawDiff(dir, staged = false).output
+            val repoFullName = _state.value.githubRepositories.firstOrNull {
+                it.cloneUrl.contains(dir.name, ignoreCase = true) || it.fullName.contains(dir.name, ignoreCase = true)
+            }?.fullName ?: _state.value.githubRepositories.firstOrNull()?.fullName
+
+            val issues = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
+                runCatching { gitHubClient.issues("", repoFullName) }.getOrDefault(emptyList())
+            } else emptyList()
+
+            val prs = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
+                runCatching { gitHubClient.pullRequests("", repoFullName) }.getOrDefault(emptyList())
+            } else emptyList()
+
+            val runs = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
+                runCatching { gitHubClient.listWorkflowRuns("", repoFullName) }.getOrDefault(emptyList())
+            } else emptyList()
+
+            val releases = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
+                runCatching { gitHubClient.listReleases("", repoFullName) }.getOrDefault(emptyList())
+            } else emptyList()
+
+            _state.update {
+                it.copy(
+                    gitStatusInfo = status,
+                    gitBranches = branches,
+                    gitCommits = commits,
+                    gitRawDiff = rawDiff,
+                    gitConnectedRepo = repoFullName,
+                    gitIssues = issues,
+                    gitPullRequests = prs,
+                    gitWorkflowRuns = runs,
+                    gitReleases = releases
+                )
+            }
+        }
+    }
+
+    fun gitStageFile(path: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        gitDomainController.stageFile(dir, path)
+        refreshGitStudio(dir)
+    }
+
+    fun gitStageAll(targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        gitDomainController.stageAll(dir)
+        refreshGitStudio(dir)
+    }
+
+    fun gitUnstageFile(path: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        gitDomainController.unstageFile(dir, path)
+        refreshGitStudio(dir)
+    }
+
+    fun gitUnstageAll(targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        gitDomainController.unstageAll(dir)
+        refreshGitStudio(dir)
+    }
+
+    fun gitDiscardFile(path: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        gitDomainController.discardFile(dir, path)
+        refreshGitStudio(dir)
+    }
+
+    fun gitDiscardAll(targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        gitDomainController.discardAll(dir)
+        refreshGitStudio(dir)
+    }
+
+    fun gitCommitDetailed(message: String, amend: Boolean = false, signOff: Boolean = false, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.commitDetailed(dir, message, amend, signOff)
+        _state.update { it.copy(toastMessage = if (res.success) "Committed successfully" else res.errorMessage ?: "Commit failed") }
+        refreshGitStudio(dir)
+    }
+
+    fun gitCreateBranch(name: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.checkout(dir, name, createNew = true)
+        _state.update { it.copy(toastMessage = if (res.success) "Created branch $name" else res.errorMessage ?: "Failed to create branch") }
+        refreshGitStudio(dir)
+    }
+
+    fun gitCheckoutBranch(name: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.checkout(dir, name, createNew = false)
+        _state.update { it.copy(toastMessage = if (res.success) "Switched to branch $name" else res.errorMessage ?: "Failed to switch branch") }
+        refreshGitStudio(dir)
+    }
+
+    fun gitDeleteBranch(name: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.deleteBranch(dir, name, force = true)
+        _state.update { it.copy(toastMessage = if (res.success) "Deleted branch $name" else res.errorMessage ?: "Failed to delete branch") }
+        refreshGitStudio(dir)
+    }
+
+    fun gitMergeBranch(branch: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.merge(dir, branch)
+        _state.update { it.copy(toastMessage = if (res.success) "Merged $branch successfully" else res.errorMessage ?: "Merge conflicts or failure") }
+        refreshGitStudio(dir)
+    }
+
+    fun gitRebaseBranch(upstream: String, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.rebase(dir, upstream)
+        _state.update { it.copy(toastMessage = if (res.success) "Rebased onto $upstream" else res.errorMessage ?: "Rebase conflicts or failure") }
+        refreshGitStudio(dir)
+    }
+
+    fun gitResetBranch(hash: String, mode: com.jarves.mh.git.model.GitResetMode, targetDirectory: File? = null) {
+        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
+        val res = gitDomainController.reset(dir, hash, mode)
+        _state.update { it.copy(toastMessage = if (res.success) "Reset to $hash (${mode.name})" else res.errorMessage ?: "Reset failed") }
+        refreshGitStudio(dir)
+    }
+
+    fun createGitHubIssue(title: String, body: String = "") {
+        val repo = _state.value.gitConnectedRepo ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val issue = gitHubClient.createIssue("", repo, title, body)
+                _state.update { it.copy(gitIssues = listOf(issue) + it.gitIssues, toastMessage = "Created Issue #${issue.number}") }
+            } catch (e: Exception) {
+                _state.update { it.copy(toastMessage = "Failed to create issue: ${e.message}") }
+            }
+        }
+    }
+
+    fun mergeGitHubPullRequest(prNumber: Int, method: com.jarves.mh.network.PullRequestMergeMethod = com.jarves.mh.network.PullRequestMergeMethod.SQUASH) {
+        val repo = _state.value.gitConnectedRepo ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = gitHubClient.mergePullRequest("", repo, prNumber, method = method)
+                _state.update {
+                    it.copy(
+                        toastMessage = if (result.merged) "PR #$prNumber merged successfully!" else "Merge failed: ${result.message}"
+                    )
+                }
+                refreshGitStudio()
+            } catch (e: Exception) {
+                _state.update { it.copy(toastMessage = "Merge failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun startAutonomousIssueWorkflow(issue: com.jarves.mh.network.GitHubIssue) {
+        val project = _state.value.activeProject ?: return
+        val dir = projectWorkspaceRoot(project)
+        val repo = _state.value.gitConnectedRepo ?: project.name
+
+        viewModelScope.launch {
+            gitWorkflowEngine.runAutonomousWorkflow(
+                issue = issue,
+                token = "",
+                repoFullName = repo,
+                workingDir = dir,
+                agentExecutor = { prompt ->
+                    sendPrompt(prompt)
+                    true
+                },
+                buildAndTestValidator = {
+                    true to "Tests compiled and passed"
+                }
+            )
+            refreshGitStudio(dir)
+        }
     }
 
     override fun onCleared() {

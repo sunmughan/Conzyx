@@ -1,5 +1,11 @@
 package com.jarves.mh.workspace
 
+import com.jarves.mh.git.engine.GitRepositoryEngine
+import com.jarves.mh.git.model.GitBranchInfo
+import com.jarves.mh.git.model.GitCommitInfo
+import com.jarves.mh.git.model.GitResetMode
+import com.jarves.mh.git.model.GitStashItem
+import com.jarves.mh.git.model.GitStatusInfo
 import java.io.File
 
 /**
@@ -13,12 +19,16 @@ data class GitCommandResult(
 )
 
 /**
- * Domain controller for Git operations (status, diff, branch, checkout, commit, push, pull).
- * Decoupled from MainViewModel to ensure single-responsibility and full unit testability.
+ * Domain controller for Git operations, integrating high-level repository engine capabilities
+ * while maintaining backward-compatible method signatures.
  */
 class GitDomainController(
     private val processRunner: (args: List<String>, workingDir: File, guestWorkspacePath: String) -> Pair<Int, String> = { _, _, _ -> 0 to "" }
 ) {
+
+    val engine: GitRepositoryEngine = GitRepositoryEngine { args, dir ->
+        processRunner(args, dir, "")
+    }
 
     fun executeGit(
         args: List<String>,
@@ -55,8 +65,17 @@ class GitDomainController(
         return executeGit(listOf("status", "--short"), workingDir, guestWorkspacePath)
     }
 
+    fun getStatusInfo(workingDir: File): GitStatusInfo {
+        return engine.getStatus(workingDir)
+    }
+
     fun diff(workingDir: File, guestWorkspacePath: String = ""): GitCommandResult {
         return executeGit(listOf("diff", "--stat"), workingDir, guestWorkspacePath)
+    }
+
+    fun rawDiff(workingDir: File, staged: Boolean = false): GitCommandResult {
+        val args = if (staged) listOf("diff", "--staged") else listOf("diff")
+        return executeGit(args, workingDir)
     }
 
     fun branchList(workingDir: File, guestWorkspacePath: String = ""): List<String> {
@@ -66,6 +85,10 @@ class GitDomainController(
             .map { it.trim().removePrefix("*").trim() }
             .filter { it.isNotBlank() }
             .toList()
+    }
+
+    fun listBranchesDetailed(workingDir: File): List<GitBranchInfo> {
+        return engine.listBranches(workingDir)
     }
 
     fun checkout(
@@ -90,6 +113,15 @@ class GitDomainController(
         return executeGit(listOf("commit", "-m", message), workingDir, guestWorkspacePath)
     }
 
+    fun commitDetailed(
+        workingDir: File,
+        message: String,
+        amend: Boolean = false,
+        signOff: Boolean = false
+    ): GitCommandResult {
+        return engine.commit(workingDir, message, amend, signOff)
+    }
+
     fun push(
         workingDir: File,
         remote: String = "origin",
@@ -109,4 +141,40 @@ class GitDomainController(
         val args = if (branch.isNotBlank()) listOf("pull", remote, branch) else listOf("pull")
         return executeGit(args, workingDir, guestWorkspacePath)
     }
+
+    fun stageFile(workingDir: File, path: String): GitCommandResult = engine.stageFile(workingDir, path)
+
+    fun stageAll(workingDir: File): GitCommandResult = engine.stageAll(workingDir)
+
+    fun unstageFile(workingDir: File, path: String): GitCommandResult = engine.unstageFile(workingDir, path)
+
+    fun unstageAll(workingDir: File): GitCommandResult = engine.unstageAll(workingDir)
+
+    fun discardFile(workingDir: File, path: String): GitCommandResult = engine.discardFile(workingDir, path)
+
+    fun discardAll(workingDir: File): GitCommandResult = engine.discardAll(workingDir)
+
+    fun deleteBranch(workingDir: File, branchName: String, force: Boolean = false): GitCommandResult =
+        engine.deleteBranch(workingDir, branchName, force)
+
+    fun merge(workingDir: File, branch: String, message: String? = null): GitCommandResult =
+        engine.merge(workingDir, branch, message)
+
+    fun rebase(workingDir: File, upstream: String): GitCommandResult =
+        engine.rebase(workingDir, upstream)
+
+    fun reset(workingDir: File, target: String, mode: GitResetMode = GitResetMode.MIXED): GitCommandResult =
+        engine.reset(workingDir, target, mode)
+
+    fun log(workingDir: File, limit: Int = 40): List<GitCommitInfo> =
+        engine.getLog(workingDir, limit)
+
+    fun stashSave(workingDir: File, message: String = ""): GitCommandResult =
+        engine.stashSave(workingDir, message)
+
+    fun stashList(workingDir: File): List<GitStashItem> =
+        engine.stashList(workingDir)
+
+    fun stashPop(workingDir: File, index: Int = 0): GitCommandResult =
+        engine.stashPop(workingDir, index)
 }

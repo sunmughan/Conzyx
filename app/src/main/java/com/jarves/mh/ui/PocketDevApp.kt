@@ -309,6 +309,7 @@ fun PocketDevApp(
     val projectsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     var guestDismissedAuth by rememberSaveable { mutableStateOf(false) }
     var showAuthModal by rememberSaveable { mutableStateOf(false) }
+    var showAppFactoryScreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -326,6 +327,44 @@ fun PocketDevApp(
                 guestDismissedAuth = true
                 showAuthModal = false
             },
+        )
+        return
+    }
+
+    if (showAppFactoryScreen) {
+        com.jarves.mh.factory.ui.AppFactoryScreen(
+            currentBlueprint = state.appFactoryBlueprint,
+            isGeneratingBlueprint = state.appFactoryGeneratingBlueprint,
+            isScaffolding = state.appFactoryScaffolding,
+            scaffoldedFiles = state.appFactoryScaffoldFiles,
+            isBuilding = state.appFactoryBuilding,
+            buildResult = state.appFactoryBuildResult,
+            buildLogs = state.appFactoryLogs,
+            keystoreConfig = state.appFactoryKeystoreConfig,
+            storeListingBundle = state.appFactoryStoreBundle,
+            statusMessage = state.appFactoryMessage,
+            onBack = { showAppFactoryScreen = false },
+            onGenerateBlueprint = { prompt, fw, mode, arch ->
+                viewModel.generateAppFactoryBlueprint(prompt, fw, mode, arch)
+            },
+            onScaffoldProject = {
+                viewModel.scaffoldAppFactoryProject()
+            },
+            onRunBuild = { art, mode ->
+                viewModel.buildAppFactoryApp(art, mode)
+            },
+            onInstallApk = { apk ->
+                viewModel.installBuiltApk(apk)
+            },
+            onGenerateKeystore = { alias, pass ->
+                viewModel.generateReleaseKeystore(alias = alias, pass = pass)
+            },
+            onBumpVersion = { type ->
+                viewModel.bumpAppVersion(bumpType = type)
+            },
+            onPreparePlayStore = {
+                viewModel.preparePlayStoreListing()
+            }
         )
         return
     }
@@ -479,6 +518,7 @@ fun PocketDevApp(
             onScanPorts = viewModel::scanActiveLocalhostPorts,
             onAttachVisualInspection = viewModel::attachVisualInspectionToAgent,
             viewModel = viewModel,
+            onOpenAppFactory = { showAppFactoryScreen = true },
         )
         else -> RootScreenHost(
             state = state,
@@ -486,6 +526,7 @@ fun PocketDevApp(
             projectsListState = projectsListState,
             authViewModel = authViewModel,
             onNavigateToAuth = { showAuthModal = true },
+            onOpenAppFactory = { showAppFactoryScreen = true },
         )
     }
 }
@@ -2284,6 +2325,7 @@ private fun RootScreenHost(
     projectsListState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
     authViewModel: AuthViewModel? = null,
     onNavigateToAuth: () -> Unit = {},
+    onOpenAppFactory: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2365,6 +2407,7 @@ private fun RootScreenHost(
                     onPing = viewModel::pingApi,
                     onToggleTheme = viewModel::toggleTheme,
                     onInstallUpdate = viewModel::installAppUpdate,
+                    onOpenAppFactory = onOpenAppFactory,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3416,6 +3459,7 @@ private fun ProjectsScreen(
     onPing: () -> Unit,
     onToggleTheme: () -> Unit,
     onInstallUpdate: () -> Unit,
+    onOpenAppFactory: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -3560,6 +3604,72 @@ private fun ProjectsScreen(
                             fontSize = 13.sp,
                             maxLines = 1,
                             softWrap = false,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenAppFactory() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PhoneAndroid,
+                                    contentDescription = "App Factory",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "App Factory Studio",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                ) {
+                                    Text(
+                                        "v2.0",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                "AI Scaffolding, SQLite DB, On-Device/CI Build & Play Store",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Open App Factory",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -4388,6 +4498,7 @@ private fun WorkspaceScreen(
     onScanPorts: ((List<Int>) -> Unit) -> Unit = {},
     onAttachVisualInspection: (String, String) -> Unit = { _, _ -> },
     viewModel: MainViewModel? = null,
+    onOpenAppFactory: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4541,6 +4652,7 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.PREVIEW -> selectedTab = WorkspaceTab.PREVIEW
                     WorkspaceCommand.REFRESH_FILES -> onRefreshFiles()
                     WorkspaceCommand.BIND_FOLDER -> bindFolderLauncher.launch(null)
+                    WorkspaceCommand.APP_FACTORY -> onOpenAppFactory()
                 }
             },
         )
@@ -4932,6 +5044,7 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     PREVIEW("Open Preview", "preview browser localhost"),
     REFRESH_FILES("Refresh Project Files", "refresh files reload"),
     BIND_FOLDER("Bind Folder from Device", "open folder bind directory storage import external"),
+    APP_FACTORY("Android App Factory", "app factory blueprint scaffold build create generator"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
