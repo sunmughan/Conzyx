@@ -133,4 +133,27 @@ class WorkspaceCheckpointsTest {
             checkpoints.safeWorkspaceFile(root, "linked/secret.txt")
         }
     }
+
+    @Test
+    fun `checkpoint storage rejects symlinked project and latest directories`() {
+        val filesDir = tempFolder.newFolder("checkpoint-storage-symlinks")
+        val checkpointsRoot = File(filesDir, "checkpoints").apply { mkdirs() }
+        val outside = tempFolder.newFolder("checkpoint-storage-outside")
+        java.nio.file.Files.createSymbolicLink(
+            File(checkpointsRoot, "project-link").toPath(),
+            outside.toPath(),
+        )
+        val manager = WorkspaceCheckpoints(filesDir)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            manager.checkpointDir("project-link")
+        }
+
+        val projectRoot = File(checkpointsRoot, "project-latest").apply { mkdirs() }
+        java.nio.file.Files.createSymbolicLink(File(projectRoot, "latest").toPath(), outside.toPath())
+        assertThrows(IllegalArgumentException::class.java) {
+            manager.checkpointDir("project-latest")
+        }
+        assertTrue(outside.listFiles().orEmpty().isEmpty())
+    }
 }
