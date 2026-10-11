@@ -714,7 +714,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val runtime = installer.installedRuntime()
                     val workspace = File(getApplication<Application>().filesDir, "workspaces/terminal").apply { mkdirs() }
-                    val preparedCommand = prepareInteractiveShellCommand(command)
+                    val preparedCommand = TerminalCommandPolicy.prepareInteractiveShellCommand(command)
                     val proc = installer.process(
                         proot = runtime.proot,
                         rootfs = runtime.rootfs,
@@ -745,7 +745,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _terminalLiveOutput.value = sanitizeTerminalOutput(streamed.toString())
                                 .trimEnd()
                                 .takeLast(MAX_PROJECT_TERMINAL_OUTPUT)
-                            if (!autoConfirmed && shouldAutoConfirmPackageCommand(command, streamed.toString())) {
+                            if (!autoConfirmed && TerminalCommandPolicy.shouldAutoConfirmPackageCommand(command, streamed.toString())) {
                                 proc.outputStream.write("y\n".toByteArray())
                                 proc.outputStream.flush()
                                 autoConfirmed = true
@@ -782,13 +782,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun requestProjectTerminalCommand(command: String) {
         val normalized = command.trim()
         if (normalized.isBlank() || _state.value.projectTerminalRunning || projectTerminalProcess?.isAlive == true) return
-        if (requiresAndroidToolchain(normalized) && !installer.isStackInstalled(DevStack.ANDROID)) {
+        if (TerminalCommandPolicy.requiresAndroidToolchain(normalized) && !installer.isStackInstalled(DevStack.ANDROID)) {
             _state.update {
                 it.copy(toastMessage = "Android build tools are not installed. Add Android in Settings → Development stacks.")
             }
             return
         }
-        if (isDestructiveTerminalCommand(normalized)) {
+        if (TerminalCommandPolicy.isDestructiveTerminalCommand(normalized)) {
             _state.update { it.copy(pendingTerminalCommand = normalized) }
         } else {
             runProjectTerminalCommand(normalized)
@@ -832,7 +832,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val startingCwd = _state.value.projectTerminalCwd
         val existingLines = _state.value.projectTerminalLines
         projectTerminalStopRequested = false
-        val requestedPreviewUrl = detectServerUrl(command)
+        val requestedPreviewUrl = TerminalCommandPolicy.detectServerUrl(command)
         _state.update {
             it.copy(
                 projectTerminalRunning = true,
@@ -994,9 +994,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val workspace = projectWorkspaceRoot(project)
         val guestWorkspacePath = projectGuestRoot(project)
         val marker = "__POCKETDEV_CWD_${UUID.randomUUID()}__"
-        val preparedCommand = prepareInteractiveShellCommand(command)
+        val preparedCommand = TerminalCommandPolicy.prepareInteractiveShellCommand(command)
         val script = """
-            cd -- ${shellQuote(cwd)} || exit 1
+            cd -- ${TerminalCommandPolicy.shellQuote(cwd)} || exit 1
             $preparedCommand
             pocket_status=${'$'}?
             printf '\n$marker%s\n' "${'$'}PWD"
@@ -1034,12 +1034,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 output.append(bytes.decodeToString(0, count))
                 val visible = sanitizeTerminalOutput(output.toString().substringBefore(marker))
                     .takeLast(MAX_PROJECT_TERMINAL_OUTPUT)
-                if (!autoConfirmed && shouldAutoConfirmPackageCommand(command, visible)) {
+                if (!autoConfirmed && TerminalCommandPolicy.shouldAutoConfirmPackageCommand(command, visible)) {
                     process.outputStream.write("y\n".toByteArray())
                     process.outputStream.flush()
                     autoConfirmed = true
                 }
-                val detectedPreviewUrl = detectPreviewUrl(visible)
+                val detectedPreviewUrl = TerminalCommandPolicy.detectPreviewUrl(visible)
                 _state.update { current ->
                     if (current.activeProject?.id == projectId) {
                         current.copy(
@@ -1090,51 +1090,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * or config-file dialogs in the phone UI. Other commands remain interactive and
      * can receive input through [sendProcessInput].
      */
-    private fun prepareInteractiveShellCommand(command: String): String {
-        val normalizedApt = command
-            .replace(Regex("(?<![\\w-])sudo\\s+apt(?:-get)?\\s+"), "apt-get ")
-            .replace(Regex("(?<![\\w-])apt\\s+"), "apt-get ")
-            .replace(
-                Regex("(?<![\\w-])apt-get\\s+(install|upgrade|full-upgrade|dist-upgrade|remove|autoremove|fix-broken)\\b"),
-                "apt-get -y -o Dpkg::Options::=--force-confold $1",
-            )
-        return "export DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none UCF_FORCE_CONFFOLD=1 NEEDRESTART_MODE=a TZ=Etc/UTC LC_ALL=C.UTF-8; $normalizedApt"
-    }
-
-    private fun shouldAutoConfirmPackageCommand(command: String, output: String): Boolean {
-        val packageCommand = Regex("(?i)(^|[;&|]\\s*)(sudo\\s+)?(apt|apt-get|dpkg)\\b").containsMatchIn(command)
-        if (!packageCommand) return false
-        val tail = output.takeLast(500)
-        return Regex("(?i)(do you want to continue|continue\\?)\\s*\\[[Yy]/[Nn]\\]").containsMatchIn(tail)
-    }
-
-    private fun isDestructiveTerminalCommand(command: String): Boolean {
-        val normalized = command.lowercase().replace(Regex("\\s+"), " ")
-        return listOf(
-            "rm -rf", "rm -fr", "git reset --hard", "git clean -f", "git push --force",
-            "mkfs", "dd if=", "chmod -r 777", "shutdown", "reboot", ":(){", "kill \$(pgrep", "pkill -f",
-        ).any(normalized::contains) || Regex("(curl|wget).*(\\||>)\\s*(sh|bash)").containsMatchIn(normalized)
-    }
-
-    private fun detectPreviewUrl(output: String): String? {
-        val match = Regex("https?://(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0):(\\d{2,5})(?:/[^\\s]*)?")
-            .findAll(output)
-            .lastOrNull()
-            ?: return null
-        val port = match.groupValues[1].toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
-        return "http://127.0.0.1:$port/"
-    }
-
-    private fun detectServerUrl(command: String): String? {
-        val match = Regex("""python(?:3)?\s+-m\s+http\.server(?:\s+(\d{2,5}))?""")
-            .find(command)
-            ?: return null
-        val port = match.groupValues.getOrNull(1)?.toIntOrNull() ?: 8000
-        return port.takeIf { it in 1..65535 }?.let { "http://127.0.0.1:$it/" }
-    }
-
-    private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
-
     private fun terminalHistoryFile(projectId: String): File =
         File(getApplication<Application>().filesDir, "terminal-history/$projectId.json")
 
@@ -1275,10 +1230,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .any { it.isFile && it.invariantSeparatorsPath.endsWith("src/main/AndroidManifest.xml") }
             }
     }
-
-    private fun requiresAndroidToolchain(command: String): Boolean =
-        Regex("(?m)(^|[;&|]\\s*)(?:\\./)?gradle(?:w)?(?:\\s|$)", RegexOption.IGNORE_CASE).containsMatchIn(command)
-
 
     fun toggleTheme() {
         val next = if (_state.value.themeMode == com.jarves.mh.ui.theme.AppThemeMode.DARK) {
