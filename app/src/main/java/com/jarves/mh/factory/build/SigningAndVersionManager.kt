@@ -35,16 +35,19 @@ object SigningAndVersionManager {
             "-keypass:env", "MHE_KEY_PASSWORD",
             "-noprompt",
         )
-        val process = ProcessBuilder(command).directory(projectDir).redirectErrorStream(true).apply {
-            environment()["MHE_STORE_PASSWORD"] = storePassword
-            environment()["MHE_KEY_PASSWORD"] = keyPassword
-        }.start()
+        val keytoolLog = File(projectDir, ".keytool-generation.log")
+        val process = ProcessBuilder(command).directory(projectDir).redirectErrorStream(true)
+            .redirectOutput(keytoolLog).apply {
+                environment()["MHE_STORE_PASSWORD"] = storePassword
+                environment()["MHE_KEY_PASSWORD"] = keyPassword
+            }.start()
         val completed = process.waitFor(60, TimeUnit.SECONDS)
         if (!completed) {
             process.destroyForcibly()
             error("keytool timed out while generating the keystore")
         }
-        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val output = runCatching { keytoolLog.readText() }.getOrDefault("")
+        keytoolLog.delete()
         check(process.exitValue() == 0 && keystoreFile.isFile && keystoreFile.length() > 0L) {
             "Keystore generation failed: ${output.takeLast(1_000)}"
         }
