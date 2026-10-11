@@ -39,7 +39,8 @@ test-secrets.properties
 # Profiling tools
 captures/
 
-# Keystore files (signing keys)
+# Keystore files and local signing secrets
+keystore.properties
 *.jks
 *.keystore
 
