@@ -88,5 +88,8 @@ class WorkspaceCheckpointsTest {
         assertThrows(IllegalArgumentException::class.java) {
             checkpoints.safeWorkspaceFile(root, "../outside.txt")
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            checkpoints.ensureWorkspace("../outside")
+        }
     }
 }
