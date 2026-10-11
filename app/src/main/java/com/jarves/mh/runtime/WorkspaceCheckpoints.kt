@@ -44,7 +44,14 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     fun createCheckpoint(projectId: String, workspace: File) {
         val checkpoint = checkpointDir(projectId)
         // Keep the original baseline until every pending file is accepted or undone.
-        if (File(checkpoint, "project").isDirectory && File(checkpoint, "changes.json").isFile) return
+        if (File(checkpoint, "project").isDirectory && File(checkpoint, "changes.json").isFile) {
+            if (readChangedPaths(projectId).isEmpty()) {
+                val baseline = snapshot(File(checkpoint, "project"))
+                val recoveredChanges = changedFiles(workspace, baseline)
+                if (recoveredChanges.isNotEmpty()) saveChangedPaths(projectId, recoveredChanges)
+            }
+            return
+        }
         checkpoint.deleteRecursively()
         val backup = File(checkpoint, "project").apply { mkdirs() }
         val workspacePath = workspace.canonicalFile.toPath()
@@ -67,6 +74,9 @@ class WorkspaceCheckpoints(private val filesDir: File) {
                 destination.parentFile?.mkdirs()
                 check(SafeFileOps.atomicCopy(source, destination)) { "Could not safely copy ${source.path}" }
             }
+        check(SafeFileOps.atomicWriteText(File(checkpoint, "changes.json"), "[]")) {
+            "Could not initialize checkpoint change manifest"
+        }
     }
 
     fun saveChangedPaths(projectId: String, paths: List<String>) {
