@@ -354,7 +354,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
     private val editorCheckpoints = WorkspaceCheckpoints(application.filesDir)
-    private val projectTerminalHistoryStore by lazy { ProjectTerminalHistoryStore(application.filesDir) }
+    private val projectTerminalHistoryStore = ProjectTerminalHistoryStore(application.filesDir)
     val sessionManager = com.jarves.mh.session.AgentSessionManager(application)
     val checkpointManager = com.jarves.mh.workspace.WorkspaceCheckpointManager(application.filesDir)
     val runtimeHealthController = com.jarves.mh.runtime.RuntimeHealthController(application)
