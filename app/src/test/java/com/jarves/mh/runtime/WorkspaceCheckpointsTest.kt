@@ -156,4 +156,24 @@ class WorkspaceCheckpointsTest {
         }
         assertTrue(outside.listFiles().orEmpty().isEmpty())
     }
+
+    @Test
+    fun `snapshot ignores symlinked files and directories`() {
+        val root = tempFolder.newFolder("snapshot-symlink-root")
+        val outside = tempFolder.newFolder("snapshot-symlink-outside")
+        File(outside, "secret.txt").writeText("do not hash outside content")
+        File(root, "normal.txt").writeText("safe")
+        java.nio.file.Files.createSymbolicLink(
+            File(root, "linked-file.txt").toPath(),
+            File(outside, "secret.txt").toPath(),
+        )
+        java.nio.file.Files.createSymbolicLink(
+            File(root, "linked-dir").toPath(),
+            outside.toPath(),
+        )
+
+        val snapshot = WorkspaceCheckpoints(tempFolder.newFolder("snapshot-files")).snapshot(root)
+
+        assertEquals(setOf("normal.txt"), snapshot.keys)
+    }
 }
