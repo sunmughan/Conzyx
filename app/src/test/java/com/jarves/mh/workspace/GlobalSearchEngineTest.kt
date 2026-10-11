@@ -121,4 +121,28 @@ class GlobalSearchEngineTest {
         ))
         assertEquals("$1\\path $1\\path", target.readText())
     }
+
+    @Test
+    fun `search and replace never read or modify symlink targets outside workspace`() {
+        val outside = tempFolder.newFolder("search-outside-workspace")
+        val outsideFile = File(outside, "secret.txt").apply { writeText("secret-token") }
+        java.nio.file.Files.createSymbolicLink(
+            File(workspaceDir, "linked-secret.txt").toPath(),
+            outsideFile.toPath(),
+        )
+        java.nio.file.Files.createSymbolicLink(
+            File(workspaceDir, "linked-directory").toPath(),
+            outside.toPath(),
+        )
+
+        val result = GlobalSearchEngine.search(workspaceDir, "secret-token", matchCase = true)
+        assertTrue(result.matches.isEmpty())
+        assertEquals(0, GlobalSearchEngine.replaceAll(
+            workspaceDir = workspaceDir,
+            query = "secret-token",
+            replacement = "modified",
+            matchCase = true,
+        ))
+        assertEquals("secret-token", outsideFile.readText())
+    }
 }
