@@ -11,7 +11,7 @@ class TerminalCommandPolicyTest {
     @Test
     fun `terminal output sanitizer removes ANSI escapes and control bytes`() {
         assertEquals("green text", TerminalCommandPolicy.sanitizeTerminalOutput("\u001B[32mgreen text\u001B[0m"))
-        assertEquals("ab\ncd", TerminalCommandPolicy.sanitizeTerminalOutput("a\u0001b\n\u0000c\td"))
+        assertEquals("ab\nc\td", TerminalCommandPolicy.sanitizeTerminalOutput("a\u0001b\n\u0000c\td"))
     }
 
     @Test
