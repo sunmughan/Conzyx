@@ -755,7 +755,7 @@ class ClaudeRuntimeBridge(
                 val relative = source.relativeTo(workspace).invariantSeparatorsPath
                 val destination = safeWorkspaceFile(backup, relative)
                 destination.parentFile?.mkdirs()
-                source.copyTo(destination, overwrite = true)
+                check(SafeFileOps.atomicCopy(source, destination)) { "Could not safely copy ${source.path}" }
             }
     }
 
