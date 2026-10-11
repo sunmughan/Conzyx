@@ -156,6 +156,23 @@ class WorkspaceCheckpointManagerTest {
     }
 
     @Test
+    fun `checkpoint storage rejects a symlinked root`() {
+        val filesDir = tempFolder.newFolder("symlink-checkpoint-storage")
+        val outside = tempFolder.newFolder("symlink-checkpoint-outside")
+        val workspace = tempFolder.newFolder("symlink-checkpoint-workspace")
+        File(workspace, "keep.txt").writeText("workspace data")
+        java.nio.file.Files.createSymbolicLink(
+            File(filesDir, "checkpoints").toPath(),
+            outside.toPath(),
+        )
+
+        val manager = WorkspaceCheckpointManager(filesDir)
+
+        assertEquals(null, manager.createCheckpoint("project", workspace, "baseline"))
+        assertTrue("Symlink target must remain untouched", outside.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun `rollback rejects symlink escape before changing any workspace file`() {
         val filesDir = tempFolder.newFolder("symlink-rollback-files")
         val workspace = tempFolder.newFolder("symlink-rollback-workspace")
