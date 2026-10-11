@@ -333,7 +333,7 @@ class ClaudeRuntimeBridge(
             val original = safeWorkspaceFile(backup, path)
             if (original.isFile) {
                 target.parentFile?.mkdirs()
-                original.copyTo(target, overwrite = true)
+                check(SafeFileOps.atomicCopy(original, target)) { "Could not safely restore ${original.path}" }
             } else if (target.isFile) {
                 target.delete()
             }
@@ -362,7 +362,7 @@ class ClaudeRuntimeBridge(
         val original = safeWorkspaceFile(backup, path)
         if (original.isFile) {
             target.parentFile?.mkdirs()
-            original.copyTo(target, overwrite = true)
+            check(SafeFileOps.atomicCopy(original, target)) { "Could not safely restore ${original.path}" }
         } else if (target.isFile) {
             target.delete()
         }
@@ -378,7 +378,7 @@ class ClaudeRuntimeBridge(
         val baseline = safeWorkspaceFile(backup, path)
         if (current.isFile) {
             baseline.parentFile?.mkdirs()
-            current.copyTo(baseline, overwrite = true)
+            check(SafeFileOps.atomicCopy(current, baseline)) { "Could not safely update baseline for ${current.path}" }
         } else if (baseline.isFile) {
             baseline.delete()
         }
