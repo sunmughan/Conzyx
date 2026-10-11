@@ -53,8 +53,8 @@ Baseline: `main` at `a8a1740e397f5a5f366d7779cc979dd27c4005f5`
 ### F. CI and release gates
 - [x] Add the custom Phase 1 branch to the existing Android QA workflow's push trigger.
 - [x] Make the Phase 1 branch skip the release/signing job and run unit tests plus online/offline debug compilation only.
-- [ ] Obtain successful online unit-test + debug-build results from GitHub Actions.
-- [ ] Obtain successful offline unit-test + debug-build results from GitHub Actions.
+- [x] Obtain successful online unit-test + debug-build results from GitHub Actions (run `38168309273`, commit `4aa75c2b32123bd3d21a66956b625a4d293ea426`).
+- [x] Obtain successful offline unit-test + debug-build results from GitHub Actions (same run; both steps completed successfully).
 - [ ] Review test reports and fix all failures; verify no tests are skipped unintentionally.
 - [ ] Independently review the final branch diff and confirm `main` remains unchanged.
 - [ ] Only after every phase is complete may the release APK workflow be triggered.
@@ -65,7 +65,7 @@ Baseline: `main` at `a8a1740e397f5a5f366d7779cc979dd27c4005f5`
 2. Static audit found `GlobalSearchEngine.replaceAll` chose target files from the capped search result list. A file occurring after the 500-match preview cap could be skipped silently. Replace now traverses eligible files independently of the UI preview cap.
 3. Checkpoint manifests were written using direct `File.writeText`. These writes now use `SafeFileOps.atomicWriteText` and fail explicitly if persistence fails.
 4. Regression tests were added/expanded for storage operations, global replacement beyond 500 preview matches, literal replacement strings and checkpoint persistence/path safety.
-5. The Phase 1 branch path in `.github/workflows/android.yml` is configured to run online/offline unit tests and debug builds without release signing secrets. No successful run has yet been observed through the available status endpoint; test/build status remains **unverified**.
+5. The Phase 1 branch path in `.github/workflows/android.yml` runs online/offline unit tests and debug builds without release signing secrets. GitHub Actions run [`38168309273`](https://github.com/sunmughan/Mobile-Harness-Extended/actions/runs/38168309273), for commit `4aa75c2b32123bd3d21a66956b625a4d293ea426`, completed with conclusion **success**; both online and offline test/build steps completed successfully. Release/publish jobs were skipped as intended.
 6. Google sign-in remains **not device-verified** pending SHA-1 registration and a signed APK test. Firebase Google provider enablement is owner-confirmed; this is not being treated as the current blocker for other Phase 1 work.
 
 ## Exit gate
