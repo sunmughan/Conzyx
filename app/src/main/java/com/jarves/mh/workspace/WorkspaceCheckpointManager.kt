@@ -248,7 +248,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                 val item = hashes.getJSONObject(index)
                 val relative = item.getString("path")
                 val safeBackup = safeWorkspaceFile(backupDir, relative)
-                if (!safeBackup.isFile || !expected.keys.add(relative)) return false
+                if (!safeBackup.isFile || expected.containsKey(relative)) return false
                 expected[relative] = item.getString("sha256")
             }
             val actualPaths = actualFiles.map { it.relativeTo(backupDir).invariantSeparatorsPath }.toSet()
