@@ -193,3 +193,33 @@ class WorkspaceCheckpointsTest {
         assertFalse(File(outside, "linked-file").exists())
     }
 }
+
+    @Test
+    fun `workspace storage rejects a symlinked workspaces root`() {
+        val filesDir = tempFolder.newFolder("workspace-root-symlink")
+        val outside = tempFolder.newFolder("workspace-root-outside")
+        File(outside, "keep.txt").writeText("untouched")
+        java.nio.file.Files.createSymbolicLink(File(filesDir, "workspaces").toPath(), outside.toPath())
+
+        val checkpoints = WorkspaceCheckpoints(filesDir)
+        assertThrows(IllegalArgumentException::class.java) {
+            checkpoints.ensureWorkspace("project-safe")
+        }
+        assertEquals("untouched", File(outside, "keep.txt").readText())
+        assertFalse(File(outside, "project-safe").exists())
+    }
+
+    @Test
+    fun `checkpoint storage rejects a symlinked checkpoints root`() {
+        val filesDir = tempFolder.newFolder("checkpoint-root-symlink")
+        val outside = tempFolder.newFolder("checkpoint-root-outside")
+        File(outside, "keep.txt").writeText("untouched")
+        java.nio.file.Files.createSymbolicLink(File(filesDir, "checkpoints").toPath(), outside.toPath())
+
+        val checkpoints = WorkspaceCheckpoints(filesDir)
+        assertThrows(IllegalArgumentException::class.java) {
+            checkpoints.checkpointDir("project-safe")
+        }
+        assertEquals("untouched", File(outside, "keep.txt").readText())
+        assertTrue(outside.listFiles().orEmpty().map { it.name }.toSet() == setOf("keep.txt"))
+    }
