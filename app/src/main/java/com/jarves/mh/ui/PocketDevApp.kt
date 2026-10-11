@@ -313,6 +313,7 @@ fun PocketDevApp(
     var showAppFactoryScreen by rememberSaveable { mutableStateOf(false) }
     var showTeamStudioScreen by rememberSaveable { mutableStateOf(false) }
     var showCloudHybridScreen by rememberSaveable { mutableStateOf(false) }
+    var showCollaborationScreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -387,6 +388,16 @@ fun PocketDevApp(
         com.jarves.mh.cloud.ui.CloudHybridScreen(
             coordinator = viewModel.cloudHybridCoordinator,
             onClose = { showCloudHybridScreen = false }
+        )
+        return
+    }
+
+    if (showCollaborationScreen) {
+        com.jarves.mh.collab.ui.CollaborationStudioScreen(
+            manager = viewModel.workspaceCollaborationManager,
+            projectName = state.activeProject?.name ?: "Mobile-Harness-Project",
+            projectId = state.activeProject?.id ?: "project-current",
+            onClose = { showCollaborationScreen = false }
         )
         return
     }
@@ -543,6 +554,7 @@ fun PocketDevApp(
             onOpenAppFactory = { showAppFactoryScreen = true },
             onOpenTeamStudio = { showTeamStudioScreen = true },
             onOpenCloudHybrid = { showCloudHybridScreen = true },
+            onOpenCollaboration = { showCollaborationScreen = true },
         )
         else -> RootScreenHost(
             state = state,
@@ -553,6 +565,7 @@ fun PocketDevApp(
             onOpenAppFactory = { showAppFactoryScreen = true },
             onOpenTeamStudio = { showTeamStudioScreen = true },
             onOpenCloudHybrid = { showCloudHybridScreen = true },
+            onOpenCollaboration = { showCollaborationScreen = true },
         )
     }
 }
@@ -2354,6 +2367,7 @@ private fun RootScreenHost(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
+    onOpenCollaboration: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2438,6 +2452,7 @@ private fun RootScreenHost(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
+                    onOpenCollaboration = onOpenCollaboration,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3492,6 +3507,7 @@ private fun ProjectsScreen(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
+    onOpenCollaboration: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -3833,6 +3849,72 @@ private fun ProjectsScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Open Cloud Hybrid Studio",
                             tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenCollaboration() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Team Collaboration Studio",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.secondary,
+                                ) {
+                                    Text(
+                                        "v2.4",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSecondary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                "Multi-User Sharing, Code Reviews, Milestones & Shared Agents",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Open Collaboration Studio",
+                            tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -4665,6 +4747,7 @@ private fun WorkspaceScreen(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
+    onOpenCollaboration: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4821,6 +4904,7 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.APP_FACTORY -> onOpenAppFactory()
                     WorkspaceCommand.MULTI_AGENT_TEAM -> onOpenTeamStudio()
                     WorkspaceCommand.CLOUD_HYBRID -> onOpenCloudHybrid()
+                    WorkspaceCommand.COLLABORATION -> onOpenCollaboration()
                 }
             },
         )
@@ -5215,6 +5299,7 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     APP_FACTORY("Android App Factory", "app factory blueprint scaffold build create generator"),
     MULTI_AGENT_TEAM("Multi-Agent Engineering Team", "agent team manager architect qa devops multi-agent studio"),
     CLOUD_HYBRID("Cloud + Phone Hybrid", "cloud worker offload remote build gpu runner hybrid"),
+    COLLABORATION("Team Collaboration", "share collab team comments review invite organization"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

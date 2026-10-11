@@ -333,6 +333,7 @@ data class AppUiState(
     val gitConnectedRepo: String? = null,
     val teamSessionState: com.jarves.mh.agent.team.model.TeamSessionState = com.jarves.mh.agent.team.model.TeamSessionState(),
     val cloudHybridState: com.jarves.mh.cloud.model.CloudHybridState = com.jarves.mh.cloud.model.CloudHybridState(),
+    val collaborationSessionState: com.jarves.mh.collab.model.CollaborationSessionState = com.jarves.mh.collab.model.CollaborationSessionState(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -398,6 +399,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitWorkflowEngine = com.jarves.mh.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val teamOrchestrator = com.jarves.mh.agent.team.AgentTeamOrchestrator()
     val cloudHybridCoordinator = com.jarves.mh.cloud.CloudHybridCoordinator()
+    val workspaceCollaborationManager = com.jarves.mh.collab.WorkspaceCollaborationManager()
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -548,6 +550,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             cloudHybridCoordinator.state.collect { chState ->
                 _state.update { it.copy(cloudHybridState = chState) }
+            }
+        }
+        viewModelScope.launch {
+            workspaceCollaborationManager.sessionState.collect { collabState ->
+                _state.update { it.copy(collaborationSessionState = collabState) }
             }
         }
         runCatching { RuntimeSetupController.restore(application) }
@@ -6601,6 +6608,14 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun submitHybridWorkload(title: String, type: com.jarves.mh.cloud.model.WorkloadType): com.jarves.mh.cloud.model.HybridExecutionJob {
         return cloudHybridCoordinator.submitExecutionJob(title, type)
+    }
+
+    fun createCollaborationSession(projectId: String, projectName: String): com.jarves.mh.collab.model.SharedProjectSession {
+        return workspaceCollaborationManager.createShareSession(projectId, projectName)
+    }
+
+    fun joinCollaborationSession(shareToken: String, name: String, email: String): com.jarves.mh.collab.model.SharedProjectSession? {
+        return workspaceCollaborationManager.joinSession(shareToken, name, email)
     }
 
     override fun onCleared() {
