@@ -2409,6 +2409,18 @@ private fun RootScreenHost(
                     onUpdate = viewModel::updateSkill,
                     autoUpdateEnabled = state.autoUpdateToolsAndSkills,
                     onToggleAutoUpdate = viewModel::toggleAutoUpdateToolsAndSkills,
+                    mcpServers = state.mcpServers,
+                    mcpCatalog = state.mcpCatalog,
+                    mcpTools = state.mcpTools,
+                    mcpAuditLogs = state.mcpAuditLogs,
+                    mcpBusy = state.mcpBusy,
+                    mcpMessage = state.mcpMessage,
+                    onInstallMcpTemplate = viewModel::installMcpTemplate,
+                    onInstallCustomMcp = viewModel::installMcpServer,
+                    onToggleMcpServer = viewModel::toggleMcpServer,
+                    onRemoveMcpServer = viewModel::removeMcpServer,
+                    onDiscoverMcpTools = viewModel::discoverMcpTools,
+                    onClearMcpAuditLogs = viewModel::clearMcpAuditLogs,
                 )
                 RootScreen.MARKETPLACE -> MarketplaceScreen(
                     onBack = { screen = RootScreen.PROJECTS },

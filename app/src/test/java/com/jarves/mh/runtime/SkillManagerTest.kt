@@ -19,7 +19,7 @@ class SkillManagerTest {
             manager.ensureDefaultSkills()
 
             val skills = manager.installed()
-            assertEquals("Should provision 17 default skills", 17, skills.size)
+            assertEquals("Should provision 28 default skills", 28, skills.size)
 
             val browser = skills.firstOrNull { it.name == "browser-automation" }
             assertNotNull("browser-automation skill should be provisioned", browser)
@@ -120,7 +120,7 @@ class SkillManagerTest {
             manager.ensureDefaultSkills()
 
             val synced = manager.syncToWorkspace(workspaceDir)
-            assertEquals(17, synced.size)
+            assertEquals(28, synced.size)
             assertTrue(synced.any { it.name == "browser-automation" })
             assertTrue(synced.any { it.name == "geo-sleuth" })
             assertTrue(synced.any { it.name == "stickman-video-director" })

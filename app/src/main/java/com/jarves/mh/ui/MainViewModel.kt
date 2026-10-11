@@ -304,6 +304,13 @@ data class AppUiState(
     val allowExternalServices: Boolean = false,
     val allowAccessEnv: Boolean = false,
     val securityAuditLogs: List<com.jarves.mh.security.SecurityAuditEntry> = emptyList(),
+    val mcpServers: List<com.jarves.mh.mcp.McpServerInfo> = emptyList(),
+    val mcpCatalog: List<com.jarves.mh.mcp.McpCatalogTemplate> = emptyList(),
+    val mcpTools: List<com.jarves.mh.runtime.McpToolDefinition> = emptyList(),
+    val mcpAuditLogs: List<com.jarves.mh.mcp.McpAuditEntry> = emptyList(),
+    val mcpSelectedServerId: String? = null,
+    val mcpBusy: Boolean = false,
+    val mcpMessage: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -361,6 +368,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val projectMemoryStore = com.jarves.mh.runtime.ProjectMemoryStore(application.filesDir)
     val agentOrchestrator = com.jarves.mh.session.AgentOrchestrator(checkpointManager, projectMemoryStore)
     val permissionPolicyEngine = com.jarves.mh.security.PermissionPolicyEngine(application)
+    val mcpRegistry = com.jarves.mh.mcp.McpRegistry(application)
+    val mcpAuditLogger = com.jarves.mh.mcp.McpAuditLogger(application)
+    val mcpPermissionManager = com.jarves.mh.mcp.McpPermissionManager(File(application.filesDir, "mcp"), permissionPolicyEngine)
+    val mcpClientRunner = com.jarves.mh.runtime.McpClientRunner()
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -513,6 +524,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(interruptedSession = interrupted) }
         }
         refreshPermissionPolicies()
+        refreshMcpServers()
+        loadMcpAuditLogs()
         viewModelScope.launch {
             agentOrchestrator.snapshot.collect { orchSnapshot ->
                 _state.update { it.copy(orchestratorSnapshot = orchSnapshot) }
@@ -1325,6 +1338,115 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearSecurityAuditLogs() {
         permissionPolicyEngine.auditLogger.clear()
         _state.update { it.copy(securityAuditLogs = emptyList()) }
+    }
+
+    fun refreshMcpServers(projectId: String? = _state.value.activeProject?.id) {
+        val servers = mcpRegistry.listServers(projectId)
+        val catalog = mcpRegistry.catalogTemplates
+        _state.update { it.copy(mcpServers = servers, mcpCatalog = catalog) }
+    }
+
+    fun installMcpServer(server: com.jarves.mh.mcp.McpServerInfo) {
+        mcpRegistry.installServer(server)
+        refreshMcpServers()
+    }
+
+    fun installMcpTemplate(templateId: String, envOverrides: Map<String, String> = emptyMap(), projectId: String? = _state.value.activeProject?.id) {
+        runCatching {
+            mcpRegistry.installFromTemplate(templateId, envOverrides, projectId)
+            refreshMcpServers(projectId)
+        }.onFailure { err ->
+            _state.update { it.copy(toastMessage = "Failed to install MCP template: ${err.message}") }
+        }
+    }
+
+    fun toggleMcpServer(serverId: String, enabled: Boolean) {
+        mcpRegistry.toggleServer(serverId, enabled)
+        refreshMcpServers()
+    }
+
+    fun removeMcpServer(serverId: String) {
+        mcpClientRunner.stopServer(serverId)
+        mcpRegistry.removeServer(serverId)
+        refreshMcpServers()
+    }
+
+    fun updateMcpConfig(server: com.jarves.mh.mcp.McpServerInfo) {
+        mcpRegistry.updateServer(server)
+        refreshMcpServers()
+    }
+
+    fun discoverMcpTools(server: com.jarves.mh.mcp.McpServerInfo) {
+        viewModelScope.launch {
+            _state.update { it.copy(mcpBusy = true, mcpSelectedServerId = server.id, mcpMessage = "Discovering tools for ${server.name}...") }
+            val res = mcpClientRunner.discoverTools(server)
+            res.onSuccess { tools ->
+                _state.update { it.copy(mcpBusy = false, mcpTools = tools, mcpMessage = "Found ${tools.size} tools") }
+            }.onFailure { err ->
+                _state.update { it.copy(mcpBusy = false, mcpMessage = "Tool discovery failed: ${err.message}") }
+            }
+        }
+    }
+
+    suspend fun executeMcpTool(
+        server: com.jarves.mh.mcp.McpServerInfo,
+        toolName: String,
+        arguments: org.json.JSONObject,
+        projectId: String? = _state.value.activeProject?.id
+    ): com.jarves.mh.runtime.McpToolCallResult {
+        val perm = mcpPermissionManager.evaluate(server, toolName, projectId)
+        if (!perm.allowed) {
+            val auditEntry = com.jarves.mh.mcp.McpAuditEntry(
+                serverId = server.id,
+                toolName = toolName,
+                argumentsJson = arguments.toString(),
+                success = false,
+                projectId = projectId,
+                permissionDecision = if (perm.requiresPrompt) "PROMPT_REQUIRED" else "DENIED",
+                error = perm.reason
+            )
+            mcpAuditLogger.log(auditEntry)
+            loadMcpAuditLogs()
+            return com.jarves.mh.runtime.McpToolCallResult(
+                success = false,
+                content = "",
+                error = "Permission check failed: ${perm.reason}"
+            )
+        }
+
+        val result = mcpClientRunner.callTool(server, toolName, arguments)
+        val auditEntry = com.jarves.mh.mcp.McpAuditEntry(
+            serverId = server.id,
+            toolName = toolName,
+            argumentsJson = arguments.toString(),
+            success = result.success,
+            resultPreview = result.content.take(200),
+            durationMs = result.durationMs,
+            projectId = projectId,
+            permissionDecision = "ALLOWED",
+            error = result.error
+        )
+        mcpAuditLogger.log(auditEntry)
+        loadMcpAuditLogs()
+        return result
+    }
+
+    fun setMcpProjectPermission(projectId: String, serverId: String, policy: com.jarves.mh.mcp.McpPermissionPolicy) {
+        mcpPermissionManager.setProjectServerPolicy(projectId, serverId, policy)
+    }
+
+    fun setMcpGlobalPermission(serverId: String, policy: com.jarves.mh.mcp.McpPermissionPolicy) {
+        mcpPermissionManager.setGlobalServerPolicy(serverId, policy)
+    }
+
+    fun loadMcpAuditLogs(limit: Int = 100) {
+        val logs = mcpAuditLogger.getEntries(limit)
+        _state.update { it.copy(mcpAuditLogs = logs) }
+    }
+
+    fun clearMcpAuditLogs() {
+        mcpAuditLogger.clear()
+        _state.update { it.copy(mcpAuditLogs = emptyList()) }
     }
 
     fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()

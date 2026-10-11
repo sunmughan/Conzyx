@@ -42,9 +42,44 @@ class SkillManager(
     private val registryFile = File(root, "registry.json")
     private val cache = context?.cacheDir ?: File(root, ".cache").apply { mkdirs() }
 
+    fun getSkillManifest(skillDir: File): File? {
+        val upper = File(skillDir, "SKILL.md")
+        if (upper.isFile) return upper
+        val lower = File(skillDir, "skill.md")
+        if (lower.isFile) return lower
+        return null
+    }
+
+    data class PortableSkillStructure(
+        val hasManifest: Boolean,
+        val hasInstructions: Boolean,
+        val hasTools: Boolean,
+        val hasExamples: Boolean,
+        val hasResources: Boolean,
+        val isComplete: Boolean
+    )
+
+    fun validatePortableStructure(skillDir: File): PortableSkillStructure {
+        val hasManifest = getSkillManifest(skillDir) != null
+        val hasInstructions = File(skillDir, "instructions").isDirectory
+        val hasTools = File(skillDir, "tools").isDirectory
+        val hasExamples = File(skillDir, "examples").isDirectory
+        val hasResources = File(skillDir, "resources").isDirectory
+        val isComplete = hasManifest && hasInstructions && hasTools && hasExamples && hasResources
+        return PortableSkillStructure(hasManifest, hasInstructions, hasTools, hasExamples, hasResources, isComplete)
+    }
+
+    fun ensurePortableSkillLayout(skillDir: File) {
+        File(skillDir, "instructions").mkdirs()
+        File(skillDir, "tools").mkdirs()
+        File(skillDir, "examples").mkdirs()
+        File(skillDir, "resources").mkdirs()
+    }
+
     fun installed(): List<SkillInfo> = readRegistry().mapNotNull { json ->
         val path = json.optString("path")
-        if (path.isBlank() || !File(path, "SKILL.md").isFile) null else SkillInfo(
+        val dir = if (path.isNotBlank()) File(path) else return@mapNotNull null
+        if (getSkillManifest(dir) == null) null else SkillInfo(
             name = json.optString("name"),
             description = json.optString("description"),
             source = json.optString("source"),
@@ -139,11 +174,11 @@ class SkillManager(
                 downloadSkillArchive("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/master", archive)
             }
             extractSkillArchive(archive, extraction)
-            val remote = extraction.walkTopDown().filter { it.isFile && it.name == "SKILL.md" }
+            val remote = extraction.walkTopDown().filter { it.isFile && it.name.equals("SKILL.md", ignoreCase = true) }
                 .firstOrNull { sanitizeSkillName(parseManifest(it.readText()).first) == skill.name }
                 ?: return false
-            val local = File(skill.path, "SKILL.md")
-            return !local.isFile || local.readText() != remote.readText()
+            val local = getSkillManifest(File(skill.path))
+            return local == null || !local.isFile || local.readText() != remote.readText()
         } catch (_: Throwable) {
             return false
         } finally {
@@ -254,8 +289,8 @@ class SkillManager(
                     input.closeEntry()
                 }
             }
-            val manifests = extraction.walkTopDown().filter { it.isFile && it.name == "SKILL.md" }.take(100).toList()
-            require(manifests.isNotEmpty()) { "No SKILL.md was found in the selected skill source." }
+            val manifests = extraction.walkTopDown().filter { it.isFile && it.name.equals("SKILL.md", ignoreCase = true) }.take(100).toList()
+            require(manifests.isNotEmpty()) { "No SKILL.md or skill.md was found in the selected skill source." }
 
             val current = installed().toMutableList()
             val installedNow = mutableListOf<SkillInfo>()
@@ -266,6 +301,7 @@ class SkillManager(
                 val destination = File(root, safeName)
                 destination.deleteRecursively()
                 copyDirectory(sourceDirectory, destination)
+                ensurePortableSkillLayout(destination)
                 val info = SkillInfo(
                     name = safeName,
                     description = metadata.second,
@@ -773,6 +809,237 @@ Senior software engineering co-pilot for rapid architecture design, clean code r
 - "Write an end-to-end test suite and GitHub Actions workflow for this Kotlin/Android repository."
 """,
             ),
+            DefaultSkillSpec(
+                name = "android-development",
+                description = "Modern Android development with Jetpack Compose, Kotlin Coroutines, MVVM, Gradle builds, and APK generation.",
+                source = "built-in",
+                content = """---
+name: android-development
+description: Modern Android development with Jetpack Compose, Kotlin Coroutines, MVVM, Gradle builds, and APK generation.
+---
+
+# Android Development Skill
+
+Specialized native Android engineering skill for mobile applications.
+
+## Capabilities
+
+- **Jetpack Compose UI**: Declarative UI components, state hoisting, Material 3 design, custom layouts, and animation.
+- **Architecture**: MVVM / MVI patterns, unidirectional data flow, Kotlin Flow, Coroutines lifecycle scoping, and Hilt/Koin DI.
+- **Gradle & Build Tooling**: Multi-module Gradle configuration, dependency catalogs, ProGuard/R8 rules, and offline Gradle builds.
+- **APK Generation & Testing**: Running `./gradlew assembleDebug`, unit testing with JUnit 4/5, Roboelectric, and Android Lint analysis.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "flutter-development",
+                description = "Cross-platform mobile apps with Flutter & Dart, reactive state management (Riverpod/Bloc), and custom widget architecture.",
+                source = "built-in",
+                content = """---
+name: flutter-development
+description: Cross-platform mobile apps with Flutter & Dart, reactive state management (Riverpod/Bloc), and custom widget architecture.
+---
+
+# Flutter Development Skill
+
+Fullstack cross-platform mobile engineering with Flutter framework and Dart language.
+
+## Capabilities
+
+- **Widget Architecture**: Custom StatelessWidget, StatefulWidget, RenderObject, and adaptive Cupertino/Material styling.
+- **State Management**: Riverpod, flutter_bloc, Provider, and reactive streams.
+- **Platform Channels**: MethodChannel and EventChannel communication between Dart and native Android Kotlin.
+- **Build & CI**: `flutter build apk`, devtools profiling, and mockito widget tests.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "laravel-development",
+                description = "PHP 8.x web engineering with Laravel framework, Artisan CLI, Eloquent ORM, RESTful API design, and database migrations.",
+                source = "built-in",
+                content = """---
+name: laravel-development
+description: PHP 8.x web engineering with Laravel framework, Artisan CLI, Eloquent ORM, RESTful API design, and database migrations.
+---
+
+# Laravel Development Skill
+
+Robust modern PHP 8.x web and API development using the Laravel framework.
+
+## Capabilities
+
+- **Artisan CLI**: Code generation via `php artisan make:*`, route caching, and queue workers.
+- **Eloquent ORM**: Database relationships, query scopes, accessors/mutators, and transactions.
+- **Database Migrations**: Declarative schema migrations, seeders, and factory data generators.
+- **REST APIs & Auth**: API resource transformers, Sanctum token authentication, and middleware validation.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "react-development",
+                description = "Modern React 19 development, custom hooks, functional component patterns, TypeScript JSX, and Tailwind CSS.",
+                source = "built-in",
+                content = """---
+name: react-development
+description: Modern React 19 development, custom hooks, functional component patterns, TypeScript JSX, and Tailwind CSS.
+---
+
+# React Development Skill
+
+Frontend web development using modern React, TypeScript, and ecosystem tooling.
+
+## Capabilities
+
+- **React 19 & Hooks**: Concurrent features, `use`, `useTransition`, `useOptimistic`, custom reusable hooks.
+- **Component Patterns**: Polymorphic components, compound components, render props, and strict TypeScript props.
+- **Styling**: Tailwind CSS utility design systems, CSS Modules, and responsive layout primitives.
+- **Performance**: Memoization (`useMemo`, `useCallback`), virtualization, code splitting, and bundle analysis.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "nextjs-development",
+                description = "Fullstack Next.js web apps with App Router, React Server Components (RSC), SSR/SSG, server actions, and API routes.",
+                source = "built-in",
+                content = """---
+name: nextjs-development
+description: Fullstack Next.js web apps with App Router, React Server Components (RSC), SSR/SSG, server actions, and API routes.
+---
+
+# Next.js Development Skill
+
+Production-grade fullstack web applications built on Next.js and the modern App Router.
+
+## Capabilities
+
+- **App Router & RSC**: Nested layouts, server components by default, client component boundaries (`'use client'`).
+- **Data Fetching & Caching**: Incremental Static Regeneration (ISR), `fetch` cache tags, revalidation triggers.
+- **Server Actions**: Direct server mutations with forms, progressive enhancement, and Zod input validation.
+- **Route Handlers**: Edge & Node.js API routes, streaming responses, and middleware headers.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "nodejs-development",
+                description = "Backend Node.js service engineering with Express, Fastify, TypeScript, async I/O streams, and npm ecosystem.",
+                source = "built-in",
+                content = """---
+name: nodejs-development
+description: Backend Node.js service engineering with Express, Fastify, TypeScript, async I/O streams, and npm ecosystem.
+---
+
+# Node.js Development Skill
+
+High-performance backend and microservice engineering using Node.js runtime and TypeScript.
+
+## Capabilities
+
+- **Server Frameworks**: Express.js, Fastify, and native HTTP servers with low latency.
+- **Async I/O & Streams**: Buffer manipulation, pipeline transforms, event emitters, and worker threads.
+- **Packaging & Tooling**: pnpm/npm package management, tsx/ts-node runners, and ESM module resolution.
+- **Security & Error Handling**: Rate limiting, helmet security headers, structured JSON logging, and graceful shutdown.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "python-development",
+                description = "Python 3 software development with FastAPI, Flask, Django, virtualenvs, pip dependency isolation, and typing.",
+                source = "built-in",
+                content = """---
+name: python-development
+description: Python 3 software development with FastAPI, Flask, Django, virtualenvs, pip dependency isolation, and typing.
+---
+
+# Python Development Skill
+
+Versatile Python engineering covering REST APIs, automation scripts, data processing, and backends.
+
+## Capabilities
+
+- **FastAPI & Async**: Pydantic v2 schemas, dependency injection, async endpoints, and automatic Swagger docs.
+- **Environment Isolation**: Virtualenv / venv management, pip-tools lockfiles, and pyproject.toml standards.
+- **Type Annotations**: Strict typing with `mypy` / `pyright`, generics, and dataclasses.
+- **Testing**: PyTest fixtures, parameterized tests, and mock patchers.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "devops-engineering",
+                description = "DevOps automation, multi-stage Docker containers, CI/CD pipeline authoring, shell scripting, and Linux administration.",
+                source = "built-in",
+                content = """---
+name: devops-engineering
+description: DevOps automation, multi-stage Docker containers, CI/CD pipeline authoring, shell scripting, and Linux administration.
+---
+
+# DevOps Engineering Skill
+
+Infrastructure automation, containerization, deployment pipelines, and Linux environment operations.
+
+## Capabilities
+
+- **Docker & Containers**: Multi-stage Dockerfiles, minimal base images (Alpine/Distroless), and Docker Compose.
+- **CI/CD Pipelines**: GitHub Actions workflows, matrix builds, artifact caching, and automated release tags.
+- **Linux & Shell**: POSIX-compliant Bash scripting, process management (systemd/proot), and network diagnostics.
+- **Deployment & Security**: Secret management, environment injection, and health checks.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "database-engineering",
+                description = "Relational and document database design, SQL querying, PostgreSQL, SQLite, MySQL schema migrations, and indexing.",
+                source = "built-in",
+                content = """---
+name: database-engineering
+description: Relational and document database design, SQL querying, PostgreSQL, SQLite, MySQL schema migrations, and indexing.
+---
+
+# Database Engineering Skill
+
+Comprehensive database modeling, SQL query optimization, indexing strategies, and data integrity.
+
+## Capabilities
+
+- **Schema Design**: Normalized 3NF architectures, foreign key constraints, UUID primary keys, and ENUM types.
+- **Query Optimization**: `EXPLAIN ANALYZE` execution plans, B-tree/GIN index creation, and JOIN tuning.
+- **SQLite & Embedded**: PRAGMA journal modes (WAL), foreign_keys enforcement, and memory caching.
+- **Data Migrations**: Zero-downtime schema migrations, backward compatibility, and rollback strategies.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "testing-qa",
+                description = "Test-driven development (TDD), unit testing (JUnit, Jest, PyTest), integration mocking, and automated verification.",
+                source = "built-in",
+                content = """---
+name: testing-qa
+description: Test-driven development (TDD), unit testing (JUnit, Jest, PyTest), integration mocking, and automated verification.
+---
+
+# Testing & QA Skill
+
+Quality engineering, comprehensive test automation, regression protection, and test-driven development.
+
+## Capabilities
+
+- **Unit Testing**: JUnit 4/5 (Kotlin/Java), Jest/Vitest (TypeScript), PyTest (Python), PHPUnit (PHP).
+- **Mocking & Isolation**: MockK, Mockito, Sinon, and monkey-patching external service dependencies.
+- **Integration & Edge Cases**: Boundary value analysis, concurrency race condition tests, and fault injection.
+- **Coverage & Reporting**: Code coverage metrics, failure root cause diagnostics, and regression test authoring.
+""",
+            ),
+            DefaultSkillSpec(
+                name = "ui-ux-design",
+                description = "Design systems, accessibility standards (a11y), responsive touch UI layouts, Material 3 design tokens, and ergonomics.",
+                source = "built-in",
+                content = """---
+name: ui-ux-design
+description: Design systems, accessibility standards (a11y), responsive touch UI layouts, Material 3 design tokens, and ergonomics.
+---
+
+# UI/UX Design Skill
+
+User experience architecture, touch ergonomic design, accessibility, and modern visual design systems.
+
+## Capabilities
+
+- **Design Systems & Tokens**: Color palettes, semantic typography scales, elevation surfaces, and spacing grids.
+- **Mobile Touch Ergonomics**: Minimum 48x48dp touch targets, thumb-zone layout distribution, and gesture physics.
+- **Accessibility (a11y)**: WCAG 2.1 AA compliance, high contrast ratios, screen reader labels, and keyboard/D-pad navigation.
+- **State Feedback**: Skeleton loading states, optimistic UI updates, empty states, and descriptive error guidance.
+""",
+            ),
         )
 
         var registryModified = false
@@ -790,6 +1057,7 @@ Senior software engineering co-pilot for rapid architecture design, clean code r
                 dir.mkdirs()
                 file.writeText(spec.content.trimIndent() + "\n")
             }
+            ensurePortableSkillLayout(dir)
             val existing = currentRegistry.firstOrNull { it.optString("name") == spec.name }
             if (existing == null) {
                 currentRegistry.add(

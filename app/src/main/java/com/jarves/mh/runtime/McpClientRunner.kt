@@ -1,6 +1,8 @@
 package com.jarves.mh.runtime
 
+import com.jarves.mh.mcp.McpServerInfo
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.util.concurrent.ConcurrentHashMap
@@ -14,12 +16,14 @@ data class McpToolDefinition(
     val name: String,
     val description: String,
     val inputSchemaJson: String = "{}",
+    val serverId: String? = null
 )
 
 data class McpToolCallResult(
     val success: Boolean,
     val content: String,
     val error: String? = null,
+    val durationMs: Long = 0L
 )
 
 /**
@@ -32,11 +36,12 @@ class McpClientRunner {
     private val activeServers = ConcurrentHashMap<String, Process>()
 
     /**
-     * Initializes an MCP session and lists available tools.
+     * Initializes an MCP session and lists available tools for an McpServerInfo.
      */
-    suspend fun discoverTools(serverCommand: String, workingDir: java.io.File? = null): Result<List<McpToolDefinition>> = withContext(Dispatchers.IO) {
+    suspend fun discoverTools(server: McpServerInfo): Result<List<McpToolDefinition>> = withContext(Dispatchers.IO) {
         runCatching {
-            val process = startProcess(serverCommand, workingDir)
+            val workingDir = server.workingDir?.let { File(it) }
+            val process = startProcess(server.command, server.args, server.env, workingDir)
             val writer = OutputStreamWriter(process.outputStream, Charsets.UTF_8)
             val reader = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
 
@@ -49,7 +54,7 @@ class McpClientRunner {
                     put("protocolVersion", "2024-11-05")
                     put("clientInfo", JSONObject().apply {
                         put("name", "MobileHarness")
-                        put("version", "1.0.0")
+                        put("version", "1.7.0")
                     })
                 })
             }
@@ -75,24 +80,42 @@ class McpClientRunner {
                         name = t.getString("name"),
                         description = t.optString("description", ""),
                         inputSchemaJson = t.optJSONObject("inputSchema")?.toString() ?: "{}",
+                        serverId = server.id
                     )
                 )
             }
+            runCatching { process.destroy() }
             tools
         }
+    }
+
+    /**
+     * Initializes an MCP session and lists available tools (legacy overload).
+     */
+    suspend fun discoverTools(serverCommand: String, workingDir: File? = null): Result<List<McpToolDefinition>> = withContext(Dispatchers.IO) {
+        val server = McpServerInfo(
+            id = "legacy-disc",
+            name = "Legacy",
+            command = serverCommand,
+            workingDir = workingDir?.absolutePath
+        )
+        discoverTools(server)
     }
 
     /**
      * Calls a tool on the MCP server via JSON-RPC `tools/call`.
      */
     suspend fun callTool(
-        serverCommand: String,
+        server: McpServerInfo,
         toolName: String,
-        arguments: JSONObject,
-        workingDir: java.io.File? = null,
+        arguments: JSONObject
     ): McpToolCallResult = withContext(Dispatchers.IO) {
+        val start = System.currentTimeMillis()
         try {
-            val process = activeServers.getOrPut(serverCommand) { startProcess(serverCommand, workingDir) }
+            val workingDir = server.workingDir?.let { File(it) }
+            val process = activeServers.getOrPut(server.id) {
+                startProcess(server.command, server.args, server.env, workingDir)
+            }
             val writer = OutputStreamWriter(process.outputStream, Charsets.UTF_8)
             val reader = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
 
@@ -107,6 +130,7 @@ class McpClientRunner {
             }
             sendJson(writer, callReq)
             val response = readJson(reader)
+            val duration = System.currentTimeMillis() - start
 
             val result = response.optJSONObject("result")
             if (result != null) {
@@ -116,20 +140,47 @@ class McpClientRunner {
                 } else {
                     result.toString()
                 }
-                McpToolCallResult(success = true, content = textOutput)
+                McpToolCallResult(success = true, content = textOutput, durationMs = duration)
             } else {
                 val err = response.optJSONObject("error")?.optString("message") ?: "Unknown MCP error"
-                McpToolCallResult(success = false, content = "", error = err)
+                McpToolCallResult(success = false, content = "", error = err, durationMs = duration)
             }
         } catch (e: Exception) {
-            McpToolCallResult(success = false, content = "", error = e.message ?: "Failed to execute MCP tool")
+            val duration = System.currentTimeMillis() - start
+            McpToolCallResult(success = false, content = "", error = e.message ?: "Failed to execute MCP tool", durationMs = duration)
         }
     }
 
-    private fun startProcess(command: String, workingDir: java.io.File?): Process {
-        val parts = command.split("\\s+".toRegex()).filter { it.isNotBlank() }
+    /**
+     * Calls a tool on the MCP server via JSON-RPC `tools/call` (legacy command overload).
+     */
+    suspend fun callTool(
+        serverCommand: String,
+        toolName: String,
+        arguments: JSONObject,
+        workingDir: File? = null,
+    ): McpToolCallResult = withContext(Dispatchers.IO) {
+        val server = McpServerInfo(
+            id = serverCommand,
+            name = serverCommand,
+            command = serverCommand,
+            workingDir = workingDir?.absolutePath
+        )
+        callTool(server, toolName, arguments)
+    }
+
+    private fun startProcess(
+        command: String,
+        args: List<String> = emptyList(),
+        env: Map<String, String> = emptyMap(),
+        workingDir: File? = null
+    ): Process {
+        val parts = (command.split("\\s+".toRegex()).filter { it.isNotBlank() } + args)
         val pb = ProcessBuilder(parts)
         if (workingDir != null) pb.directory(workingDir)
+        if (env.isNotEmpty()) {
+            pb.environment().putAll(env)
+        }
         return pb.start()
     }
 
@@ -160,6 +211,10 @@ class McpClientRunner {
         }
         val fallback = reader.readLine().orEmpty()
         return if (fallback.isNotBlank()) JSONObject(fallback) else JSONObject()
+    }
+
+    fun stopServer(serverId: String) {
+        activeServers.remove(serverId)?.let { runCatching { it.destroy() } }
     }
 
     fun stopAll() {
