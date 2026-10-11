@@ -34,23 +34,53 @@ object SafeFileOps {
                 runCatching { fos.fd.sync() }
             }
 
-            try {
-                Files.move(
-                    tempFile.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                // Some filesystems do not support ATOMIC_MOVE. Still let the filesystem
-                // replace the target; do not delete it first, which could lose old data.
-                Files.move(tempFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
+            replaceFromTemp(tempFile, target)
             true
         } catch (e: Exception) {
             AppCrashLogger.log("SafeFileOps atomic write failed for ${target.path}: ${e.message}")
             runCatching { tempFile.delete() }
             false
+        }
+    }
+
+    /**
+     * Copies a file through a sibling staging file, keeping large files streaming
+     * and preserving the old destination if copying fails.
+     */
+    fun atomicCopy(source: File, target: File): Boolean {
+        if (!source.isFile) return false
+        val parent = target.parentFile ?: return false
+        if (!parent.exists() && !parent.mkdirs() && !parent.isDirectory) return false
+
+        val tempFile = File(parent, "${target.name}.tmp_${UUID.randomUUID().toString().take(8)}")
+        return try {
+            source.inputStream().use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                    runCatching { output.fd.sync() }
+                }
+            }
+            replaceFromTemp(tempFile, target)
+            true
+        } catch (e: Exception) {
+            AppCrashLogger.log("SafeFileOps atomic copy failed for ${target.path}: ${e.message}")
+            runCatching { tempFile.delete() }
+            false
+        }
+    }
+
+    private fun replaceFromTemp(tempFile: File, target: File) {
+        try {
+            Files.move(
+                tempFile.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            // Do not delete the current target before asking the filesystem to replace it.
+            Files.move(tempFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
