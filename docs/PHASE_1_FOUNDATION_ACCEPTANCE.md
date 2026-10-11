@@ -1,25 +1,72 @@
-# Phase 1 Foundation Hardening — Acceptance Ledger
+# Phase 1 — Foundation Hardening Acceptance Ledger
 
-Branch: `phase-1-foundation-hardening`
+Repository: `sunmughan/Mobile-Harness-Extended`
+Working branch: `phase-1-foundation-hardening`
+Baseline: `main` at `a8a1740e397f5a5f366d7779cc979dd27c4005f5`
 
-## Rules
-- Keep all Phase 1 changes on this branch; do not merge or push changes to `main`.
-- A feature is not accepted solely because code exists. Acceptance requires tests/build evidence.
-- Do not run the release APK workflow during this phase; the Phase 1 workflow is intentionally limited to unit tests and debug compilation.
-- Firebase Google provider is already enabled per the project owner. The remaining Android signing SHA-1 registration will be supplied by the owner; runtime Google sign-in is not considered verified until a signed build is exercised on-device.
+## Non-negotiable rules
+- Keep all Phase 1 implementation commits on this branch. Do not merge or commit to `main`.
+- Do not mark any test as passed unless its actual test/build result is available.
+- Do not start Phase 2 until every Phase 1 acceptance gate has evidence.
+- Do not trigger the release APK workflow during this phase. The Phase 1 branch CI path runs unit tests and debug compilation only.
+- Google provider enablement in Firebase is owner-confirmed. The owner will register the SHA-1 fingerprint; Google sign-in still needs validation against a build signed with the corresponding certificate.
 
-## Phase 1 workstreams
-- [ ] Reproducible CI for this branch without release signing secrets.
-- [ ] Crash-safe file writes and recoverable file reads.
-- [ ] Global search and replace correctness beyond the capped preview list.
-- [ ] Authentication configuration diagnostics without hard-coded OAuth client fallback.
-- [ ] Automated online/offline unit tests and debug compilation.
-- [ ] Review test reports and fix every failure before declaring completion.
-- [ ] Final branch diff review; confirm `main` is unchanged.
+## Acceptance checklist
+
+### A. State and architecture boundaries
+- [ ] Extract domain operations from `MainViewModel` into focused coordinators/repositories/ViewModels without changing behaviour.
+- [ ] Separate UI navigation from domain operations in `PocketDevApp`.
+- [ ] Establish one explicit owner for each state machine and persistence boundary.
+- [ ] Keep agent/session, runtime, project, editor, Git, App Factory, MCP/security and collaboration operations testable without routing all behaviour through the root ViewModel.
+- [ ] Add regression tests for extracted seams and verify public call sites.
+
+### B. Durable data and transactional writes
+- [x] Remove the unsafe delete-before-rename/copy fallback in `SafeFileOps`; replace with filesystem move semantics that preserve the existing target on failure.
+- [x] Make checkpoint change-manifest writes atomic in `WorkspaceCheckpoints` and the duplicate Claude runtime implementation.
+- [x] Add tests for UTF-8 writes, overwrite, binary writes, missing/empty reads and stale temp cleanup.
+- [ ] Test failure paths where storage is unavailable, write/rename fails, and a process is interrupted during a checkpoint write.
+- [ ] Make baseline checkpoint creation transactional; never replace the last known-good baseline with a partially copied snapshot.
+- [ ] Audit remaining direct writes to session metadata, checkpoint metadata, editor files and runtime manifests; use atomic writes where the data is recovery-critical.
+- [ ] Verify rollback and restore do not follow symlinks or escape the selected workspace.
+
+### C. Session/process/runtime recovery
+- [ ] Verify interrupted session detection and restoration across fresh manager instances.
+- [ ] Verify child process/PTY cleanup on completion, failure, cancellation and timeout.
+- [ ] Verify foreground-service restart policy, notification completion and wake-lock release on every terminal path.
+- [ ] Add failure-injection coverage for partial runtime install/update, corrupted rootfs, failed checkpoint write and out-of-storage.
+- [ ] Validate low-memory/process-death recovery on an Android device or emulator; unit simulations alone do not satisfy this gate.
+- [ ] Add a low-storage and large-project profiling budget and explicit graceful failure states.
+
+### D. Global search/replace correctness
+- [x] Fix `replaceAll` so the UI's 500-match preview cap does not silently limit the files changed by a replace operation.
+- [x] Add regression tests for replacement across files beyond the preview cap and literal replacement strings containing regex metacharacters.
+- [ ] Review exclusions, glob handling, large-file limits, symlink behaviour and replacement failures.
+- [ ] Add undo/preview integration tests and verify file contents remain intact when writes fail.
+
+### E. Authentication diagnostics
+- [x] Remove the hard-coded Google OAuth client fallback and fail with a clear message if `default_web_client_id` is absent/invalid.
+- [x] Improve exception logging and avoid broad “message contains 10” error classification.
+- [ ] Confirm generated `default_web_client_id` exists in online debug and release resources.
+- [ ] After SHA-1 registration, test Google sign-in on the exact signed APK; validate cancellation, no eligible credential, successful Firebase credential exchange and provider errors.
+- [ ] Test email/password flows for regression. Facebook is not part of this Phase 1 acceptance gate unless the existing app flow exposes it.
+
+### F. CI and release gates
+- [x] Add the custom Phase 1 branch to the existing Android QA workflow's push trigger.
+- [x] Make the Phase 1 branch skip the release/signing job and run unit tests plus online/offline debug compilation only.
+- [ ] Obtain successful online unit-test + debug-build results from GitHub Actions.
+- [ ] Obtain successful offline unit-test + debug-build results from GitHub Actions.
+- [ ] Review test reports and fix all failures; verify no tests are skipped unintentionally.
+- [ ] Independently review the final branch diff and confirm `main` remains unchanged.
+- [ ] Only after every phase is complete may the release APK workflow be triggered.
 
 ## Evidence log
-- Initial audit: the existing Android QA workflow's push branches do not include this phase branch, and its job compiles release APKs using release signing secrets. A dedicated debug-only verification workflow is being added for Phase 1.
-- Baseline bug found: `GlobalSearchEngine.replaceAll` derived its target files from the UI search result, which is capped at 500 matches. Files occurring after the cap could be skipped silently.
-- Baseline hardening issue found: `SafeFileOps` deleted an existing target before fallback rename/copy. A failed fallback could destroy the last good copy.
-- Google sign-in: code now fails clearly if the generated `default_web_client_id` is absent and logs the exception type/message. Firebase provider enablement is owner-confirmed; signing SHA-1 and actual device flow remain external verification items.
-- No tests/builds are marked passed until a GitHub Actions run reports success.
+
+1. Static audit found `SafeFileOps` deleted an existing target before fallback rename/copy. A failed fallback could lose the last good copy. This was replaced with atomic move and a non-destructive replacement fallback.
+2. Static audit found `GlobalSearchEngine.replaceAll` chose target files from the capped search result list. A file occurring after the 500-match preview cap could be skipped silently. Replace now traverses eligible files independently of the UI preview cap.
+3. Checkpoint manifests were written using direct `File.writeText`. These writes now use `SafeFileOps.atomicWriteText` and fail explicitly if persistence fails.
+4. Regression tests were added/expanded for storage operations, global replacement beyond 500 preview matches, literal replacement strings and checkpoint persistence/path safety.
+5. The Phase 1 branch path in `.github/workflows/android.yml` is configured to run online/offline unit tests and debug builds without release signing secrets. No successful run has yet been observed through the available status endpoint; test/build status remains **unverified**.
+6. Google sign-in remains **not device-verified** pending SHA-1 registration and a signed APK test. Firebase Google provider enablement is owner-confirmed; this is not being treated as the current blocker for other Phase 1 work.
+
+## Exit gate
+Phase 1 is complete only when all checklist items are either verified complete with evidence or explicitly agreed as out of scope by the project owner, all required CI/device tests pass, and a final diff review confirms no regressions. Code presence, a successful commit, or a workflow file alone is not proof of completion.
