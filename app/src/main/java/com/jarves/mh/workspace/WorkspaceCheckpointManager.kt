@@ -4,6 +4,7 @@ import com.jarves.mh.AppCrashLogger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,6 +24,19 @@ data class WorkspaceCheckpoint(
 }
 
 class WorkspaceCheckpointManager(private val filesDir: File) {
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
 
     private fun checkpointsBaseDir(projectId: String): File {
         require(projectId.isNotBlank() && !projectId.contains('/') && !projectId.contains('\\') &&
@@ -75,6 +89,17 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                 put("timestamp", checkpoint.timestamp)
                 put("fileCount", checkpoint.fileCount)
                 put("modifiedFiles", JSONArray(checkpoint.modifiedFiles))
+                put("fileHashes", JSONArray().apply {
+                    backupDir.walkTopDown()
+                        .filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+                        .forEach { backupFile ->
+                            put(
+                                JSONObject()
+                                    .put("path", backupFile.relativeTo(backupDir).invariantSeparatorsPath)
+                                    .put("sha256", sha256(backupFile)),
+                            )
+                        }
+                })
             }
             check(SafeFileOps.atomicWriteText(metaFile, json.toString(2))) { "Could not persist checkpoint metadata" }
 
@@ -136,6 +161,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             if (metadata.optString("id") != checkpointId || metadata.optString("projectId") != projectId) return false
 
             val canonicalWorkspace = workspaceDir.canonicalFile
+            if (!verifyCheckpointIntegrity(projectId, checkpointId)) return false
             val backupFiles = backupDir.walkTopDown()
                 .filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
                 .toList()
@@ -206,11 +232,31 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         if (!metaFile.isFile || !backupDir.isDirectory) return false
         return runCatching {
             val json = JSONObject(metaFile.readText())
-            val actualFileCount = backupDir.walkTopDown()
-                .count { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
-            json.getString("id") == checkpointId &&
-                json.getString("projectId") == projectId &&
-                json.optInt("fileCount", -1) == actualFileCount
+            val actualFiles = backupDir.walkTopDown()
+                .filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+                .toList()
+            if (json.getString("id") != checkpointId ||
+                json.getString("projectId") != projectId ||
+                json.optInt("fileCount", -1) != actualFiles.size
+            ) return false
+
+            // Older checkpoints have no hash manifest; retain count-only compatibility.
+            val hashes = json.optJSONArray("fileHashes") ?: return true
+            if (hashes.length() != actualFiles.size) return false
+            val expected = mutableMapOf<String, String>()
+            for (index in 0 until hashes.length()) {
+                val item = hashes.getJSONObject(index)
+                val relative = item.getString("path")
+                val safeBackup = safeWorkspaceFile(backupDir, relative)
+                if (!safeBackup.isFile || !expected.keys.add(relative)) return false
+                expected[relative] = item.getString("sha256")
+            }
+            val actualPaths = actualFiles.map { it.relativeTo(backupDir).invariantSeparatorsPath }.toSet()
+            if (expected.keys != actualPaths) return false
+            actualFiles.all { file ->
+                val relative = file.relativeTo(backupDir).invariantSeparatorsPath
+                expected[relative] == sha256(file)
+            }
         }.getOrDefault(false)
     }
 
