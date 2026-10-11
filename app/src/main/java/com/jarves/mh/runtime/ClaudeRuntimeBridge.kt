@@ -239,7 +239,7 @@ class ClaudeRuntimeBridge(
                 Log.d("ClaudeBridge", "Process exited with code $exit")
                 permissionWatcher.cancelAndJoin()
                 pending.values.filter { it.request.sessionId == sessionId }.forEach { permission ->
-                    permission.response.writeText("deny")
+                    check(SafeFileOps.atomicWriteText(permission.response, "deny")) { "Could not persist permission denial" }
                     pending.remove(permission.request.approvalId)
                 }
                 val changed = changedFiles(workspace, before)
@@ -296,7 +296,7 @@ class ClaudeRuntimeBridge(
 
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) = withContext(Dispatchers.IO) {
         val permission = pending.remove(request.approvalId) ?: return@withContext
-        permission.response.writeText(if (approved) "allow" else "deny")
+        check(SafeFileOps.atomicWriteText(permission.response, if (approved) "allow" else "deny")) { "Could not persist permission response" }
         eventBus.emit(
             if (approved) RuntimeEvent.ToolApproved(request.sessionId, request.approvalId)
             else RuntimeEvent.ToolRejected(request.sessionId, request.approvalId),
@@ -425,16 +425,16 @@ class ClaudeRuntimeBridge(
                     val response = File(file.parentFile, "$approvalId.response")
                     if (decision.allowed) {
                         Log.d("ClaudeBridge", "Approving permission request $approvalId for $toolName ($paths)")
-                        response.writeText("allow")
+                        check(SafeFileOps.atomicWriteText(response, "allow")) { "Could not persist permission approval" }
                         eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
                     } else {
                         Log.w("ClaudeBridge", "Denying permission request $approvalId for $toolName: ${decision.reason}")
-                        response.writeText("deny")
+                        check(SafeFileOps.atomicWriteText(response, "deny")) { "Could not persist permission denial" }
                         eventBus.emit(RuntimeEvent.RuntimeLog(sessionId, "Permission Denied", decision.reason))
                     }
                 }.onFailure { err ->
                     Log.e("ClaudeBridge", "Error evaluating permission request $approvalId", err)
-                    File(file.parentFile, "$approvalId.response").writeText("deny")
+                    check(SafeFileOps.atomicWriteText(File(file.parentFile, "$approvalId.response"), "deny")) { "Could not persist permission denial" }
                 }
             }
             delay(50)
