@@ -23,7 +23,7 @@ class GlobalSearchEngineTest {
         File(workspaceDir, "src/Main.kt").writeText(
             """
             package com.example
-            
+
             class Engine {
                 fun startEngine() {
                     println("Starting engine...")
@@ -34,7 +34,7 @@ class GlobalSearchEngineTest {
         File(workspaceDir, "src/Utils.kt").writeText(
             """
             package com.example
-            
+
             val ENGINE_VERSION = "2.0.0"
             """.trimIndent()
         )
@@ -64,7 +64,6 @@ class GlobalSearchEngineTest {
     fun `search with wholeWord matches exact token only`() {
         val wholeWord = GlobalSearchEngine.search(workspaceDir, "Engine", matchCase = true, wholeWord = true)
         assertTrue(wholeWord.matches.any { it.filePath == "src/Main.kt" && it.lineNumber == 3 })
-        // Shouldn't match startEngine because it's part of a compound word
         assertFalse(wholeWord.matches.any { it.lineContent.contains("fun startEngine") })
     }
 
@@ -87,5 +86,39 @@ class GlobalSearchEngineTest {
         val utilsContent = File(workspaceDir, "src/Utils.kt").readText()
         assertTrue(utilsContent.contains("SYSTEM_VERSION = \"2.0.0\""))
         assertFalse(utilsContent.contains("ENGINE_VERSION"))
+    }
+
+    @Test
+    fun `replaceAll processes files beyond the capped search preview`() {
+        val first = File(workspaceDir, "a-many-matches.txt")
+        first.writeText(List(501) { "replace-me" }.joinToString("\n"))
+        val later = File(workspaceDir, "z-later.txt")
+        later.writeText("replace-me")
+
+        val replaced = GlobalSearchEngine.replaceAll(
+            workspaceDir = workspaceDir,
+            query = "replace-me",
+            replacement = "done",
+            matchCase = true,
+        )
+
+        assertEquals(502, replaced)
+        assertEquals(501, first.readText().lines().count { it == "done" })
+        assertEquals("done", later.readText())
+    }
+
+    @Test
+    fun `replaceAll quotes replacement metacharacters literally`() {
+        val target = File(workspaceDir, "literal.txt")
+        target.writeText("VALUE VALUE")
+
+        assertEquals(2, GlobalSearchEngine.replaceAll(
+            workspaceDir = workspaceDir,
+            query = "VALUE",
+            replacement = "$1\\path",
+            matchCase = true,
+            fileFilter = "literal.txt",
+        ))
+        assertEquals("$1\\path $1\\path", target.readText())
     }
 }
