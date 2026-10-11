@@ -207,7 +207,8 @@ class RuntimeInstaller(private val context: Context) {
 
         // Node.js and Git are always available in the Core runtime. Python,
         // C/C++, PHP, and Android remain opt-in stacks during onboarding.
-        val coreNeeded = !File(rootfs, "usr/bin/git").exists() || !isSupportedCoreToolsVersion()
+        val coreNeeded = !File(rootfs, "usr/bin/git").exists() ||
+            !isSupportedCoreToolsVersion() || !isNodeInstallationValid()
         if (coreNeeded) {
             installNodeIfNeeded(proot, 0.58f, 0.66f, onProgress)
         }
@@ -1845,13 +1846,26 @@ class RuntimeInstaller(private val context: Context) {
         devStacksFile.writeText(obj.toString())
     }
 
+    private fun isNodeHomeValid(directory: File): Boolean =
+        directory.isDirectory &&
+            File(directory, "bin/node").canExecute() &&
+            File(directory, "bin/npm").exists()
+
+    private fun isNodeInstallationValid(): Boolean {
+        val nodeHome = File(rootfs, "usr/local/lib/nodejs")
+        return File(rootfs, "usr/local/bin/node").canExecute() && isNodeHomeValid(nodeHome)
+    }
+
     private suspend fun installNodeIfNeeded(
         proot: File,
         from: Float,
         to: Float,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        if (File(rootfs, "usr/local/bin/node").exists()) return
+        val nodeHome = File(rootfs, "usr/local/lib/nodejs")
+        val nodeBackup = File(nodeHome.parentFile, "nodejs.previous")
+        RuntimeDirectoryTransaction.recoverPrevious(nodeHome, nodeBackup, ::isNodeHomeValid)
+        if (isNodeInstallationValid()) return
         check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
             "Bundled offline runtime is missing Node.js; reinstall the latest offline APK"
         }
@@ -1878,20 +1892,29 @@ class RuntimeInstaller(private val context: Context) {
             )
         }
         onProgress(RuntimeInstallProgress("Installing Node.js and npm", to))
-        val nodeStaging = File(runtimeDir, "node.installing")
-        nodeStaging.deleteRecursively()
-        nodeStaging.mkdirs()
+        val nodeStaging = File(nodeHome.parentFile, "nodejs.installing")
+        check(nodeStaging.deleteRecursively() || !nodeStaging.exists()) { "Could not clear incomplete Node.js staging directory" }
+        check(nodeStaging.mkdirs() || nodeStaging.isDirectory) { "Could not create Node.js staging directory" }
         extractNodeArchive(nodeArchive, nodeStaging)
-        val nodeHome = File(rootfs, "usr/local/lib/nodejs")
-        nodeHome.deleteRecursively()
-        nodeHome.parentFile?.mkdirs()
-        check(nodeStaging.renameTo(nodeHome)) { "Could not activate Node.js" }
-        val localBin = File(rootfs, "usr/local/bin").apply { mkdirs() }
-        listOf("node", "npm", "npx", "corepack").forEach { command ->
-            val link = File(localBin, command)
-            if (link.exists() || java.nio.file.Files.isSymbolicLink(link.toPath())) link.delete()
-            Os.symlink("../lib/nodejs/bin/$command", link.absolutePath)
-        }
+
+        RuntimeDirectoryTransaction.activate(
+            staging = nodeStaging,
+            target = nodeHome,
+            backup = nodeBackup,
+            isTargetValid = ::isNodeHomeValid,
+            validateActivated = { activated ->
+                check(isNodeHomeValid(activated)) { "Staged Node.js installation is incomplete" }
+                val localBin = File(rootfs, "usr/local/bin").apply { mkdirs() }
+                listOf("node", "npm", "npx", "corepack").forEach { command ->
+                    val link = File(localBin, command)
+                    if (link.exists() || java.nio.file.Files.isSymbolicLink(link.toPath())) {
+                        check(link.delete() || !link.exists()) { "Could not replace Node.js launcher $command" }
+                    }
+                    Os.symlink("../lib/nodejs/bin/$command", link.absolutePath)
+                }
+            },
+        )
+        check(isNodeInstallationValid()) { "Node.js activation did not produce a usable runtime" }
         nodeArchive.delete()
     }
 
