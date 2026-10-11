@@ -55,6 +55,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.jarves.mh.visual.*
+import com.jarves.mh.visual.ui.VisualComparisonViewer
+import com.jarves.mh.visual.ui.VisualDevToolsSheet
 
 private data class BrowserTab(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -143,6 +146,24 @@ fun PreviewTab(
     detectedPorts: List<Int> = emptyList(),
     onScanPorts: ((List<Int>) -> Unit) -> Unit = {},
     onAttachVisualInspection: (String, String) -> Unit = { _, _ -> },
+    projectRoot: java.io.File? = null,
+    visualConsoleLogs: List<ConsoleLogEntry> = emptyList(),
+    visualNetworkLogs: List<NetworkLogEntry> = emptyList(),
+    inspectedDomElement: DomElementInfo? = null,
+    detectedPortInfos: List<LocalhostPortInfo> = emptyList(),
+    visualSnapshots: List<VisualSnapshot> = emptyList(),
+    visualComparisonPair: VisualComparisonPair? = null,
+    activeViewportPreset: ViewportPreset = ViewportPreset.RESPONSIVE,
+    onRecordConsoleLog: (ConsoleLogEntry) -> Unit = {},
+    onRecordNetworkLog: (NetworkLogEntry) -> Unit = {},
+    onSetInspectedDomElement: (DomElementInfo?) -> Unit = {},
+    onClearVisualLogs: () -> Unit = {},
+    onSetViewportPreset: (ViewportPreset) -> Unit = {},
+    onSaveVisualSnapshot: (android.graphics.Bitmap, String, String, (VisualSnapshot) -> Unit) -> Unit = { _, _, _, cb -> cb(VisualSnapshot(title = "test", url = "", screenshotPath = "")) },
+    onSetBaselineSnapshot: (VisualSnapshot) -> Unit = {},
+    onSetComparisonSnapshot: (VisualSnapshot) -> Unit = {},
+    onDispatchAiVisualBugReport: (String, String, VisualSnapshot?, () -> Unit) -> Unit = { _, _, _, cb -> cb() },
+    onRequestSwitchToChat: () -> Unit = {},
 ) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { onScanPorts {} }
@@ -175,6 +196,13 @@ fun PreviewTab(
     var showHistorySheet by remember { mutableStateOf(false) }
     var showExtensionsModal by remember { mutableStateOf(false) }
     var showTabsStrip by rememberSaveable { mutableStateOf(false) }
+    var isInspectorActive by rememberSaveable { mutableStateOf(false) }
+    var showDevToolsSheet by remember { mutableStateOf(false) }
+    var showAiDebuggerDialog by remember { mutableStateOf(false) }
+    var showDiffViewerDialog by remember { mutableStateOf(false) }
+    var aiDebuggerNotes by remember { mutableStateOf("") }
+    var aiDebuggerSnapshot by remember { mutableStateOf<VisualSnapshot?>(null) }
+    var showViewportDropdown by remember { mutableStateOf(false) }
 
     // Find in Page state
     var showFindInPage by remember { mutableStateOf(false) }
@@ -398,6 +426,109 @@ fun PreviewTab(
                                         tint = MaterialTheme.colorScheme.onPrimary,
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    // DOM Touch Inspector Toggle
+                    IconButton(
+                        onClick = {
+                            isInspectorActive = !isInspectorActive
+                            webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(isInspectorActive), null)
+                            Toast.makeText(context, if (isInspectorActive) "DOM Inspector enabled: Tap element" else "DOM Inspector disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HighlightAlt,
+                            contentDescription = "Inspect Element",
+                            tint = if (isInspectorActive) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+
+                    // Embedded DevTools button with live error badge
+                    Box(modifier = Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                        IconButton(
+                            onClick = { showDevToolsSheet = true },
+                            modifier = Modifier.size(34.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeveloperMode,
+                                contentDescription = "Open DevTools",
+                                tint = if (visualConsoleLogs.any { it.level == LogLevel.ERROR } || visualNetworkLogs.any { it.isFailed }) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        val errCount = visualConsoleLogs.count { it.level == LogLevel.ERROR } + visualNetworkLogs.count { it.isFailed }
+                        if (errCount > 0) {
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
+                            ) {
+                                Text(errCount.coerceAtMost(99).toString(), fontSize = 8.sp)
+                            }
+                        }
+                    }
+
+                    // AI Visual Debugger Quick Action
+                    IconButton(
+                        onClick = {
+                            val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
+                            val bmp = webView?.let { VisualCaptureEngine.captureWebView(it) }
+                            if (bmp != null) {
+                                onSaveVisualSnapshot(bmp, "Visual Bug Snapshot", targetUrl) { snap ->
+                                    aiDebuggerSnapshot = snap
+                                    showAiDebuggerDialog = true
+                                }
+                            } else {
+                                showAiDebuggerDialog = true
+                            }
+                        },
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "Debug with AI",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+
+                    // Viewport Switcher Dropdown
+                    Box {
+                        IconButton(
+                            onClick = { showViewportDropdown = true },
+                            modifier = Modifier.size(34.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (activeViewportPreset.isMobile) Icons.Default.Smartphone else if (activeViewportPreset.id == "ipad") Icons.Default.Tablet else Icons.Default.Laptop,
+                                contentDescription = "Viewport: ${activeViewportPreset.name}",
+                                tint = if (activeViewportPreset.widthDp > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showViewportDropdown,
+                            onDismissRequest = { showViewportDropdown = false },
+                        ) {
+                            ViewportPreset.ALL.forEach { preset ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            if (preset == activeViewportPreset) {
+                                                Icon(Icons.Default.Check, null, Modifier.size(16.dp), tint = PocketGreen)
+                                            } else {
+                                                Spacer(Modifier.size(16.dp))
+                                            }
+                                            Text(preset.name, fontSize = 12.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        onSetViewportPreset(preset)
+                                        showViewportDropdown = false
+                                    },
+                                )
                             }
                         }
                     }
@@ -1017,9 +1148,32 @@ fun PreviewTab(
                 }
             }
         } else {
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
+            val isCustomViewport = activeViewportPreset.widthDp > 0
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (isCustomViewport) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        else Modifier
+                    ),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Surface(
+                    shape = if (isCustomViewport) RoundedCornerShape(16.dp) else RoundedCornerShape(0.dp),
+                    shadowElevation = if (isCustomViewport) 6.dp else 0.dp,
+                    border = if (isCustomViewport) BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+                    modifier = if (isCustomViewport) {
+                        Modifier
+                            .padding(vertical = 8.dp)
+                            .width(activeViewportPreset.widthDp.dp)
+                            .fillMaxHeight()
+                    } else {
+                        Modifier.fillMaxSize()
+                    },
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -1055,6 +1209,22 @@ fun PreviewTab(
 
                             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                                 val msg = consoleMessage?.message() ?: return super.onConsoleMessage(consoleMessage)
+                                val domElement = DomInspectorEngine.parseDomElementMessage(msg)
+                                if (domElement != null) {
+                                    onSetInspectedDomElement(domElement)
+                                    Toast.makeText(context, "Selected ${domElement.displayName}", Toast.LENGTH_SHORT).show()
+                                    return true
+                                }
+                                val consoleLog = DomInspectorEngine.parseConsoleMessage(msg)
+                                if (consoleLog != null) {
+                                    onRecordConsoleLog(consoleLog)
+                                    return true
+                                }
+                                val networkLog = DomInspectorEngine.parseNetworkMessage(msg)
+                                if (networkLog != null) {
+                                    onRecordNetworkLog(networkLog)
+                                    return true
+                                }
                                 if (msg.startsWith("MH_DOM_INSPECT:")) {
                                     val inspected = msg.removePrefix("MH_DOM_INSPECT:").trim()
                                     Toast.makeText(context, inspected, Toast.LENGTH_SHORT).show()
@@ -1085,8 +1255,41 @@ fun PreviewTab(
                                 }
                             }
 
+                            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                                super.onReceivedError(view, request, error)
+                                if (request?.url != null) {
+                                    onRecordNetworkLog(
+                                        NetworkLogEntry(
+                                            url = request.url.toString(),
+                                            method = request.method ?: "GET",
+                                            error = error?.description?.toString() ?: "Network error",
+                                            isFailed = true,
+                                        )
+                                    )
+                                }
+                            }
+
+                            override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: android.webkit.WebResourceResponse?) {
+                                super.onReceivedHttpError(view, request, errorResponse)
+                                if (request?.url != null) {
+                                    onRecordNetworkLog(
+                                        NetworkLogEntry(
+                                            url = request.url.toString(),
+                                            method = request.method ?: "GET",
+                                            statusCode = errorResponse?.statusCode,
+                                            statusText = errorResponse?.reasonPhrase,
+                                            isFailed = true,
+                                        )
+                                    )
+                                }
+                            }
+
                             override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                                 super.onPageFinished(view, finishedUrl)
+                                view?.evaluateJavascript(DomInspectorEngine.buildDiagnosticsInterceptorScript(), null)
+                                if (isInspectorActive) {
+                                    view?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(true), null)
+                                }
                                 if (!finishedUrl.isNullOrBlank() && finishedUrl != "about:blank") {
                                     address = finishedUrl
                                     lastLoadedUrl = finishedUrl
@@ -1126,6 +1329,8 @@ fun PreviewTab(
             )
         }
     }
+}
+}
 
     // History & Bookmarks Modal Sheet
     if (showHistorySheet) {
@@ -1394,6 +1599,130 @@ fun PreviewTab(
                     scriptOutputText = null
                 }) {
                     Text("Close")
+                }
+            },
+        )
+    }
+
+    if (showDevToolsSheet) {
+        VisualDevToolsSheet(
+            consoleLogs = visualConsoleLogs,
+            networkLogs = visualNetworkLogs,
+            inspectedElement = inspectedDomElement,
+            isInspectorActive = isInspectorActive,
+            onToggleInspector = { active ->
+                isInspectorActive = active
+                webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(active), null)
+            },
+            detectedPorts = detectedPortInfos,
+            onRescanPorts = { onScanPorts {} },
+            onOpenPort = { port ->
+                navigateTo("http://localhost:$port")
+                showDevToolsSheet = false
+            },
+            onAddCustomPort = { _ ->
+                onScanPorts {}
+            },
+            snapshots = visualSnapshots,
+            comparisonPair = visualComparisonPair,
+            onCaptureSnapshot = { title ->
+                val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
+                val bmp = webView?.let { VisualCaptureEngine.captureWebView(it) }
+                if (bmp != null) {
+                    onSaveVisualSnapshot(bmp, title, targetUrl) { snap ->
+                        Toast.makeText(context, "Captured snapshot: ${snap.title}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onSetBaseline = onSetBaselineSnapshot,
+            onSetComparison = onSetComparisonSnapshot,
+            onLaunchDiffViewer = {
+                showDevToolsSheet = false
+                showDiffViewerDialog = true
+            },
+            onClearLogs = onClearVisualLogs,
+            onDismiss = { showDevToolsSheet = false },
+        )
+    }
+
+    if (showDiffViewerDialog && projectRoot != null && visualComparisonPair != null) {
+        VisualComparisonViewer(
+            projectRoot = projectRoot,
+            pair = visualComparisonPair,
+            onDismiss = { showDiffViewerDialog = false },
+        )
+    }
+
+    if (showAiDebuggerDialog) {
+        AlertDialog(
+            onDismissRequest = { showAiDebuggerDialog = false },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
+                        onDispatchAiVisualBugReport(targetUrl, aiDebuggerNotes, aiDebuggerSnapshot) {
+                            showAiDebuggerDialog = false
+                            Toast.makeText(context, "Visual bug report dispatched to AI Agent", Toast.LENGTH_SHORT).show()
+                            onRequestSwitchToChat()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PocketGreen),
+                ) {
+                    Icon(Icons.Default.AutoAwesome, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Send to AI Agent")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAiDebuggerDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.AutoAwesome, null, tint = PocketGreen)
+                    Text("AI Visual Debugger", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Target: ${currentTab.activeUrl ?: address}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    if (inspectedDomElement != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(6.dp)) {
+                                Text("Selected: ${inspectedDomElement.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PocketGreen)
+                                Text("Selector: ${inspectedDomElement.selector}", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                    val errCount = visualConsoleLogs.count { it.level == LogLevel.ERROR }
+                    val netFailCount = visualNetworkLogs.count { it.isFailed }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (errCount > 0) {
+                            Text("$errCount console error(s)", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                        }
+                        if (netFailCount > 0) {
+                            Text("$netFailCount failed request(s)", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                        }
+                        if (errCount == 0 && netFailCount == 0) {
+                            Text("No runtime errors detected", fontSize = 11.sp, color = PocketGreen)
+                        }
+                    }
+                    if (aiDebuggerSnapshot != null) {
+                        Text("Screenshot: ${aiDebuggerSnapshot?.screenshotPath}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("Describe problem or instruction for AI:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = aiDebuggerNotes,
+                        onValueChange = { aiDebuggerNotes = it },
+                        placeholder = { Text("e.g. Fix button height and resolve 404 endpoint", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth().height(90.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                    )
                 }
             },
         )

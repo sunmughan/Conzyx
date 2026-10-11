@@ -478,6 +478,7 @@ fun PocketDevApp(
             detectedPorts = detectedPorts,
             onScanPorts = viewModel::scanActiveLocalhostPorts,
             onAttachVisualInspection = viewModel::attachVisualInspectionToAgent,
+            viewModel = viewModel,
         )
         else -> RootScreenHost(
             state = state,
@@ -4386,6 +4387,7 @@ private fun WorkspaceScreen(
     detectedPorts: List<Int> = emptyList(),
     onScanPorts: ((List<Int>) -> Unit) -> Unit = {},
     onAttachVisualInspection: (String, String) -> Unit = { _, _ -> },
+    viewModel: MainViewModel? = null,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4897,6 +4899,24 @@ private fun WorkspaceScreen(
                     detectedPorts = detectedPorts,
                     onScanPorts = onScanPorts,
                     onAttachVisualInspection = onAttachVisualInspection,
+                    projectRoot = workspaceDir ?: state.activeProject?.let { viewModel?.projectWorkspaceRoot(it) },
+                    visualConsoleLogs = viewModel?.visualConsoleLogs?.collectAsStateWithLifecycle()?.value ?: emptyList(),
+                    visualNetworkLogs = viewModel?.visualNetworkLogs?.collectAsStateWithLifecycle()?.value ?: emptyList(),
+                    inspectedDomElement = viewModel?.inspectedDomElement?.collectAsStateWithLifecycle()?.value,
+                    detectedPortInfos = viewModel?.detectedPortInfos?.collectAsStateWithLifecycle()?.value ?: emptyList(),
+                    visualSnapshots = viewModel?.visualSnapshots?.collectAsStateWithLifecycle()?.value ?: emptyList(),
+                    visualComparisonPair = viewModel?.visualComparisonPair?.collectAsStateWithLifecycle()?.value,
+                    activeViewportPreset = viewModel?.activeViewportPreset?.collectAsStateWithLifecycle()?.value ?: com.jarves.mh.visual.ViewportPreset.RESPONSIVE,
+                    onRecordConsoleLog = { viewModel?.recordVisualConsoleLog(it) },
+                    onRecordNetworkLog = { viewModel?.recordVisualNetworkLog(it) },
+                    onSetInspectedDomElement = { viewModel?.setInspectedDomElement(it) },
+                    onClearVisualLogs = { viewModel?.clearVisualLogs() },
+                    onSetViewportPreset = { viewModel?.setViewportPreset(it) },
+                    onSaveVisualSnapshot = { bmp, title, u, cb -> viewModel?.saveVisualSnapshot(bmp, title, u, cb) },
+                    onSetBaselineSnapshot = { viewModel?.setBaselineComparisonSnapshot(it) },
+                    onSetComparisonSnapshot = { viewModel?.setAfterComparisonSnapshot(it) },
+                    onDispatchAiVisualBugReport = { u, notes, snap, cb -> viewModel?.dispatchAiVisualBugReport(u, notes, snap, cb) },
+                    onRequestSwitchToChat = { selectedTab = WorkspaceTab.CHAT },
                 )
                 }
             }

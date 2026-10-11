@@ -1131,7 +1131,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun projectGuestRoot(project: Project): String = "/workspace/${project.slug}"
 
-    private fun projectWorkspaceRoot(project: Project): File {
+    fun activeProjectWorkspaceRoot(): File? = _state.value.activeProject?.let { projectWorkspaceRoot(it) }
+
+    fun projectWorkspaceRoot(project: Project): File {
         val base = File(getApplication<Application>().filesDir, "workspaces/${project.id}")
             .apply { mkdirs() }
             .canonicalFile
@@ -6017,6 +6019,145 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         }
         _state.update { it.copy(toastMessage = "Running autonomous verification with ${tool.name}...") }
         runProjectTerminalCommand(tool.verificationCommand)
+    }
+
+    val localhostPortManager = com.jarves.mh.visual.LocalhostPortManager()
+
+    private val _visualConsoleLogs = MutableStateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>>(emptyList())
+    val visualConsoleLogs: StateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>> = _visualConsoleLogs.asStateFlow()
+
+    private val _visualNetworkLogs = MutableStateFlow<List<com.jarves.mh.visual.NetworkLogEntry>>(emptyList())
+    val visualNetworkLogs: StateFlow<List<com.jarves.mh.visual.NetworkLogEntry>> = _visualNetworkLogs.asStateFlow()
+
+    private val _inspectedDomElement = MutableStateFlow<com.jarves.mh.visual.DomElementInfo?>(null)
+    val inspectedDomElement: StateFlow<com.jarves.mh.visual.DomElementInfo?> = _inspectedDomElement.asStateFlow()
+
+    private val _visualSnapshots = MutableStateFlow<List<com.jarves.mh.visual.VisualSnapshot>>(emptyList())
+    val visualSnapshots: StateFlow<List<com.jarves.mh.visual.VisualSnapshot>> = _visualSnapshots.asStateFlow()
+
+    private val _visualComparisonPair = MutableStateFlow<com.jarves.mh.visual.VisualComparisonPair?>(null)
+    val visualComparisonPair: StateFlow<com.jarves.mh.visual.VisualComparisonPair?> = _visualComparisonPair.asStateFlow()
+
+    private val _activeViewportPreset = MutableStateFlow(com.jarves.mh.visual.ViewportPreset.RESPONSIVE)
+    val activeViewportPreset: StateFlow<com.jarves.mh.visual.ViewportPreset> = _activeViewportPreset.asStateFlow()
+
+    private val _detectedPortInfos = MutableStateFlow<List<com.jarves.mh.visual.LocalhostPortInfo>>(emptyList())
+    val detectedPortInfos: StateFlow<List<com.jarves.mh.visual.LocalhostPortInfo>> = _detectedPortInfos.asStateFlow()
+
+    fun recordVisualConsoleLog(entry: com.jarves.mh.visual.ConsoleLogEntry) {
+        _visualConsoleLogs.update { (listOf(entry) + it).take(200) }
+    }
+
+    fun recordVisualNetworkLog(entry: com.jarves.mh.visual.NetworkLogEntry) {
+        _visualNetworkLogs.update { (listOf(entry) + it).take(100) }
+    }
+
+    fun setInspectedDomElement(element: com.jarves.mh.visual.DomElementInfo?) {
+        _inspectedDomElement.value = element
+    }
+
+    fun clearVisualLogs() {
+        _visualConsoleLogs.value = emptyList()
+        _visualNetworkLogs.value = emptyList()
+    }
+
+    fun setViewportPreset(preset: com.jarves.mh.visual.ViewportPreset) {
+        _activeViewportPreset.value = preset
+    }
+
+    fun scanLocalhostPortsWithHeuristics(
+        customPorts: List<Int> = emptyList(),
+        onComplete: (List<com.jarves.mh.visual.LocalhostPortInfo>) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            val infos = localhostPortManager.scanPorts(customPorts)
+            _detectedPortInfos.value = infos
+            _detectedLocalhostPorts.value = infos.map { it.port }
+            withContext(Dispatchers.Main) {
+                onComplete(infos)
+            }
+        }
+    }
+
+    fun saveVisualSnapshot(
+        bitmap: android.graphics.Bitmap,
+        title: String,
+        url: String,
+        onSaved: (com.jarves.mh.visual.VisualSnapshot) -> Unit = {},
+    ) {
+        val project = _state.value.activeProject ?: return
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val snapshot = com.jarves.mh.visual.VisualCaptureEngine.saveSnapshot(
+                projectRoot = workspace,
+                bitmap = bitmap,
+                title = title,
+                url = url,
+                consoleErrorsCount = _visualConsoleLogs.value.count { it.level == com.jarves.mh.visual.LogLevel.ERROR },
+                networkErrorsCount = _visualNetworkLogs.value.count { it.isFailed },
+                domSummary = _inspectedDomElement.value?.displayName,
+            )
+            _visualSnapshots.update { listOf(snapshot) + it }
+            withContext(Dispatchers.Main) {
+                onSaved(snapshot)
+            }
+        }
+    }
+
+    fun setBaselineComparisonSnapshot(snapshot: com.jarves.mh.visual.VisualSnapshot) {
+        val current = _visualComparisonPair.value
+        _visualComparisonPair.value = if (current != null) {
+            current.copy(beforeSnapshot = snapshot)
+        } else {
+            com.jarves.mh.visual.VisualComparisonPair(
+                beforeSnapshot = snapshot,
+                afterSnapshot = snapshot,
+                title = "UI Comparison",
+            )
+        }
+    }
+
+    fun setAfterComparisonSnapshot(snapshot: com.jarves.mh.visual.VisualSnapshot) {
+        val current = _visualComparisonPair.value
+        _visualComparisonPair.value = if (current != null) {
+            current.copy(afterSnapshot = snapshot)
+        } else {
+            com.jarves.mh.visual.VisualComparisonPair(
+                beforeSnapshot = snapshot,
+                afterSnapshot = snapshot,
+                title = "UI Comparison",
+            )
+        }
+    }
+
+    fun dispatchAiVisualBugReport(
+        url: String,
+        userNotes: String = "",
+        snapshot: com.jarves.mh.visual.VisualSnapshot? = null,
+        onDispatched: () -> Unit = {},
+    ) {
+        val project = _state.value.activeProject ?: return
+        val workspace = projectWorkspaceRoot(project)
+
+        val prompt = com.jarves.mh.visual.AiVisualDebugger.generateBugReportPrompt(
+            url = url,
+            viewport = _activeViewportPreset.value,
+            selectedElement = _inspectedDomElement.value,
+            consoleLogs = _visualConsoleLogs.value,
+            networkLogs = _visualNetworkLogs.value,
+            snapshot = snapshot,
+            userNotes = userNotes,
+        )
+
+        if (snapshot != null) {
+            val attachment = com.jarves.mh.visual.AiVisualDebugger.createChatAttachment(snapshot, workspace)
+            if (attachment != null) {
+                _state.update { it.copy(pendingAttachments = it.pendingAttachments + attachment) }
+            }
+        }
+
+        sendPrompt(prompt)
+        onDispatched()
     }
 
     override fun onCleared() {
