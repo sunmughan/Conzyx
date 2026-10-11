@@ -11,16 +11,20 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 enum class PermissionCategory {
     FILE_READ,
+    FILE_CREATE,
     FILE_WRITE,
+    FILE_MODIFY,
     FILE_DELETE,
     SHELL_EXEC,
+    INSTALL_PACKAGE,
     NETWORK,
-    SECRETS,
+    EXTERNAL_SERVICES,
     GIT_COMMIT,
     GIT_PUSH,
     GIT_BRANCH,
-    INSTALL_PACKAGE,
-    INSTALL_APK
+    INSTALL_APK,
+    SECRETS,
+    ACCESS_ENV
 }
 
 enum class PermissionLevel {
@@ -210,6 +214,8 @@ class PermissionPolicyEngine(
         // 3. Sensitive File Protection
         val isFileOp = request.category == PermissionCategory.FILE_READ ||
                 request.category == PermissionCategory.FILE_WRITE ||
+                request.category == PermissionCategory.FILE_CREATE ||
+                request.category == PermissionCategory.FILE_MODIFY ||
                 request.category == PermissionCategory.FILE_DELETE
 
         if (isFileOp && isSensitivePath(request.target).isSensitive) {
@@ -355,18 +361,26 @@ class PermissionPolicyEngine(
     private fun evaluateBaselineDefault(request: PermissionRequest): PermissionDecision {
         return when (request.category) {
             PermissionCategory.FILE_READ -> PermissionDecision(allowed = true, reason = "Safe project file read allowed")
+            PermissionCategory.FILE_CREATE -> PermissionDecision(allowed = true, reason = "Standard project file creation allowed")
             PermissionCategory.FILE_WRITE -> PermissionDecision(allowed = true, reason = "Standard project file write allowed")
+            PermissionCategory.FILE_MODIFY -> PermissionDecision(allowed = true, reason = "Standard project file modification allowed")
             PermissionCategory.FILE_DELETE -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "File deletion requires confirmation")
             PermissionCategory.SHELL_EXEC -> PermissionDecision(allowed = true, reason = "Standard safe development command allowed")
             PermissionCategory.NETWORK -> PermissionDecision(allowed = true, reason = "Standard network access allowed")
+            PermissionCategory.EXTERNAL_SERVICES -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Connecting to external third-party services requires confirmation")
             PermissionCategory.GIT_COMMIT -> PermissionDecision(allowed = true, reason = "Local Git commit allowed")
             PermissionCategory.GIT_BRANCH -> PermissionDecision(allowed = true, reason = "Branch creation allowed")
             PermissionCategory.GIT_PUSH -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Remote Git push requires explicit confirmation")
             PermissionCategory.INSTALL_PACKAGE -> PermissionDecision(allowed = true, reason = "Package installation allowed")
             PermissionCategory.INSTALL_APK -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Device APK installation requires user consent")
             PermissionCategory.SECRETS -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Access to secrets requires authorization")
+            PermissionCategory.ACCESS_ENV -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Reading environment variables requires user authorization")
         }
     }
+
+    fun getAllGlobalPolicies(): Map<PermissionCategory, PermissionLevel> = globalPolicies.toMap()
+    fun getGlobalPolicy(category: PermissionCategory): PermissionLevel? = globalPolicies[category]
+    fun getProjectPolicy(projectId: String, category: PermissionCategory): PermissionLevel? = projectPolicies[projectId]?.get(category)
 
     private fun checkScopeGrant(category: PermissionCategory, target: String, projectId: String?, sessionId: String?): Boolean {
         if (globalPolicies[category] == PermissionLevel.ALWAYS) return true

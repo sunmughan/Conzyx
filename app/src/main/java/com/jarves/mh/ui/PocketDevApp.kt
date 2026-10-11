@@ -2461,6 +2461,8 @@ private fun RootScreenHost(
                     onNavigateToAuth = onNavigateToAuth,
                     onBackupWorkspaces = { viewModel.backupAllWorkspaces() },
                     onRestoreWorkspaces = { viewModel.restoreAllWorkspaces() },
+                    onTogglePermissionPolicy = viewModel::updatePermissionPolicy,
+                    onClearSecurityAuditLogs = viewModel::clearSecurityAuditLogs,
                 )
             }
         }

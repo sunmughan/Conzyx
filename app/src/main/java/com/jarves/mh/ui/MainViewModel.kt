@@ -296,6 +296,14 @@ data class AppUiState(
     val scratchpadExpanded: Boolean = false,
     val orchestratorSnapshot: com.jarves.mh.session.OrchestratorSnapshot? = null,
     val emergencyKillSwitchActive: Boolean = false,
+    val allowShellExec: Boolean = true,
+    val allowNetworkAccess: Boolean = true,
+    val allowFileDeletion: Boolean = false,
+    val allowGitPush: Boolean = false,
+    val allowApkInstall: Boolean = false,
+    val allowExternalServices: Boolean = false,
+    val allowAccessEnv: Boolean = false,
+    val securityAuditLogs: List<com.jarves.mh.security.SecurityAuditEntry> = emptyList(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -504,6 +512,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (interrupted != null) {
             _state.update { it.copy(interruptedSession = interrupted) }
         }
+        refreshPermissionPolicies()
         viewModelScope.launch {
             agentOrchestrator.snapshot.collect { orchSnapshot ->
                 _state.update { it.copy(orchestratorSnapshot = orchSnapshot) }
@@ -1230,6 +1239,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun isEmergencyKillSwitchEngaged(): Boolean = permissionPolicyEngine.isEmergencyKillSwitchEngaged()
+
+    fun refreshPermissionPolicies() {
+        val globals = permissionPolicyEngine.getAllGlobalPolicies()
+        val shell = when (globals[com.jarves.mh.security.PermissionCategory.SHELL_EXEC]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> true
+        }
+        val net = when (globals[com.jarves.mh.security.PermissionCategory.NETWORK]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> true
+        }
+        val fileDel = when (globals[com.jarves.mh.security.PermissionCategory.FILE_DELETE]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> false
+        }
+        val gitPush = when (globals[com.jarves.mh.security.PermissionCategory.GIT_PUSH]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> false
+        }
+        val apkInstall = when (globals[com.jarves.mh.security.PermissionCategory.INSTALL_APK]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> false
+        }
+        val extServices = when (globals[com.jarves.mh.security.PermissionCategory.EXTERNAL_SERVICES]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> false
+        }
+        val accessEnv = when (globals[com.jarves.mh.security.PermissionCategory.ACCESS_ENV]) {
+            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
+            com.jarves.mh.security.PermissionLevel.DENY -> false
+            else -> false
+        }
+        val logs = permissionPolicyEngine.auditLogger.getEntries(200)
+        _state.update {
+            it.copy(
+                allowShellExec = shell,
+                allowNetworkAccess = net,
+                allowFileDeletion = fileDel,
+                allowGitPush = gitPush,
+                allowApkInstall = apkInstall,
+                allowExternalServices = extServices,
+                allowAccessEnv = accessEnv,
+                securityAuditLogs = logs,
+                emergencyKillSwitchActive = permissionPolicyEngine.isEmergencyKillSwitchEngaged(),
+            )
+        }
+    }
+
+    fun updatePermissionPolicy(category: com.jarves.mh.security.PermissionCategory, allowed: Boolean) {
+        if (allowed) {
+            permissionPolicyEngine.grantPermission(category, com.jarves.mh.security.PermissionLevel.ALWAYS)
+        } else {
+            permissionPolicyEngine.grantPermission(category, com.jarves.mh.security.PermissionLevel.DENY)
+        }
+        refreshPermissionPolicies()
+    }
+
+    fun loadSecurityAuditLogs(limit: Int = 200) {
+        val logs = permissionPolicyEngine.auditLogger.getEntries(limit)
+        _state.update { it.copy(securityAuditLogs = logs) }
+    }
+
+    fun searchSecurityAuditLogs(
+        query: String = "",
+        category: com.jarves.mh.security.PermissionCategory? = null,
+        decision: com.jarves.mh.security.AuditDecision? = null,
+        limit: Int = 200
+    ) {
+        val logs = permissionPolicyEngine.auditLogger.filter(
+            query = query,
+            category = category,
+            decision = decision,
+            limit = limit
+        )
+        _state.update { it.copy(securityAuditLogs = logs) }
+    }
+
+    fun clearSecurityAuditLogs() {
+        permissionPolicyEngine.auditLogger.clear()
+        _state.update { it.copy(securityAuditLogs = emptyList()) }
+    }
 
     fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()
 

@@ -114,6 +114,59 @@ class DangerousCommandDetector {
             regex = Regex("""\b(cat|grep|cp|mv|rm)\s+.*(\.env|\.git-credentials|id_rsa|id_ed25519|\.keystore)\b"""),
             severity = DangerSeverity.MEDIUM,
             reason = "Direct shell access to sensitive credentials or keys"
+        ),
+
+        // Interactive Reverse Shells & Socket Backdoors
+        Rule(
+            regex = Regex("""/dev/(tcp|udp)/[0-9a-zA-Z._-]+/\d+"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Interactive reverse shell via /dev/tcp or /dev/udp redirection"
+        ),
+        Rule(
+            regex = Regex("""\b(nc|netcat|ncat)\s+.*(-e|-c)\s*(/bin/)?(sh|bash|zsh)"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Netcat reverse shell backdoor payload"
+        ),
+        Rule(
+            regex = Regex("""\bsocat\s+.*(exec|system):.*(sh|bash)"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Socat interactive shell payload"
+        ),
+        Rule(
+            regex = Regex("""python[0-9.]*\s+-c\s+['"].*socket.*(subprocess|os\.dup2|/bin/sh).*['"]"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Python socket reverse shell payload"
+        ),
+
+        // Cryptocurrency Miners & Pool Protocols
+        Rule(
+            regex = Regex("""\b(xmrig|minerd|cpuminer|ccminer|ethminer|cgminer)\b"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Cryptocurrency mining binary detected"
+        ),
+        Rule(
+            regex = Regex("""stratum\+(tcp|ssl)://[0-9a-zA-Z._:-]+"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Stratum crypto mining pool protocol connection"
+        ),
+
+        // Destructive Device Wiping
+        Rule(
+            regex = Regex("""\bwipefs\s+(-a\s+)?/dev/.*"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Filesystem signature wipe on raw device"
+        ),
+        Rule(
+            regex = Regex("""\bshred\s+.*(/dev/|/boot|/system)"""),
+            severity = DangerSeverity.CRITICAL,
+            reason = "Destructive disk or system shred command"
+        ),
+
+        // Detached Persistent Background Daemon
+        Rule(
+            regex = Regex("""\bnohup\s+.*&\s*disown"""),
+            severity = DangerSeverity.HIGH,
+            reason = "Detached persistent background daemon execution"
         )
     )
 

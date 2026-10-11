@@ -122,6 +122,35 @@ class SecurityAuditLogger(
         }
     }
 
+    fun filter(
+        query: String = "",
+        category: PermissionCategory? = null,
+        decision: AuditDecision? = null,
+        limit: Int = 100
+    ): List<SecurityAuditEntry> {
+        synchronized(lock) {
+            val q = query.trim().lowercase(java.util.Locale.ROOT)
+            return memoryLog.asSequence()
+                .filter { entry ->
+                    if (category != null && entry.category != category) return@filter false
+                    if (decision != null && entry.decision != decision) return@filter false
+                    if (q.isNotEmpty()) {
+                        val matchAction = entry.action.lowercase(java.util.Locale.ROOT).contains(q)
+                        val matchTarget = entry.target.lowercase(java.util.Locale.ROOT).contains(q)
+                        val matchReason = entry.reason.lowercase(java.util.Locale.ROOT).contains(q)
+                        val matchCategory = entry.category.name.lowercase(java.util.Locale.ROOT).contains(q)
+                        val matchDecision = entry.decision.name.lowercase(java.util.Locale.ROOT).contains(q)
+                        if (!matchAction && !matchTarget && !matchReason && !matchCategory && !matchDecision) {
+                            return@filter false
+                        }
+                    }
+                    true
+                }
+                .take(limit.coerceAtLeast(1))
+                .toList()
+        }
+    }
+
     fun clear() {
         synchronized(lock) {
             memoryLog.clear()

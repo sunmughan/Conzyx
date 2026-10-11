@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,6 +71,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -193,6 +195,8 @@ fun SettingsScreen(
     onNavigateToAuth: () -> Unit = {},
     onBackupWorkspaces: () -> Unit = {},
     onRestoreWorkspaces: () -> Unit = {},
+    onTogglePermissionPolicy: (com.jarves.mh.security.PermissionCategory, Boolean) -> Unit = { _, _ -> },
+    onClearSecurityAuditLogs: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val runtimeInstaller = remember { RuntimeInstaller(context) }
@@ -203,11 +207,6 @@ fun SettingsScreen(
     var terminalCleared by remember { mutableStateOf(false) }
     var showReliabilityHelp by rememberSaveable { mutableStateOf(false) }
     var stackPendingRemoval by remember { mutableStateOf<DevStack?>(null) }
-    var allowShellExec by rememberSaveable { mutableStateOf(true) }
-    var allowNetworkAccess by rememberSaveable { mutableStateOf(true) }
-    var allowFileDeletion by rememberSaveable { mutableStateOf(false) }
-    var allowGitPush by rememberSaveable { mutableStateOf(false) }
-    var allowApkInstall by rememberSaveable { mutableStateOf(false) }
     var showAuditLogSheet by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
 
@@ -777,7 +776,10 @@ fun SettingsScreen(
                                 Text("Shell execution", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                                 Text("Allow agent to execute terminal commands", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Switch(checked = allowShellExec, onCheckedChange = { allowShellExec = it })
+                            Switch(
+                                checked = state.allowShellExec,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.SHELL_EXEC, it) },
+                            )
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -791,7 +793,10 @@ fun SettingsScreen(
                                 Text("Network access", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                                 Text("Allow agent outbound HTTP and curl requests", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Switch(checked = allowNetworkAccess, onCheckedChange = { allowNetworkAccess = it })
+                            Switch(
+                                checked = state.allowNetworkAccess,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.NETWORK, it) },
+                            )
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -805,7 +810,10 @@ fun SettingsScreen(
                                 Text("Auto-delete files", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                                 Text("Require explicit user prompt before deleting files", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Switch(checked = allowFileDeletion, onCheckedChange = { allowFileDeletion = it })
+                            Switch(
+                                checked = state.allowFileDeletion,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.FILE_DELETE, it) },
+                            )
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -819,7 +827,10 @@ fun SettingsScreen(
                                 Text("Git push", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                                 Text("Require prompt before pushing commits to remote", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Switch(checked = allowGitPush, onCheckedChange = { allowGitPush = it })
+                            Switch(
+                                checked = state.allowGitPush,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.GIT_PUSH, it) },
+                            )
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -833,7 +844,44 @@ fun SettingsScreen(
                                 Text("Install device APKs", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                                 Text("Allow background APK installations without prompt", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Switch(checked = allowApkInstall, onCheckedChange = { allowApkInstall = it })
+                            Switch(
+                                checked = state.allowApkInstall,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.INSTALL_APK, it) },
+                            )
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("External services", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Allow calls to external APIs without prompt", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = state.allowExternalServices,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.EXTERNAL_SERVICES, it) },
+                            )
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Access environment variables", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Allow reading environment variables without prompt", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = state.allowAccessEnv,
+                                onCheckedChange = { onTogglePermissionPolicy(com.jarves.mh.security.PermissionCategory.ACCESS_ENV, it) },
+                            )
                         }
 
                         Spacer(Modifier.height(4.dp))
@@ -916,32 +964,145 @@ fun SettingsScreen(
     }
 
     if (showAuditLogSheet) {
-        val auditEntries = remember {
-            com.jarves.mh.security.PermissionPolicyEngine(context).auditLogger.getEntries(50)
+        var searchQuery by rememberSaveable { mutableStateOf("") }
+        var selectedCategory by rememberSaveable { mutableStateOf<com.jarves.mh.security.PermissionCategory?>(null) }
+        var selectedDecision by rememberSaveable { mutableStateOf<com.jarves.mh.security.AuditDecision?>(null) }
+
+        val filteredEntries = remember(state.securityAuditLogs, searchQuery, selectedCategory, selectedDecision) {
+            val q = searchQuery.trim().lowercase(java.util.Locale.ROOT)
+            state.securityAuditLogs.filter { entry ->
+                if (selectedCategory != null && entry.category != selectedCategory) return@filter false
+                if (selectedDecision != null && entry.decision != selectedDecision) return@filter false
+                if (q.isNotEmpty()) {
+                    val match = entry.action.lowercase(java.util.Locale.ROOT).contains(q) ||
+                        entry.target.lowercase(java.util.Locale.ROOT).contains(q) ||
+                        entry.reason.lowercase(java.util.Locale.ROOT).contains(q) ||
+                        entry.category.name.lowercase(java.util.Locale.ROOT).contains(q) ||
+                        entry.decision.name.lowercase(java.util.Locale.ROOT).contains(q)
+                    if (!match) return@filter false
+                }
+                true
+            }
         }
-        ModalBottomSheet(onDismissRequest = { showAuditLogSheet = false }) {
+
+        ModalBottomSheet(
+            onDismissRequest = { showAuditLogSheet = false },
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(480.dp)
+                    .fillMaxHeight(0.85f)
                     .padding(horizontal = 18.dp),
             ) {
-                Text("Security Audit Trail", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Recent access evaluations, policy checks, and blocked dangerous actions",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Security Audit Trail", style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Recent access evaluations, policy checks, and blocked dangerous actions",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (state.securityAuditLogs.isNotEmpty()) {
+                        TextButton(
+                            onClick = { onClearSecurityAuditLogs() },
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Clear logs", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Clear", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search action, target, reason...", fontSize = 12.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
                 )
-                Spacer(Modifier.height(12.dp))
-                if (auditEntries.isEmpty()) {
-                    Text("No security events recorded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+
+                Spacer(Modifier.height(8.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                ) {
+                    item {
+                        FilterChip(
+                            selected = selectedCategory == null && selectedDecision == null,
+                            onClick = {
+                                selectedCategory = null
+                                selectedDecision = null
+                            },
+                            label = { Text("All", fontSize = 11.sp) },
+                        )
+                    }
+                    val filterCategories = listOf(
+                        com.jarves.mh.security.PermissionCategory.SHELL_EXEC,
+                        com.jarves.mh.security.PermissionCategory.NETWORK,
+                        com.jarves.mh.security.PermissionCategory.FILE_DELETE,
+                        com.jarves.mh.security.PermissionCategory.GIT_PUSH,
+                        com.jarves.mh.security.PermissionCategory.INSTALL_APK,
+                        com.jarves.mh.security.PermissionCategory.EXTERNAL_SERVICES,
+                        com.jarves.mh.security.PermissionCategory.ACCESS_ENV,
+                        com.jarves.mh.security.PermissionCategory.SECRETS,
+                    )
+                    items(filterCategories) { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = if (selectedCategory == cat) null else cat },
+                            label = { Text(cat.name, fontSize = 11.sp) },
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = selectedDecision == com.jarves.mh.security.AuditDecision.BLOCKED_DANGEROUS,
+                            onClick = {
+                                selectedDecision = if (selectedDecision == com.jarves.mh.security.AuditDecision.BLOCKED_DANGEROUS) null else com.jarves.mh.security.AuditDecision.BLOCKED_DANGEROUS
+                            },
+                            label = { Text("Blocked Only", fontSize = 11.sp) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                if (filteredEntries.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (state.securityAuditLogs.isEmpty()) "No security events recorded yet." else "No matching security events found.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
                 } else {
                     LazyColumn(
+                        modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(auditEntries, key = { it.id }) { entry ->
+                        items(filteredEntries, key = { it.id }) { entry ->
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -951,8 +1112,24 @@ fun SettingsScreen(
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(entry.action, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.surface,
+                                            ) {
+                                                Text(
+                                                    entry.category.name,
+                                                    fontSize = 9.5.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+                                            Text(entry.action, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
                                         Text(
                                             entry.decision.name,
                                             fontSize = 11.sp,
@@ -965,9 +1142,11 @@ fun SettingsScreen(
                                         )
                                     }
                                     if (entry.target.isNotBlank()) {
+                                        Spacer(Modifier.height(3.dp))
                                         Text("Target: " + entry.target, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                                     }
                                     if (entry.reason.isNotBlank()) {
+                                        Spacer(Modifier.height(2.dp))
                                         Text(entry.reason, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
