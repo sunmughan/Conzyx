@@ -334,12 +334,27 @@ class WorkspaceCheckpoints(private val filesDir: File) {
         return current
     }
 
-    fun snapshot(root: File): Map<String, String> = root.walkTopDown()
-        .onEnter { directory ->
-            directory == root || !isInternalRuntimePath(directory.relativeTo(root).invariantSeparatorsPath)
-        }
-        .filter { it.isFile && !isInternalRuntimePath(it.relativeTo(root).invariantSeparatorsPath) }
-        .associate { it.relativeTo(root).path to digest(it) }
+    fun snapshot(root: File): Map<String, String> {
+        if (!root.isDirectory) return emptyMap()
+        val canonicalRoot = root.canonicalFile
+        val rootPath = canonicalRoot.toPath()
+        return canonicalRoot.walkTopDown()
+            .onEnter { directory ->
+                val relative = if (directory == canonicalRoot) "" else directory.relativeTo(canonicalRoot).invariantSeparatorsPath
+                directory == canonicalRoot || (
+                    !isInternalRuntimePath(relative) &&
+                        !Files.isSymbolicLink(directory.toPath()) &&
+                        runCatching { directory.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false)
+                    )
+            }
+            .filter { file ->
+                file.isFile &&
+                    !Files.isSymbolicLink(file.toPath()) &&
+                    !isInternalRuntimePath(file.relativeTo(canonicalRoot).invariantSeparatorsPath) &&
+                    runCatching { file.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false)
+            }
+            .associate { it.relativeTo(canonicalRoot).invariantSeparatorsPath to digest(it) }
+    }
 
     fun changedFiles(root: File, before: Map<String, String>): List<String> {
         val after = snapshot(root)
