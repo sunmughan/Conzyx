@@ -192,7 +192,6 @@ class WorkspaceCheckpointsTest {
         assertEquals("untouched", File(outside, "keep.txt").readText())
         assertFalse(File(outside, "linked-file").exists())
     }
-}
 
     @Test
     fun `workspace storage rejects a symlinked workspaces root`() {
@@ -223,3 +222,4 @@ class WorkspaceCheckpointsTest {
         assertEquals("untouched", File(outside, "keep.txt").readText())
         assertTrue(outside.listFiles().orEmpty().map { it.name }.toSet() == setOf("keep.txt"))
     }
+}
