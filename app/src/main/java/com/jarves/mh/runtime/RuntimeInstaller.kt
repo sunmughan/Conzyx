@@ -2600,8 +2600,8 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             temporary.delete()
             error("Downloaded file checksum did not match")
         }
-        destination.delete()
-        check(temporary.renameTo(destination)) { "Could not finish download" }
+        check(SafeFileOps.atomicCopy(temporary, destination)) { "Could not finish download" }
+        temporary.delete()
     }
 
     private fun fetchText(url: String): String {
