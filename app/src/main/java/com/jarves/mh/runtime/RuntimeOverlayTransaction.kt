@@ -118,23 +118,32 @@ internal object RuntimeOverlayTransaction {
             runCatching { backupRoot.deleteRecursively() }
             true
         } catch (_: Exception) {
+            var rollbackSucceeded = true
             originals.asReversed().forEach { state ->
                 runCatching {
                     when {
                         !state.existed -> {
                             if (Files.isSymbolicLink(state.destination.toPath()) || state.destination.isFile) {
-                                state.destination.delete()
+                                check(state.destination.delete() || !state.destination.exists()) {
+                                    "Could not remove partially applied overlay file"
+                                }
                             }
                         }
                         state.symlinkTarget != null -> replaceWithSymlink(state.destination, state.symlinkTarget)
-                        state.backupFile?.isFile == true -> SafeFileOps.atomicCopy(state.backupFile, state.destination)
+                        state.backupFile?.isFile == true -> check(SafeFileOps.atomicCopy(state.backupFile, state.destination)) {
+                            "Could not restore overlay backup for ${state.destination.path}"
+                        }
+                        else -> error("Overlay backup is missing for ${state.destination.path}")
                     }
-                }
+                }.onFailure { rollbackSucceeded = false }
             }
             createdDirectories.asReversed().forEach { directory ->
                 runCatching { if (directory.isDirectory && directory.listFiles().isNullOrEmpty()) directory.delete() }
+                    .onFailure { rollbackSucceeded = false }
             }
-            runCatching { backupRoot.deleteRecursively() }
+            // Keep the backup directory if restoration was incomplete so recovery
+            // data is not destroyed while reporting failure.
+            if (rollbackSucceeded) runCatching { backupRoot.deleteRecursively() }
             false
         }
     }
