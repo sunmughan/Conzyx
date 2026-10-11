@@ -31,7 +31,7 @@ object SafeFileOps {
             FileOutputStream(tempFile).use { fos ->
                 fos.write(bytes)
                 fos.flush()
-                runCatching { fos.fd.sync() }
+                fos.fd.sync()
             }
             if (target.isFile) preservePermissions(target, tempFile)
 
@@ -59,7 +59,7 @@ object SafeFileOps {
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                     output.flush()
-                    runCatching { output.fd.sync() }
+                    output.fd.sync()
                 }
             }
             preservePermissions(source, tempFile)
