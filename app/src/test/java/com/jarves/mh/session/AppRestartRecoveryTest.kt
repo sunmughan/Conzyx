@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -128,6 +129,36 @@ class AppRestartRecoveryTest {
         val manager = AgentSessionManager(sessionsDir)
         val detected = manager.detectInterruptedSession()
         assertNull("Corrupted json must fail safely and return null", detected)
+    }
+
+
+    @Test
+    fun `terminal session remains recoverable when archive write fails`() {
+        val sessionsDir = tempFolder.newFolder("archive_failure_sessions")
+        val manager = AgentSessionManager(sessionsDir)
+        manager.recordSessionStart(
+            sessionId = "session-archive-retry",
+            projectId = "project-archive",
+            projectTitle = "Archive retry",
+            chatId = "chat-archive",
+            prompt = "Test archive failure",
+        )
+
+        // Block creation of the history directory to simulate storage/path failure.
+        File(sessionsDir, "history").writeText("not-a-directory")
+        manager.recordSessionCompleted("completed before archive failure")
+
+        val activeFile = File(sessionsDir, "active_session.json")
+        assertTrue("Active metadata must be retained if archive fails", activeFile.isFile)
+        assertEquals("COMPLETED", JSONObject(activeFile.readText()).getString("status"))
+
+        // Once storage is available again, a fresh manager retries the archive.
+        File(sessionsDir, "history").delete()
+        val restarted = AgentSessionManager(sessionsDir)
+        assertNull(restarted.detectInterruptedSession())
+        assertFalse(activeFile.exists())
+        assertEquals(1, restarted.listSessionHistory().size)
+        assertEquals(AgentSessionStatus.COMPLETED, restarted.listSessionHistory().single().status)
     }
 
     @Test
