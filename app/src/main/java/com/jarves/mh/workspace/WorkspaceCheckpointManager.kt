@@ -25,7 +25,7 @@ data class WorkspaceCheckpoint(
 class WorkspaceCheckpointManager(private val filesDir: File) {
 
     private fun checkpointsBaseDir(projectId: String): File {
-        require(projectId.isNotBlank() && !projectId.contains('/') && !projectId.contains('\\\\') &&
+        require(projectId.isNotBlank() && !projectId.contains('/') && !projectId.contains('\\') &&
             projectId != "." && projectId != "..") { "Invalid project ID" }
         return File(filesDir, "checkpoints/$projectId/snapshots").apply { mkdirs() }
     }
