@@ -4341,9 +4341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val workspace = projectWorkspaceRoot(project).canonicalFile
-                val rootPath = workspace.toPath()
-                val target = File(workspace, path).canonicalFile
-                require(target.parentFile?.canonicalFile?.toPath()?.startsWith(rootPath) == true) { "Workspace path escapes project" }
+                val target = editorCheckpoints.safeWorkspaceFile(workspace, path)
                 val existing = target.takeIf(File::isFile)
                 if (existing != null && existing.length() > MAX_EDITABLE_FILE_CHARS) {
                     error("This file is too large to edit safely in the mobile editor")
@@ -4351,29 +4349,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (existing != null && existing.readText() == content) return@runCatching Unit
 
                 editorCheckpoints.createCheckpoint(project.id, workspace)
-                target.parentFile?.mkdirs()
-                val temporary = File(
-                    target.parentFile,
-                    ".${target.name}.mh-edit-${UUID.randomUUID()}.tmp",
-                )
-                try {
-                    temporary.writeText(content)
-                    runCatching {
-                        Files.move(
-                            temporary.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        )
-                    }.getOrElse {
-                        Files.move(
-                            temporary.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        )
-                    }
-                } finally {
-                    temporary.delete()
+                check(target.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
+                    "Could not create the file's parent directory"
+                }
+                check(editorCheckpoints.atomicWriteFile(target, content)) {
+                    "Could not safely save $path"
                 }
                 editorCheckpoints.saveChangedPaths(project.id, listOf(path))
             }
