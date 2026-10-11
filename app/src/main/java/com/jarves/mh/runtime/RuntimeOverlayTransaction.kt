@@ -30,7 +30,12 @@ internal object RuntimeOverlayTransaction {
         val backupFile: File? = null,
     )
 
-    fun apply(staging: File, rootfs: File, backupRoot: File): Boolean {
+    fun apply(
+        staging: File,
+        rootfs: File,
+        backupRoot: File,
+        applyFile: (source: File, destination: File) -> Boolean = SafeFileOps::atomicCopy,
+    ): Boolean {
         if (!staging.isDirectory || !rootfs.isDirectory) return false
         val root = runCatching { rootfs.canonicalFile }.getOrNull() ?: return false
         val rootPath = root.toPath()
@@ -107,7 +112,7 @@ internal object RuntimeOverlayTransaction {
                 if (entry.isSymlink) {
                     replaceWithSymlink(destination, requireNotNull(entry.symlinkTarget))
                 } else {
-                    check(SafeFileOps.atomicCopy(entry.source, destination)) {
+                    check(applyFile(entry.source, destination)) {
                         "Could not atomically apply overlay file ${entry.relativePath}"
                     }
                 }
