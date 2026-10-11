@@ -137,11 +137,6 @@ private fun antigravityModelWithEffort(model: String, effort: String): String? {
     return "${match.groupValues[1]}-$effort"
 }
 
-private data class ProjectTerminalSnapshot(
-    val lines: List<TerminalOutputLine> = emptyList(),
-    val cwd: String = "/workspace",
-)
-
 private data class ProjectTerminalResult(
     val output: String,
     val exitCode: Int,
@@ -1089,49 +1084,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * or config-file dialogs in the phone UI. Other commands remain interactive and
      * can receive input through [sendProcessInput].
      */
-    private fun terminalHistoryFile(projectId: String): File =
-        File(getApplication<Application>().filesDir, "terminal-history/$projectId.json")
-
-    private fun loadProjectTerminal(project: Project): ProjectTerminalSnapshot {
-        val file = terminalHistoryFile(project.id)
-        val guestRoot = projectGuestRoot(project)
-        if (!file.isFile) return ProjectTerminalSnapshot(cwd = guestRoot)
-        return runCatching {
-            val root = JSONObject(file.readText())
-            val array = root.optJSONArray("lines") ?: JSONArray()
-            val lines = (0 until array.length()).map { index ->
-                val item = array.getJSONObject(index)
-                TerminalOutputLine(
-                    id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
-                    command = item.optString("command"),
-                    output = item.optString("output"),
-                    exitCode = item.optInt("exitCode"),
-                )
-            }
-            ProjectTerminalSnapshot(
-                lines = lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY),
-                cwd = root.optString("cwd", guestRoot).takeIf {
-                    it == guestRoot || it.startsWith("$guestRoot/")
-                } ?: guestRoot,
-            )
-        }.getOrDefault(ProjectTerminalSnapshot(cwd = guestRoot))
+    private val projectTerminalHistoryStore by lazy {
+        ProjectTerminalHistoryStore(getApplication<Application>().filesDir)
     }
 
+    private fun loadProjectTerminal(project: Project): ProjectTerminalSnapshot =
+        projectTerminalHistoryStore.load(project.id, projectGuestRoot(project))
+
     private fun saveProjectTerminal(projectId: String, cwd: String, lines: List<TerminalOutputLine>) {
-        runCatching {
-            val file = terminalHistoryFile(projectId)
-            file.parentFile?.mkdirs()
-            val array = JSONArray()
-            lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY).forEach { line ->
-                array.put(
-                    JSONObject()
-                        .put("id", line.id)
-                        .put("command", line.command)
-                        .put("output", line.output.takeLast(MAX_PROJECT_TERMINAL_OUTPUT))
-                        .put("exitCode", line.exitCode),
-                )
-            }
-            file.writeText(JSONObject().put("cwd", cwd).put("lines", array).toString())
+        val guestRoot = _state.value.activeProject?.takeIf { it.id == projectId }?.let(::projectGuestRoot)
+            ?: "/workspace/${projectId}"
+        if (!projectTerminalHistoryStore.save(projectId, cwd, guestRoot, lines)) {
+            AppCrashLogger.log("Failed to persist terminal history for project $projectId")
         }
     }
 
