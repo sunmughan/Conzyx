@@ -6,6 +6,7 @@ on:
       - main
       - v2
       - feature/**
+      - phase-1-foundation-hardening
   pull_request:
     branches:
       - main
@@ -18,7 +19,7 @@ permissions:
 
 jobs:
   verify:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-existing]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-existing]') && github.ref != 'refs/heads/phase-1-foundation-hardening' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -466,6 +467,39 @@ jobs:
           gh release upload "$TAG" "$ONLINE" "$OFFLINE" mobile-harness-update.json --clobber
           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
+
+  phase_1_verify:
+    if: ${{ github.ref == 'refs/heads/phase-1-foundation-hardening' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "${SDKMANAGER}" --licenses >/dev/null || true
+          "${SDKMANAGER}" "platform-tools" "platforms;android-36" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Run online unit tests and compile online debug APK
+        run: ./gradlew --no-daemon --stacktrace testOnlineDebugUnitTest assembleOnlineDebug
+
+      - name: Run offline unit tests and compile offline debug APK
+        run: ./gradlew --no-daemon --stacktrace testOfflineDebugUnitTest assembleOfflineDebug
 
   publish_existing_v1_0_6:
     if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-existing]') }}
