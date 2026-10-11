@@ -49,7 +49,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                     val relPath = sourceFile.relativeTo(canonicalWorkspace).invariantSeparatorsPath
                     val destFile = File(backupDir, relPath)
                     destFile.parentFile?.mkdirs()
-                    sourceFile.copyTo(destFile, overwrite = true)
+                    check(SafeFileOps.atomicCopy(sourceFile, destFile)) { "Could not safely copy ${sourceFile.path}" }
                     fileCount++
                     relativePaths.add(relPath)
                 }
@@ -272,7 +272,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                         val rel = file.relativeTo(projDir).invariantSeparatorsPath
                         val destFile = File(destProj, rel)
                         destFile.parentFile?.mkdirs()
-                        file.copyTo(destFile, overwrite = true)
+                        check(SafeFileOps.atomicCopy(file, destFile)) { "Could not safely back up ${file.path}" }
                     }
                 count++
             }
@@ -302,7 +302,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                         val destFile = File(destProj, rel)
                         destFile.parentFile?.mkdirs()
                         if (!destFile.exists()) {
-                            file.copyTo(destFile, overwrite = false)
+                            check(SafeFileOps.atomicCopy(file, destFile)) { "Could not safely restore ${file.path}" }
                         }
                     }
                 count++
