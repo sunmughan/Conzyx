@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   verify:
-    if: ${{ !contains(github.event.head_commit.message, '[publish-existing]') && github.ref != 'refs/heads/phase-1-foundation-hardening' }}
+    if: ${{ !contains(github.event.head_commit.message, '[publish-existing]') && github.ref != 'refs/heads/phase-1-foundation-hardening' && github.head_ref != 'phase-1-foundation-hardening' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -469,7 +469,7 @@ jobs:
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
 
   phase_1_verify:
-    if: ${{ github.ref == 'refs/heads/phase-1-foundation-hardening' }}
+    if: ${{ github.ref == 'refs/heads/phase-1-foundation-hardening' || github.head_ref == 'phase-1-foundation-hardening' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
