@@ -1,5 +1,7 @@
 package com.jarves.mh.ui
 
+import com.jarves.mh.terminal.TerminalCommandPolicy
+
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
