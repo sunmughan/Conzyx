@@ -41,7 +41,34 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
     private fun checkpointsBaseDir(projectId: String): File {
         require(projectId.isNotBlank() && !projectId.contains('/') && !projectId.contains('\\') &&
             projectId != "." && projectId != "..") { "Invalid project ID" }
-        return File(filesDir, "checkpoints/$projectId/snapshots").apply { mkdirs() }
+        val storageRoot = filesDir.canonicalFile
+        val checkpointsRoot = File(storageRoot, "checkpoints")
+        check(checkpointsRoot.mkdirs() || checkpointsRoot.isDirectory) { "Checkpoint storage is unavailable" }
+        val canonicalCheckpointsRoot = checkpointsRoot.canonicalFile
+        require(canonicalCheckpointsRoot.toPath().startsWith(storageRoot.toPath())) {
+            "Checkpoint storage escapes app storage"
+        }
+
+        val projectRoot = File(canonicalCheckpointsRoot, projectId)
+        require(!java.nio.file.Files.isSymbolicLink(projectRoot.toPath())) {
+            "Checkpoint project directory cannot be a symbolic link"
+        }
+        check(projectRoot.mkdirs() || projectRoot.isDirectory) { "Could not create checkpoint project directory" }
+        val canonicalProjectRoot = projectRoot.canonicalFile
+        require(canonicalProjectRoot.toPath().startsWith(canonicalCheckpointsRoot.toPath())) {
+            "Checkpoint project directory escapes storage"
+        }
+
+        val snapshots = File(canonicalProjectRoot, "snapshots")
+        require(!java.nio.file.Files.isSymbolicLink(snapshots.toPath())) {
+            "Checkpoint snapshots directory cannot be a symbolic link"
+        }
+        check(snapshots.mkdirs() || snapshots.isDirectory) { "Could not create checkpoint snapshots directory" }
+        val canonicalSnapshots = snapshots.canonicalFile
+        require(canonicalSnapshots.toPath().startsWith(canonicalProjectRoot.toPath())) {
+            "Checkpoint snapshots directory escapes project storage"
+        }
+        return canonicalSnapshots
     }
 
     private fun indexFile(projectId: String): File =
@@ -347,21 +374,52 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         return runCatching {
             val workspacesDir = File(filesDir, "workspaces")
             if (!workspacesDir.isDirectory) return 0
-            val targetDir = File(externalBackupDir, "workspaces_mirror").apply { mkdirs() }
+            val canonicalWorkspaces = workspacesDir.canonicalFile
+            val workspacesPath = canonicalWorkspaces.toPath()
+            val externalRoot = externalBackupDir.canonicalFile
+            val targetDir = File(externalRoot, "workspaces_mirror")
+            check(targetDir.mkdirs() || targetDir.isDirectory) { "Could not create workspace backup directory" }
+            check(!java.nio.file.Files.isSymbolicLink(targetDir.toPath())) { "Backup directory cannot be a symbolic link" }
+            val canonicalTarget = targetDir.canonicalFile
+            require(canonicalTarget.toPath().startsWith(externalRoot.toPath())) { "Backup directory escapes selected destination" }
+
             var count = 0
-            workspacesDir.listFiles()?.filter { it.isDirectory }?.forEach { projDir ->
-                val destProj = File(targetDir, projDir.name).apply { mkdirs() }
-                projDir.walkTopDown()
-                    .filter { it.isFile && !isIgnored(it, projDir) }
-                    .forEach { file ->
-                        val rel = file.relativeTo(projDir).invariantSeparatorsPath
-                        val destFile = File(destProj, rel)
-                        destFile.parentFile?.mkdirs()
-                        check(SafeFileOps.atomicCopy(file, destFile)) { "Could not safely back up ${file.path}" }
+            canonicalWorkspaces.listFiles()?.filter {
+                it.isDirectory && !java.nio.file.Files.isSymbolicLink(it.toPath())
+            }?.forEach { project ->
+                val canonicalProject = project.canonicalFile
+                require(canonicalProject.toPath().startsWith(workspacesPath)) { "Workspace project escapes storage" }
+                val destProj = File(canonicalTarget, project.name)
+                require(!java.nio.file.Files.isSymbolicLink(destProj.toPath())) { "Backup project cannot be a symbolic link" }
+                check(destProj.mkdirs() || destProj.isDirectory) { "Could not create project backup directory" }
+                require(destProj.canonicalFile.toPath().startsWith(canonicalTarget.toPath())) { "Backup project escapes destination" }
+
+                val files = canonicalProject.walkTopDown()
+                    .onEnter { directory ->
+                        directory == canonicalProject || (
+                            !isIgnored(directory, canonicalProject) &&
+                                !java.nio.file.Files.isSymbolicLink(directory.toPath()) &&
+                                runCatching { directory.canonicalFile.toPath().startsWith(canonicalProject.toPath()) }.getOrDefault(false)
+                            )
                     }
+                    .filter { file ->
+                        file.isFile &&
+                            !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
+                            !isIgnored(file, canonicalProject) &&
+                            runCatching { file.canonicalFile.toPath().startsWith(canonicalProject.toPath()) }.getOrDefault(false)
+                    }
+                    .toList()
+                for (file in files) {
+                    val relative = file.relativeTo(canonicalProject).invariantSeparatorsPath
+                    val destination = safeWorkspaceFile(destProj, relative)
+                    check(destination.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
+                        "Could not create backup path for $relative"
+                    }
+                    check(SafeFileOps.atomicCopy(file, destination)) { "Could not safely back up ${file.path}" }
+                }
                 count++
             }
-            AppCrashLogger.checkpoint("WorkspacesBackupCompleted", "Mirrored $count workspaces to ${targetDir.path}")
+            AppCrashLogger.checkpoint("WorkspacesBackupCompleted", "Mirrored $count workspaces to ${canonicalTarget.path}")
             count
         }.getOrElse {
             AppCrashLogger.log("Failed to mirror workspaces: ${it.message}")
@@ -374,25 +432,58 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
      */
     fun restoreAllWorkspaces(externalBackupDir: File): Int {
         return runCatching {
-            val sourceDir = File(externalBackupDir, "workspaces_mirror")
+            val sourceDir = File(externalBackupDir.canonicalFile, "workspaces_mirror")
             if (!sourceDir.isDirectory) return 0
-            val workspacesDir = File(filesDir, "workspaces").apply { mkdirs() }
+            check(!java.nio.file.Files.isSymbolicLink(sourceDir.toPath())) { "Backup source cannot be a symbolic link" }
+            val canonicalSource = sourceDir.canonicalFile
+            val externalRoot = externalBackupDir.canonicalFile
+            require(canonicalSource.toPath().startsWith(externalRoot.toPath())) { "Backup source escapes selected directory" }
+
+            val workspacesDir = File(filesDir.canonicalFile, "workspaces")
+            check(workspacesDir.mkdirs() || workspacesDir.isDirectory) { "Workspace storage is unavailable" }
+            check(!java.nio.file.Files.isSymbolicLink(workspacesDir.toPath())) { "Workspace storage cannot be a symbolic link" }
+            val canonicalWorkspaces = workspacesDir.canonicalFile
+            require(canonicalWorkspaces.toPath().startsWith(filesDir.canonicalFile.toPath())) { "Workspace storage escapes app storage" }
+
             var count = 0
-            sourceDir.listFiles()?.filter { it.isDirectory }?.forEach { projDir ->
-                val destProj = File(workspacesDir, projDir.name).apply { mkdirs() }
-                projDir.walkTopDown()
-                    .filter { it.isFile }
-                    .forEach { file ->
-                        val rel = file.relativeTo(projDir).invariantSeparatorsPath
-                        val destFile = File(destProj, rel)
-                        destFile.parentFile?.mkdirs()
-                        if (!destFile.exists()) {
-                            check(SafeFileOps.atomicCopy(file, destFile)) { "Could not safely restore ${file.path}" }
-                        }
+            canonicalSource.listFiles()?.filter {
+                it.isDirectory && !java.nio.file.Files.isSymbolicLink(it.toPath())
+            }?.forEach { project ->
+                val canonicalProject = project.canonicalFile
+                require(canonicalProject.toPath().startsWith(canonicalSource.toPath())) { "Backup project escapes source directory" }
+                val destProject = File(canonicalWorkspaces, project.name)
+                require(!java.nio.file.Files.isSymbolicLink(destProject.toPath())) { "Restore target project cannot be a symbolic link" }
+                check(destProject.mkdirs() || destProject.isDirectory) { "Could not create restore target project" }
+                val canonicalDestProject = destProject.canonicalFile
+                require(canonicalDestProject.toPath().startsWith(canonicalWorkspaces.toPath())) { "Restore target escapes workspace storage" }
+
+                val files = canonicalProject.walkTopDown()
+                    .onEnter { directory ->
+                        directory == canonicalProject ||
+                            (!java.nio.file.Files.isSymbolicLink(directory.toPath()) &&
+                                runCatching { directory.canonicalFile.toPath().startsWith(canonicalProject.toPath()) }.getOrDefault(false))
                     }
+                    .filter { file ->
+                        file.isFile &&
+                            !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
+                            runCatching { file.canonicalFile.toPath().startsWith(canonicalProject.toPath()) }.getOrDefault(false)
+                    }
+                    .toList()
+                val destinations = files.map { source ->
+                    val relative = source.relativeTo(canonicalProject).invariantSeparatorsPath
+                    source to safeWorkspaceFile(canonicalDestProject, relative)
+                }
+                for ((source, destination) in destinations) {
+                    check(destination.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
+                        "Could not create restore path for ${source.name}"
+                    }
+                    if (!destination.exists()) {
+                        check(SafeFileOps.atomicCopy(source, destination)) { "Could not safely restore ${source.path}" }
+                    }
+                }
                 count++
             }
-            AppCrashLogger.checkpoint("WorkspacesRestoreCompleted", "Restored $count workspaces from ${sourceDir.path}")
+            AppCrashLogger.checkpoint("WorkspacesRestoreCompleted", "Restored $count workspaces from ${canonicalSource.path}")
             count
         }.getOrElse {
             AppCrashLogger.log("Failed to restore workspaces: ${it.message}")
