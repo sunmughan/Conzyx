@@ -1,5 +1,7 @@
 package com.jarves.mh.runtime
 
+import com.jarves.mh.workspace.SafeFileOps
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.system.Os
@@ -685,7 +687,7 @@ class RuntimeInstaller(private val context: Context) {
         val claude = File(rootfs, CLAUDE_GUEST_PATH.removePrefix("/"))
         claude.parentFile?.mkdirs()
         val staged = File(claude.parentFile, ".claude-$latest.installing")
-        downloaded.copyTo(staged, overwrite = true)
+        check(SafeFileOps.atomicCopy(downloaded, staged)) { "Could not safely activate downloaded ${label} binary" }
         Os.chmod(staged.absolutePath, 0b111101101)
         Os.rename(staged.absolutePath, claude.absolutePath)
         downloaded.delete()
@@ -1595,8 +1597,8 @@ class RuntimeInstaller(private val context: Context) {
             require(digest(temporary, "SHA-256").equals(bundle.sha256, ignoreCase = true)) {
                 "${bundle.label} bundle checksum mismatch"
             }
-            if (destination.exists()) destination.delete()
-            check(temporary.renameTo(destination)) { "Could not stage the ${bundle.label} bundle" }
+            check(SafeFileOps.atomicCopy(temporary, destination)) { "Could not stage the ${bundle.label} bundle" }
+            temporary.delete()
             return destination
         }
 
@@ -1626,11 +1628,21 @@ class RuntimeInstaller(private val context: Context) {
         }
         onProgress(RuntimeInstallProgress("Installing ${archiveName.removeSuffix(".zip")}", to, indeterminate = true))
         val staging = File(destination.parentFile, "${destination.name}.installing")
-        staging.deleteRecursively()
-        staging.mkdirs()
+        check(staging.deleteRecursively() || !staging.exists()) { "Could not clear incomplete ${destination.name} staging directory" }
+        check(staging.mkdirs() || staging.isDirectory) { "Could not create ${destination.name} staging directory" }
         extractZipArchive(archive, staging)
-        destination.deleteRecursively()
-        check(staging.renameTo(destination)) { "Could not activate ${destination.name}" }
+        check(staging.walkTopDown().any { it.isFile }) { "Archive ${archive.name} did not contain any files" }
+        RuntimeDirectoryTransaction.activate(
+            staging = staging,
+            target = destination,
+            backup = File(destination.parentFile, "${destination.name}.previous"),
+            isTargetValid = { directory -> directory.isDirectory && directory.walkTopDown().any { it.isFile } },
+            validateActivated = { directory ->
+                check(directory.isDirectory && directory.walkTopDown().any { it.isFile }) {
+                    "Activated ${destination.name} directory is incomplete"
+                }
+            },
+        )
         archive.delete()
     }
 
