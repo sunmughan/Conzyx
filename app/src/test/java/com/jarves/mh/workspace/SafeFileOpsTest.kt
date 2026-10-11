@@ -113,4 +113,16 @@ class SafeFileOpsTest {
     fun `cleanStaleTempFiles safely ignores missing directories`() {
         assertEquals(0, SafeFileOps.cleanStaleTempFiles(File(tempFolder.root, "missing")))
     }
+
+    @Test
+    fun `atomic write failure preserves an existing directory target`() {
+        val target = File(tempFolder.root, "target-directory").apply { mkdirs() }
+        val sentinel = File(target, "known-good.txt").apply { writeText("keep this data") }
+
+        assertFalse(SafeFileOps.atomicWriteText(target, "replacement"))
+        assertTrue(target.isDirectory)
+        assertEquals("keep this data", sentinel.readText())
+        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.contains(".tmp_") })
+    }
+
 }
