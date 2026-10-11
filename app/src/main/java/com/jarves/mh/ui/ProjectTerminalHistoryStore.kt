@@ -64,7 +64,7 @@ internal class ProjectTerminalHistoryStore(
         require(
             projectId.isNotBlank() &&
                 !projectId.contains('/') &&
-                !projectId.contains('\\\\') &&
+                !projectId.contains('\\') &&
                 projectId != "." &&
                 projectId != "..",
         ) { "Invalid project ID" }
