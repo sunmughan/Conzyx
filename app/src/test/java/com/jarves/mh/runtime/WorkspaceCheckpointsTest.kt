@@ -92,4 +92,45 @@ class WorkspaceCheckpointsTest {
             checkpoints.ensureWorkspace("../outside")
         }
     }
+
+    @Test
+    fun `failed baseline rebuild preserves the last known-good snapshot`() {
+        val filesDir = tempFolder.newFolder("transactional-checkpoint-files")
+        val workspace = tempFolder.newFolder("transactional-checkpoint-workspace")
+        val source = File(workspace, "src/App.kt").apply {
+            parentFile!!.mkdirs()
+            writeText("known-good")
+        }
+        val checkpoints = WorkspaceCheckpoints(filesDir)
+        checkpoints.createCheckpoint("project-transaction", workspace)
+        source.writeText("modified")
+        val baseline = File(checkpoints.checkpointDir("project-transaction"), "project/src/App.kt")
+        assertEquals("known-good", baseline.readText())
+
+        assertThrows(IllegalArgumentException::class.java) {
+            checkpoints.createCheckpoint("project-transaction", File(filesDir, "missing-workspace"))
+        }
+
+        assertEquals("known-good", baseline.readText())
+        assertEquals("modified", source.readText())
+        assertTrue(checkpoints.checkpointDir("project-transaction").isDirectory)
+        assertTrue(checkpoints.checkpointDir("project-transaction").parentFile
+            .listFiles().orEmpty().none { it.name.contains(".staging_") || it.name.contains(".previous_") })
+    }
+
+    @Test
+    fun `workspace path helper rejects symlink escape`() {
+        val root = tempFolder.newFolder("symlink-workspace")
+        val outside = tempFolder.newFolder("symlink-outside")
+        File(outside, "secret.txt").writeText("outside")
+        java.nio.file.Files.createSymbolicLink(
+            File(root, "linked").toPath(),
+            outside.toPath(),
+        )
+        val checkpoints = WorkspaceCheckpoints(tempFolder.newFolder("symlink-files"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            checkpoints.safeWorkspaceFile(root, "linked/secret.txt")
+        }
+    }
 }
