@@ -111,7 +111,7 @@ class RuntimeInstaller(private val context: Context) {
         if (!rootfs.isDirectory) return
         stripMacosMetadataArtifacts(rootfs)
         macosMetadataRepairMarker.parentFile?.mkdirs()
-        macosMetadataRepairMarker.writeText("1")
+        writeTextAtomically(macosMetadataRepairMarker, "1")
     }
 
     /** Returns the already verified runtime without performing network or update checks. */
@@ -139,6 +139,12 @@ class RuntimeInstaller(private val context: Context) {
                 }
             }
             File(workspace, ".claude").takeIf { it.isDirectory && it.list().isNullOrEmpty() }?.delete()
+        }
+    }
+
+    private fun writeTextAtomically(target: File, content: String) {
+        check(SafeFileOps.atomicWriteText(target, content)) {
+            "Could not atomically persist runtime state: ${target.path}"
         }
     }
 
@@ -223,10 +229,10 @@ class RuntimeInstaller(private val context: Context) {
             if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
                 // Offline first-run setup must never turn into a network operation.
                 onProgress(RuntimeInstallProgress("Using the bundled Ubuntu environment", 0.69f))
-                systemUpgradeMarker.writeText(SYSTEM_UPGRADE_VERSION)
+                writeTextAtomically(systemUpgradeMarker, SYSTEM_UPGRADE_VERSION)
             } else {
                 runSystemMaintenance(proot, onProgress)
-                systemUpgradeMarker.writeText(SYSTEM_UPGRADE_VERSION)
+                writeTextAtomically(systemUpgradeMarker, SYSTEM_UPGRADE_VERSION)
             }
         }
         if (coreNeeded) {
@@ -239,7 +245,7 @@ class RuntimeInstaller(private val context: Context) {
             )
             writeResolver()
             verifyGuest(proot, "git --version", "Base tools could not be verified")
-            coreToolsMarker.writeText(CORE_TOOLS_VERSION)
+            writeTextAtomically(coreToolsMarker, CORE_TOOLS_VERSION)
         }
 
         val eligibleStacks = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
@@ -382,7 +388,7 @@ class RuntimeInstaller(private val context: Context) {
         check(found) { "Official GitHub CLI archive did not contain the expected binary" }
         downloaded.delete()
         verifyGuest(proot = installedRuntime().proot, command = "$GITHUB_CLI_GUEST_PATH --version", failureMessage = "GitHub CLI verification failed")
-        githubCliMarker.writeText(GITHUB_CLI_VERSION)
+        writeTextAtomically(githubCliMarker, GITHUB_CLI_VERSION)
         check(isGitHubCliInstalled()) { "GitHub CLI installation is incomplete" }
         onProgress(RuntimeInstallProgress("GitHub CLI is ready", 1f))
     }
@@ -494,7 +500,7 @@ class RuntimeInstaller(private val context: Context) {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
                 }.getOrNull()
                 val finalVersion = cleanExpected
-                File(rootfs, ".pocket-python-tools-version").writeText(finalVersion)
+                writeTextAtomically(File(rootfs, ".pocket-python-tools-version"), finalVersion)
                 writeDevStackState(readDevStackState().apply { put(DevStack.PYTHON.name, true) })
                 onProgress(RuntimeInstallProgress("Python tools are ready ($finalVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
@@ -504,7 +510,7 @@ class RuntimeInstaller(private val context: Context) {
                     ?: latestRuntimeBundle(id)
                     ?: error("No verified runtime package is published for $id $expectedVersion")
                 installAndroidToolchain(runtime.proot, 0.05f, 0.95f, onProgress, bundle)
-                File(rootfs, "root/.pocket-android-tools-version").writeText(cleanExpected)
+                writeTextAtomically(File(rootfs, "root/.pocket-android-tools-version"), cleanExpected)
                 writeDevStackState(readDevStackState().apply { put(DevStack.ANDROID.name, true) })
                 onProgress(RuntimeInstallProgress("Android $cleanExpected is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
@@ -527,7 +533,7 @@ class RuntimeInstaller(private val context: Context) {
                     runGuest(runtime.proot, "npm install -g npm@latest || true", 120_000L)
                 }
                 val cleanExpected = expectedVersion.substringBefore(" ").trim()
-                coreToolsMarker.writeText("core-bundle-$cleanExpected")
+                writeTextAtomically(coreToolsMarker, "core-bundle-$cleanExpected")
                 onProgress(RuntimeInstallProgress("Core runtime $cleanExpected is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             else -> error("Unsupported environment stack: $id")
@@ -692,7 +698,7 @@ class RuntimeInstaller(private val context: Context) {
         Os.rename(staged.absolutePath, claude.absolutePath)
         downloaded.delete()
         verifyGuest(runtime.proot, "$CLAUDE_GUEST_PATH --version", "Claude Code update verification failed")
-        claudeMarker.writeText(latest)
+        writeTextAtomically(claudeMarker, latest)
     }
 
     private suspend fun updateAgy(
@@ -728,7 +734,7 @@ class RuntimeInstaller(private val context: Context) {
         downloaded.delete()
         check(found) { "Antigravity update archive is incomplete" }
         verifyGuest(runtime.proot, "$AGY_GUEST_PATH --version", "Antigravity update verification failed")
-        agyMarker.writeText(latest)
+        writeTextAtomically(agyMarker, latest)
     }
 
     private suspend fun updateDsh(
@@ -755,7 +761,7 @@ class RuntimeInstaller(private val context: Context) {
             onProgress = onProgress,
             failureMessage = "DeepSeek Harness update failed; the installed version was preserved",
         )
-        dshMarker.writeText(latest)
+        writeTextAtomically(dshMarker, latest)
         dshAndroidCompatibilityMarker.delete()
         ensureDshAndroidCompatibility()
         verifyGuest(runtime.proot, "/usr/local/bin/dsh --profile headless --help", "DeepSeek Harness update verification failed")
@@ -893,7 +899,7 @@ class RuntimeInstaller(private val context: Context) {
             coreReadyMarker.readTextOrNull(),
             bundledClaudeMarker.readTextOrNull(),
         ).mapNotNull { it?.trim() }.firstOrNull { it.matches(CLAUDE_VERSION_PATTERN) } ?: return
-        claudeMarker.writeText(legacyVersion)
+        writeTextAtomically(claudeMarker, legacyVersion)
     }
 
     private fun isSupportedCoreToolsVersion(): Boolean = coreToolsMarker.readTextOrNull() in setOf(
@@ -936,7 +942,7 @@ class RuntimeInstaller(private val context: Context) {
             forceEmbedded = true,
         )
         verifyGuest(proot, "$AGY_GUEST_PATH --version", "Antigravity CLI verification failed")
-        agyMarker.writeText(AGY_VERSION)
+        writeTextAtomically(agyMarker, AGY_VERSION)
         require(isAgentInstalled(com.jarves.mh.model.AgentKind.ANTIGRAVITY)) {
             "Antigravity CLI installation is incomplete"
         }
@@ -998,7 +1004,7 @@ class RuntimeInstaller(private val context: Context) {
             callBefore = "await linkFile(tempPath, absolutePath);",
             callAfter = "await copyFile(tempPath, absolutePath, 1);",
         )
-        dshAndroidCompatibilityMarker.writeText(DSH_ANDROID_COMPATIBILITY_VERSION)
+        writeTextAtomically(dshAndroidCompatibilityMarker, DSH_ANDROID_COMPATIBILITY_VERSION)
     }
 
     private fun patchDshHardLinkPublication(
@@ -1015,7 +1021,7 @@ class RuntimeInstaller(private val context: Context) {
             "DeepSeek Harness $DSH_VERSION is not compatible with this PocketDev build"
         }
         source = source.replace(importBefore, importAfter).replace(callBefore, callAfter)
-        file.writeText(source)
+        writeTextAtomically(file, source)
     }
 
     /**
@@ -1066,7 +1072,7 @@ class RuntimeInstaller(private val context: Context) {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
                 }.getOrNull()
                 val finalVer = targetVersion
-                File(rootfs, ".pocket-python-tools-version").writeText(finalVer)
+                writeTextAtomically(File(rootfs, ".pocket-python-tools-version"), finalVer)
                 onProgress(RuntimeInstallProgress("Python tools updated ($finalVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.ANDROID -> {
@@ -1158,7 +1164,7 @@ class RuntimeInstaller(private val context: Context) {
                 val puppetVer = runCatching {
                     runGuest(runtime.proot, "node -e 'try { console.log(require(require(\"child_process\").execSync(\"npm root -g\").toString().trim() + \"/puppeteer-core/package.json\").version); } catch { console.log(\"latest\"); }'")
                 }.getOrNull()?.trim() ?: "latest"
-                File(rootfs, ".pocket-browser-tools-version").writeText(puppetVer)
+                writeTextAtomically(File(rootfs, ".pocket-browser-tools-version"), puppetVer)
                 onProgress(RuntimeInstallProgress("Browser automation tools updated (v$puppetVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.WEB -> error("Web tools are part of the core runtime")
@@ -1266,7 +1272,7 @@ class RuntimeInstaller(private val context: Context) {
         if (remaining.isEmpty()) {
             properties.delete()
         } else {
-            properties.writeText(remaining.joinToString("\n").trimEnd() + "\n")
+            writeTextAtomically(properties, remaining.joinToString("\n").trimEnd() + "\n")
         }
     }
 
@@ -1304,7 +1310,7 @@ class RuntimeInstaller(private val context: Context) {
                         ),
                     )
                 }
-                if (verified) File(rootfs, ".pocket-python-tools-version").writeText(PYTHON_BUNDLE.version)
+                if (verified) writeTextAtomically(File(rootfs, ".pocket-python-tools-version"), PYTHON_BUNDLE.version)
             }
             DevStack.ANDROID -> {
                 installAndroidToolchain(proot, from, to, onProgress)
@@ -1326,7 +1332,7 @@ class RuntimeInstaller(private val context: Context) {
                     "gcc --version && g++ --version && make --version && cmake --version",
                     "C/C++ tools could not be verified",
                 )
-                if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
+                if (verified) writeTextAtomically(File(rootfs, ".pocket-cpp-tools-version"), "10.2")
             }
             DevStack.PHP -> {
                 if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
@@ -1366,7 +1372,7 @@ class RuntimeInstaller(private val context: Context) {
                 }
                 runCatching { installComposer(proot, from, onProgress) }
                 verifyGuest(proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
-                if (verified) File(rootfs, ".pocket-php-tools-version").writeText("8.4")
+                if (verified) writeTextAtomically(File(rootfs, ".pocket-php-tools-version"), "8.4")
             }
             DevStack.BROWSER -> {
                 if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
@@ -1393,7 +1399,7 @@ class RuntimeInstaller(private val context: Context) {
                 val puppetVer = runCatching {
                     runGuest(proot, "node -e 'try { console.log(require(require(\"child_process\").execSync(\"npm root -g\").toString().trim() + \"/puppeteer-core/package.json\").version); } catch { console.log(\"1.0\"); }'")
                 }.getOrNull()?.trim() ?: "1.0"
-                if (verified) File(rootfs, ".pocket-browser-tools-version").writeText(puppetVer)
+                if (verified) writeTextAtomically(File(rootfs, ".pocket-browser-tools-version"), puppetVer)
             }
         }
         if (!verified) return
@@ -1496,7 +1502,7 @@ class RuntimeInstaller(private val context: Context) {
             )
             makeAndroidToolsExecutable(androidHome, gradleHome)
             marker.parentFile?.mkdirs()
-            marker.writeText(expectedBundleVersion)
+            writeTextAtomically(marker, expectedBundleVersion)
         }
         // Keep this outside the download/install branch so app updates repair
         // existing Android toolchains without downloading the bundles again.
@@ -1730,7 +1736,7 @@ class RuntimeInstaller(private val context: Context) {
     private fun writeAndroidGradleInitScript(runtimeRootfs: File, aapt2GuestPath: String) {
         val script = File(runtimeRootfs, "root/.gradle/init.d/pocketdev-android.gradle")
         script.parentFile?.mkdirs()
-        script.writeText(
+        writeTextAtomically(script,
             """
             def pocketMaven = uri('/root/maven/localMvnRepository')
             beforeSettings { settings ->
@@ -1776,9 +1782,7 @@ class RuntimeInstaller(private val context: Context) {
         val updatedLines = existingLines.filterNot { propertyPattern.matches(it) } + expectedLine
         if (existingLines == updatedLines) return
 
-        val temporary = File(gradleDir, "gradle.properties.pocketdev.tmp")
-        temporary.writeText(updatedLines.joinToString("\n").trimEnd() + "\n")
-        Os.rename(temporary.absolutePath, properties.absolutePath)
+        writeTextAtomically(properties, updatedLines.joinToString("\n").trimEnd() + "\n")
     }
 
     /**
@@ -1788,7 +1792,7 @@ class RuntimeInstaller(private val context: Context) {
     fun migrateLegacyToolMarkers() {
         if (!File(rootfs, "usr/bin/bash").isFile) return
         if (languageToolsMarker.readTextOrNull() != LANGUAGE_TOOLS_VERSION) return
-        if (coreToolsMarker.readTextOrNull() != CORE_TOOLS_VERSION) coreToolsMarker.writeText(CORE_TOOLS_VERSION)
+        if (coreToolsMarker.readTextOrNull() != CORE_TOOLS_VERSION) writeTextAtomically(coreToolsMarker, CORE_TOOLS_VERSION)
         val state = readDevStackState()
         DevStack.entries.forEach { stack -> if (!state.containsKey(stack.name)) state[stack.name] = true }
         writeDevStackState(state)
@@ -1876,7 +1880,7 @@ class RuntimeInstaller(private val context: Context) {
         devStacksFile.parentFile?.mkdirs()
         val obj = JSONObject()
         state.forEach { (name, value) -> obj.put(name, value) }
-        devStacksFile.writeText(obj.toString())
+        writeTextAtomically(devStacksFile, obj.toString())
     }
 
     private fun isNodeHomeValid(directory: File): Boolean =
@@ -2356,7 +2360,7 @@ class RuntimeInstaller(private val context: Context) {
     fun ensureSettingsAndHooks() {
         val hook = File(rootfs, "opt/pocket/permission-hook.sh")
         hook.parentFile?.mkdirs()
-        hook.writeText(
+        writeTextAtomically(hook,
             """#!/bin/sh
 cat > /dev/null
 printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
@@ -2397,7 +2401,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         )
         for (target in settingsPaths) {
             target.parentFile?.mkdirs()
-            target.writeText(settingsContent)
+            writeTextAtomically(target, settingsContent)
         }
         ensureWorkspaceTrust("/workspace")
         runCatching { installPocketBrowserScript() }
@@ -2415,7 +2419,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         workspace.put("hasTrustDialogAccepted", true)
         projects.put(workspacePath, workspace)
         state.put("projects", projects)
-        stateFile.writeText(state.toString())
+        writeTextAtomically(stateFile, state.toString())
     }
 
     private fun claudeWorkspaceToolRules() = org.json.JSONArray().apply {
@@ -2432,7 +2436,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         val manager = context.getSystemService(ConnectivityManager::class.java)
         val dns = manager.getLinkProperties(manager.activeNetwork)?.dnsServers.orEmpty()
         val servers = dns.mapNotNull { it.hostAddress }.ifEmpty { listOf("8.8.8.8", "1.1.1.1") }
-        File(rootfs, "etc/resolv.conf").writeText(servers.joinToString("\n") { "nameserver $it" } + "\n")
+        writeTextAtomically(File(rootfs, "etc/resolv.conf"), servers.joinToString("\n") { "nameserver $it" } + "\n")
     }
 
     private fun extractRootfs(archive: File, destination: File) {
@@ -2652,7 +2656,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
     fun installPocketBrowserScript() {
         val target = File(rootfs, "usr/local/bin/pocket-browser")
         target.parentFile?.mkdirs()
-        target.writeText(pocketBrowserScriptContent())
+        writeTextAtomically(target, pocketBrowserScriptContent())
         runCatching { Os.chmod(target.absolutePath, 0b111101101) }
     }
 
