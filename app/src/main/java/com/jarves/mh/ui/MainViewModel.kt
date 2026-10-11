@@ -4294,8 +4294,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadFileContent(project: Project, path: String) {
         viewModelScope.launch {
             val content = withContext(Dispatchers.IO) {
-                val file = File(projectWorkspaceRoot(project), path)
                 runCatching {
+                    val root = projectWorkspaceRoot(project).canonicalFile
+                    val file = editorCheckpoints.safeWorkspaceFile(root, path)
+                    require(file.isFile) { "File is unavailable" }
                     if (file.length() > 512_000L) {
                         file.inputStream().use { stream ->
                             val buf = ByteArray(512_000)
