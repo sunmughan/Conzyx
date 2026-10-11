@@ -36,6 +36,21 @@ class RuntimeOverlayTransactionTest {
     }
 
     @Test
+    fun `overlay refuses to overwrite a retained recovery backup`() {
+        val parent = tempFolder.newFolder("retained-overlay-backup")
+        val staging = File(parent, "staging").apply { mkdirs() }
+        val rootfs = File(parent, "rootfs").apply { mkdirs() }
+        val backup = File(parent, "backup").apply { mkdirs() }
+        File(staging, "tool").writeText("new")
+        File(rootfs, "tool").writeText("old")
+        File(backup, "recovery.txt").writeText("keep me")
+
+        assertFalse(RuntimeOverlayTransaction.apply(staging, rootfs, backup))
+        assertEquals("old", File(rootfs, "tool").readText())
+        assertEquals("keep me", File(backup, "recovery.txt").readText())
+    }
+
+    @Test
     fun `overlay restores earlier files when a later write fails`() {
         val parent = tempFolder.newFolder("rollback-overlay")
         val staging = File(parent, "staging").apply { mkdirs() }
