@@ -43,6 +43,9 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             projectId != "." && projectId != "..") { "Invalid project ID" }
         val storageRoot = filesDir.canonicalFile
         val checkpointsRoot = File(storageRoot, "checkpoints")
+        require(!java.nio.file.Files.isSymbolicLink(checkpointsRoot.toPath())) {
+            "Checkpoint storage root cannot be a symbolic link"
+        }
         check(checkpointsRoot.mkdirs() || checkpointsRoot.isDirectory) { "Checkpoint storage is unavailable" }
         val canonicalCheckpointsRoot = checkpointsRoot.canonicalFile
         require(canonicalCheckpointsRoot.toPath().startsWith(storageRoot.toPath())) {
