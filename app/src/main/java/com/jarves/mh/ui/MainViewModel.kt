@@ -124,11 +124,8 @@ data class TerminalSessionTab(
     val lines: List<TerminalOutputLine> = emptyList(),
 )
 
-private val ANSI_TERMINAL_SEQUENCE = Regex("\\u001B(?:\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)|\\[[0-?]*[ -/]*[@-~]|[()][A-Z0-9])")
-
-internal fun sanitizeTerminalOutput(text: String): String = text
-    .replace(ANSI_TERMINAL_SEQUENCE, "")
-    .filter { it == '\n' || it == '\r' || it == '\t' || it.code >= 0x20 }
+internal fun sanitizeTerminalOutput(text: String): String =
+    TerminalCommandPolicy.sanitizeTerminalOutput(text)
 
 private val ANTIGRAVITY_MODEL_EFFORT = Regex("^(.*)-(low|medium|high)$")
 
