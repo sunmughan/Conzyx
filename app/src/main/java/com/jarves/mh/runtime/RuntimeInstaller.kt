@@ -1523,8 +1523,24 @@ class RuntimeInstaller(private val context: Context) {
         // online APK fetches each one from the release URL on demand.
         val archive = obtainRuntimeBundle(bundle, preferEmbedded = forceEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES, from, to * 0.8f + from * 0.2f, onProgress)
         onProgress(RuntimeInstallProgress(message, to * 0.8f + from * 0.2f, indeterminate = true))
-        extractZstdTar(archive, rootfs)
-        stripMacosMetadataArtifacts(rootfs)
+        val overlayName = bundle.label.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val overlayStaging = File(runtimeDir, "overlay-$overlayName.installing")
+        check(overlayStaging.deleteRecursively() || !overlayStaging.exists()) {
+            "Could not clear incomplete ${bundle.label} overlay staging directory"
+        }
+        check(overlayStaging.mkdirs() || overlayStaging.isDirectory) {
+            "Could not create ${bundle.label} overlay staging directory"
+        }
+        extractZstdTar(archive, overlayStaging)
+        stripMacosMetadataArtifacts(overlayStaging)
+        check(
+            RuntimeOverlayTransaction.apply(
+                staging = overlayStaging,
+                rootfs = rootfs,
+                backupRoot = File(runtimeDir, "overlay-$overlayName.backup"),
+            ),
+        ) { "Could not safely apply ${bundle.label} overlay; the previous files were restored" }
+        overlayStaging.deleteRecursively()
         if (archive.parentFile == downloads) archive.delete()
         onProgress(RuntimeInstallProgress("${bundle.label} tools installed", to))
     }
