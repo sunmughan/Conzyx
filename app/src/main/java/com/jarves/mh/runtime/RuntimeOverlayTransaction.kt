@@ -34,7 +34,7 @@ internal object RuntimeOverlayTransaction {
         staging: File,
         rootfs: File,
         backupRoot: File,
-        applyFile: (source: File, destination: File) -> Boolean = SafeFileOps::atomicCopy,
+        applyFile: (source: File, destination: File) -> Boolean = { source, destination -> SafeFileOps.atomicCopy(source, destination) },
     ): Boolean {
         if (!staging.isDirectory || !rootfs.isDirectory) return false
         val root = runCatching { rootfs.canonicalFile }.getOrNull() ?: return false
