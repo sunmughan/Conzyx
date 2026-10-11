@@ -47,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,51 +74,67 @@ fun MultiAgentTeamBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val sessionState by orchestrator.sessionState.collectAsState()
     var inputGoal by remember { mutableStateOf(sessionState.activeGoal.ifBlank { "Create full application architecture and implementation" }) }
+    var fullStudioMode by rememberSaveable { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp)
-                .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+        if (fullStudioMode) {
+            com.jarves.mh.agent.team.ui.TeamStudioScreen(
+                orchestrator = orchestrator,
+                onClose = { fullStudioMode = false },
+                onDispatchToAgent = onDispatchToAgent
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp)
+                    .padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                // Header
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(
-                        Icons.Default.Groups,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Column {
-                        Text(
-                            text = "Multi-Agent Engineering Team",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Groups,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
                         )
-                        Text(
-                            text = "Phase 11 — 10 Specialized Autonomous Agents",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Column {
+                            Text(
+                                text = "Multi-Agent Engineering Team",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "Phase 11 — 10 Specialized Autonomous Agents",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        IconButton(onClick = { fullStudioMode = true }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = "Studio View", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
-                }
-            }
 
             // Roles Strip
             Row(
@@ -183,10 +200,27 @@ fun MultiAgentTeamBottomSheet(
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Decompose & Run Team")
+                        Text("Plan Team")
                     }
 
                     if (sessionState.isRunning) {
+                        Button(
+                            onClick = { orchestrator.runNextReadyTask() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Step")
+                        }
+
+                        OutlinedButton(
+                            onClick = { orchestrator.autoRunAll() },
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text("Run All")
+                        }
+
                         OutlinedButton(
                             onClick = { orchestrator.cancelSession() },
                             shape = RoundedCornerShape(10.dp),
@@ -216,10 +250,12 @@ fun MultiAgentTeamBottomSheet(
                             task = task,
                             onToggleStatus = {
                                 val nextStatus = when (task.status) {
-                                    TeamTaskStatus.PENDING -> TeamTaskStatus.IN_PROGRESS
+                                    TeamTaskStatus.PENDING -> TeamTaskStatus.READY
+                                    TeamTaskStatus.READY -> TeamTaskStatus.IN_PROGRESS
                                     TeamTaskStatus.IN_PROGRESS -> TeamTaskStatus.COMPLETED
                                     TeamTaskStatus.UNDER_REVIEW -> TeamTaskStatus.COMPLETED
                                     TeamTaskStatus.COMPLETED -> TeamTaskStatus.PENDING
+                                    TeamTaskStatus.BLOCKED -> TeamTaskStatus.READY
                                     TeamTaskStatus.FAILED -> TeamTaskStatus.IN_PROGRESS
                                 }
                                 orchestrator.updateTaskStatus(task.id, nextStatus)
@@ -230,6 +266,7 @@ fun MultiAgentTeamBottomSheet(
             }
         }
     }
+}
 }
 
 @Composable

@@ -310,6 +310,7 @@ fun PocketDevApp(
     var guestDismissedAuth by rememberSaveable { mutableStateOf(false) }
     var showAuthModal by rememberSaveable { mutableStateOf(false) }
     var showAppFactoryScreen by rememberSaveable { mutableStateOf(false) }
+    var showTeamStudioScreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -364,6 +365,17 @@ fun PocketDevApp(
             },
             onPreparePlayStore = {
                 viewModel.preparePlayStoreListing()
+            }
+        )
+        return
+    }
+
+    if (showTeamStudioScreen) {
+        com.jarves.mh.agent.team.ui.TeamStudioScreen(
+            orchestrator = viewModel.teamOrchestrator,
+            onClose = { showTeamStudioScreen = false },
+            onDispatchToAgent = { goal ->
+                viewModel.sendPrompt("Multi-Agent Team Goal: $goal")
             }
         )
         return
@@ -519,6 +531,7 @@ fun PocketDevApp(
             onAttachVisualInspection = viewModel::attachVisualInspectionToAgent,
             viewModel = viewModel,
             onOpenAppFactory = { showAppFactoryScreen = true },
+            onOpenTeamStudio = { showTeamStudioScreen = true },
         )
         else -> RootScreenHost(
             state = state,
@@ -527,6 +540,7 @@ fun PocketDevApp(
             authViewModel = authViewModel,
             onNavigateToAuth = { showAuthModal = true },
             onOpenAppFactory = { showAppFactoryScreen = true },
+            onOpenTeamStudio = { showTeamStudioScreen = true },
         )
     }
 }
@@ -2326,6 +2340,7 @@ private fun RootScreenHost(
     authViewModel: AuthViewModel? = null,
     onNavigateToAuth: () -> Unit = {},
     onOpenAppFactory: () -> Unit = {},
+    onOpenTeamStudio: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2408,6 +2423,7 @@ private fun RootScreenHost(
                     onToggleTheme = viewModel::toggleTheme,
                     onInstallUpdate = viewModel::installAppUpdate,
                     onOpenAppFactory = onOpenAppFactory,
+                    onOpenTeamStudio = onOpenTeamStudio,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3460,6 +3476,7 @@ private fun ProjectsScreen(
     onToggleTheme: () -> Unit,
     onInstallUpdate: () -> Unit,
     onOpenAppFactory: () -> Unit = {},
+    onOpenTeamStudio: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -3669,6 +3686,72 @@ private fun ProjectsScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Open App Factory",
                             tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenTeamStudio() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Multi-Agent Studio",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.secondary,
+                                ) {
+                                    Text(
+                                        "v2.2",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSecondary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                "10 Autonomous Engineering Agents, DAG Scheduler & Blackboard",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Open Multi-Agent Studio",
+                            tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -4499,6 +4582,7 @@ private fun WorkspaceScreen(
     onAttachVisualInspection: (String, String) -> Unit = { _, _ -> },
     viewModel: MainViewModel? = null,
     onOpenAppFactory: () -> Unit = {},
+    onOpenTeamStudio: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4653,6 +4737,7 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.REFRESH_FILES -> onRefreshFiles()
                     WorkspaceCommand.BIND_FOLDER -> bindFolderLauncher.launch(null)
                     WorkspaceCommand.APP_FACTORY -> onOpenAppFactory()
+                    WorkspaceCommand.MULTI_AGENT_TEAM -> onOpenTeamStudio()
                 }
             },
         )
@@ -5045,6 +5130,7 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     REFRESH_FILES("Refresh Project Files", "refresh files reload"),
     BIND_FOLDER("Bind Folder from Device", "open folder bind directory storage import external"),
     APP_FACTORY("Android App Factory", "app factory blueprint scaffold build create generator"),
+    MULTI_AGENT_TEAM("Multi-Agent Engineering Team", "agent team manager architect qa devops multi-agent studio"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

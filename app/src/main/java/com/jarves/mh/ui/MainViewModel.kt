@@ -331,6 +331,7 @@ data class AppUiState(
     val gitIssues: List<com.jarves.mh.network.GitHubIssue> = emptyList(),
     val gitPullRequests: List<com.jarves.mh.network.GitHubPullRequest> = emptyList(),
     val gitConnectedRepo: String? = null,
+    val teamSessionState: com.jarves.mh.agent.team.model.TeamSessionState = com.jarves.mh.agent.team.model.TeamSessionState(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -394,6 +395,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val mcpClientRunner = com.jarves.mh.runtime.McpClientRunner()
     val gitHubClient = com.jarves.mh.network.GitHubClient()
     val gitWorkflowEngine = com.jarves.mh.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
+    val teamOrchestrator = com.jarves.mh.agent.team.AgentTeamOrchestrator()
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -534,6 +536,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             gitWorkflowEngine.state.collect { wfState ->
                 _state.update { it.copy(gitWorkflowState = wfState) }
+            }
+        }
+        viewModelScope.launch {
+            teamOrchestrator.sessionState.collect { teamState ->
+                _state.update { it.copy(teamSessionState = teamState) }
             }
         }
         runCatching { RuntimeSetupController.restore(application) }
@@ -6563,6 +6570,22 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             )
             refreshGitStudio(dir)
         }
+    }
+
+    fun planTeamProject(goal: String) {
+        teamOrchestrator.planProject(goal)
+    }
+
+    fun stepTeamTask(): com.jarves.mh.agent.team.model.TeamTask? {
+        return teamOrchestrator.runNextReadyTask()
+    }
+
+    fun autoRunTeamTasks(): Int {
+        return teamOrchestrator.autoRunAll()
+    }
+
+    fun cancelTeamSession() {
+        teamOrchestrator.cancelSession()
     }
 
     override fun onCleared() {
