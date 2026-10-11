@@ -1079,11 +1079,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Package management must never block on Y/N, locale, timezone, service-restart,
-     * or config-file dialogs in the phone UI. Other commands remain interactive and
-     * can receive input through [sendProcessInput].
-     */
     private val projectTerminalHistoryStore by lazy {
         ProjectTerminalHistoryStore(getApplication<Application>().filesDir)
     }
