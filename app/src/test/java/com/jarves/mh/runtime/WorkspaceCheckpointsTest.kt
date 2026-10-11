@@ -59,8 +59,9 @@ class WorkspaceCheckpointsTest {
     @Test
     fun `workspace path helper rejects traversal outside project root`() {
         val root = tempFolder.newFolder("workspace")
+        val checkpoints = WorkspaceCheckpoints(tempFolder.newFolder("app-files"))
         assertThrows(IllegalArgumentException::class.java) {
-            WorkspaceCheckpoints.safeWorkspaceFile(root, "../outside.txt")
+            checkpoints.safeWorkspaceFile(root, "../outside.txt")
         }
     }
 }
