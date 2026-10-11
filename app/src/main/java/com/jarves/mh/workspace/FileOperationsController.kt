@@ -1,6 +1,7 @@
 package com.jarves.mh.workspace
 
 import java.io.File
+import java.nio.file.Files
 
 /**
  * Controller for safe, interactive workspace file tree operations (create, rename, delete, duplicate, move)
@@ -21,13 +22,24 @@ class FileOperationsController {
      * Throws [FileOpError.SecurityViolation] or [FileOpError.InvalidPath] on illegal access.
      */
     fun resolveWithinWorkspace(workspaceRoot: File, relativePath: String): Result<File> = runCatching {
-        val cleanRel = relativePath.trim().replace('\\', '/').trimStart('/')
-        if (cleanRel.isBlank()) {
-            throw FileOpError.InvalidPath("Relative path cannot be empty")
+        val cleanRel = relativePath.trim().replace('\\', '/')
+        if (cleanRel.isBlank() || cleanRel.startsWith('/') || Regex("^[A-Za-z]:").containsMatchIn(cleanRel)) {
+            throw FileOpError.InvalidPath("A relative workspace path is required")
+        }
+        val segments = cleanRel.split('/')
+        if (segments.any { it.isBlank() || it == "." || it == ".." }) {
+            throw FileOpError.SecurityViolation("Path traversal attempt detected: $relativePath")
         }
         val canonicalRoot = workspaceRoot.canonicalFile
-        val candidate = File(canonicalRoot, cleanRel).canonicalFile
-        if (!candidate.toPath().startsWith(canonicalRoot.toPath())) {
+        var candidate = canonicalRoot
+        for (segment in segments) {
+            candidate = File(candidate, segment)
+            if (Files.isSymbolicLink(candidate.toPath())) {
+                throw FileOpError.SecurityViolation("Workspace operations cannot follow symbolic links: $relativePath")
+            }
+        }
+        val canonicalCandidate = candidate.canonicalFile
+        if (!canonicalCandidate.toPath().startsWith(canonicalRoot.toPath())) {
             throw FileOpError.SecurityViolation("Path traversal attempt detected: $relativePath")
         }
         candidate
