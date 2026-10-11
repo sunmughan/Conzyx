@@ -332,6 +332,7 @@ data class AppUiState(
     val gitPullRequests: List<com.jarves.mh.network.GitHubPullRequest> = emptyList(),
     val gitConnectedRepo: String? = null,
     val teamSessionState: com.jarves.mh.agent.team.model.TeamSessionState = com.jarves.mh.agent.team.model.TeamSessionState(),
+    val cloudHybridState: com.jarves.mh.cloud.model.CloudHybridState = com.jarves.mh.cloud.model.CloudHybridState(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -396,6 +397,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitHubClient = com.jarves.mh.network.GitHubClient()
     val gitWorkflowEngine = com.jarves.mh.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val teamOrchestrator = com.jarves.mh.agent.team.AgentTeamOrchestrator()
+    val cloudHybridCoordinator = com.jarves.mh.cloud.CloudHybridCoordinator()
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -541,6 +543,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             teamOrchestrator.sessionState.collect { teamState ->
                 _state.update { it.copy(teamSessionState = teamState) }
+            }
+        }
+        viewModelScope.launch {
+            cloudHybridCoordinator.state.collect { chState ->
+                _state.update { it.copy(cloudHybridState = chState) }
             }
         }
         runCatching { RuntimeSetupController.restore(application) }
@@ -6586,6 +6593,14 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun cancelTeamSession() {
         teamOrchestrator.cancelSession()
+    }
+
+    fun setCloudRoutingPolicy(policy: com.jarves.mh.cloud.model.WorkloadRoutingPolicy) {
+        cloudHybridCoordinator.setPolicy(policy)
+    }
+
+    fun submitHybridWorkload(title: String, type: com.jarves.mh.cloud.model.WorkloadType): com.jarves.mh.cloud.model.HybridExecutionJob {
+        return cloudHybridCoordinator.submitExecutionJob(title, type)
     }
 
     override fun onCleared() {

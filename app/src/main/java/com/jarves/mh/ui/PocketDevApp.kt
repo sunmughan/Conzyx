@@ -99,6 +99,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
@@ -311,6 +312,7 @@ fun PocketDevApp(
     var showAuthModal by rememberSaveable { mutableStateOf(false) }
     var showAppFactoryScreen by rememberSaveable { mutableStateOf(false) }
     var showTeamStudioScreen by rememberSaveable { mutableStateOf(false) }
+    var showCloudHybridScreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -377,6 +379,14 @@ fun PocketDevApp(
             onDispatchToAgent = { goal ->
                 viewModel.sendPrompt("Multi-Agent Team Goal: $goal")
             }
+        )
+        return
+    }
+
+    if (showCloudHybridScreen) {
+        com.jarves.mh.cloud.ui.CloudHybridScreen(
+            coordinator = viewModel.cloudHybridCoordinator,
+            onClose = { showCloudHybridScreen = false }
         )
         return
     }
@@ -532,6 +542,7 @@ fun PocketDevApp(
             viewModel = viewModel,
             onOpenAppFactory = { showAppFactoryScreen = true },
             onOpenTeamStudio = { showTeamStudioScreen = true },
+            onOpenCloudHybrid = { showCloudHybridScreen = true },
         )
         else -> RootScreenHost(
             state = state,
@@ -541,6 +552,7 @@ fun PocketDevApp(
             onNavigateToAuth = { showAuthModal = true },
             onOpenAppFactory = { showAppFactoryScreen = true },
             onOpenTeamStudio = { showTeamStudioScreen = true },
+            onOpenCloudHybrid = { showCloudHybridScreen = true },
         )
     }
 }
@@ -2341,6 +2353,7 @@ private fun RootScreenHost(
     onNavigateToAuth: () -> Unit = {},
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
+    onOpenCloudHybrid: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2424,6 +2437,7 @@ private fun RootScreenHost(
                     onInstallUpdate = viewModel::installAppUpdate,
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
+                    onOpenCloudHybrid = onOpenCloudHybrid,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3477,6 +3491,7 @@ private fun ProjectsScreen(
     onInstallUpdate: () -> Unit,
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
+    onOpenCloudHybrid: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -3752,6 +3767,72 @@ private fun ProjectsScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Open Multi-Agent Studio",
                             tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenCloudHybrid() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudQueue,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Cloud Hybrid Studio",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                ) {
+                                    Text(
+                                        "v2.3",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onTertiary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                "Hardware Telemetry, FastBuild Remote Runners & GPU Offload",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Open Cloud Hybrid Studio",
+                            tint = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -4583,6 +4664,7 @@ private fun WorkspaceScreen(
     viewModel: MainViewModel? = null,
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
+    onOpenCloudHybrid: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4738,6 +4820,7 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.BIND_FOLDER -> bindFolderLauncher.launch(null)
                     WorkspaceCommand.APP_FACTORY -> onOpenAppFactory()
                     WorkspaceCommand.MULTI_AGENT_TEAM -> onOpenTeamStudio()
+                    WorkspaceCommand.CLOUD_HYBRID -> onOpenCloudHybrid()
                 }
             },
         )
@@ -5131,6 +5214,7 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     BIND_FOLDER("Bind Folder from Device", "open folder bind directory storage import external"),
     APP_FACTORY("Android App Factory", "app factory blueprint scaffold build create generator"),
     MULTI_AGENT_TEAM("Multi-Agent Engineering Team", "agent team manager architect qa devops multi-agent studio"),
+    CLOUD_HYBRID("Cloud + Phone Hybrid", "cloud worker offload remote build gpu runner hybrid"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

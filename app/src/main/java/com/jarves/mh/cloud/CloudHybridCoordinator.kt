@@ -1,115 +1,205 @@
 package com.jarves.mh.cloud
 
+import com.jarves.mh.cloud.model.CloudArtifact
+import com.jarves.mh.cloud.model.CloudHybridState
+import com.jarves.mh.cloud.model.CloudWorkerSpec
+import com.jarves.mh.cloud.model.DeviceResourceMetrics
+import com.jarves.mh.cloud.model.ExecutionTarget
+import com.jarves.mh.cloud.model.HybridExecutionJob
+import com.jarves.mh.cloud.model.HybridJob
+import com.jarves.mh.cloud.model.HybridJobState
+import com.jarves.mh.cloud.model.RoutingDecision
+import com.jarves.mh.cloud.model.WorkerHealthStatus
+import com.jarves.mh.cloud.model.WorkloadCharacteristics
+import com.jarves.mh.cloud.model.WorkloadRoutingPolicy
+import com.jarves.mh.cloud.model.WorkloadType
+import com.jarves.mh.cloud.registry.CloudWorkerRegistry
+import com.jarves.mh.cloud.routing.WorkloadDecisionEngine
+import com.jarves.mh.cloud.runner.CloudJobRunner
+import com.jarves.mh.cloud.sync.CloudArtifactSyncEngine
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-enum class WorkloadRoutingPolicy {
-    LOCAL_FIRST,
-    CLOUD_OFFLOAD,
-    HYBRID_AUTO
-}
-
-enum class WorkloadType {
-    LOCAL_EDIT,
-    LIGHT_SCRIPT,
-    HEAVY_GRADLE_BUILD,
-    GPU_MODEL_INFERENCE,
-    LARGE_TEST_SUITE,
-    DOCKER_CONTAINER_RUN
-}
-
-data class CloudWorkerSpec(
-    val id: String = UUID.randomUUID().toString(),
-    val name: String,
-    val endpointUrl: String,
-    val region: String,
-    val isAvailable: Boolean = true,
-    val costPerHourUsd: Double = 0.0,
-    val gpuAvailable: Boolean = false
-)
-
-data class HybridJob(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val workloadType: WorkloadType,
-    val routedToCloud: Boolean,
-    val assignedWorker: CloudWorkerSpec? = null,
-    val status: String = "QUEUED",
-    val logs: String = "",
-    val timestamp: Long = System.currentTimeMillis()
-)
+// Typealiases for backward compatibility
+typealias WorkloadRoutingPolicy = com.jarves.mh.cloud.model.WorkloadRoutingPolicy
+typealias WorkloadType = com.jarves.mh.cloud.model.WorkloadType
+typealias CloudWorkerSpec = com.jarves.mh.cloud.model.CloudWorkerSpec
+typealias HybridJob = com.jarves.mh.cloud.model.HybridJob
 
 /**
- * Cloud + Phone Hybrid Coordinator (Phase 12).
- * Determines whether to execute builds, tests, or AI reasoning on-device (PRoot)
- * or offload to high-power cloud workers.
+ * Cloud + Phone Hybrid Coordinator (Phase 12 v2.3).
+ * Intelligently balances workloads across the local Android PRoot Linux environment
+ * and high-compute remote cloud workers (FastBuild runners, GPU accelerators).
  */
-class CloudHybridCoordinator {
+class CloudHybridCoordinator(
+    val decisionEngine: WorkloadDecisionEngine = WorkloadDecisionEngine(),
+    val workerRegistry: CloudWorkerRegistry = CloudWorkerRegistry(),
+    val syncEngine: CloudArtifactSyncEngine = CloudArtifactSyncEngine(),
+    val jobRunner: CloudJobRunner = CloudJobRunner()
+) {
 
+    private val _state = MutableStateFlow(
+        CloudHybridState(
+            routingPolicy = WorkloadRoutingPolicy.HYBRID_AUTO,
+            registeredWorkers = workerRegistry.getAllWorkers()
+        )
+    )
+    val state: StateFlow<CloudHybridState> = _state.asStateFlow()
+
+    // Backward-compatible StateFlows
     private val _routingPolicy = MutableStateFlow(WorkloadRoutingPolicy.HYBRID_AUTO)
     val routingPolicy: StateFlow<WorkloadRoutingPolicy> = _routingPolicy.asStateFlow()
 
-    private val _knownWorkers = MutableStateFlow(
-        listOf(
-            CloudWorkerSpec(
-                name = "FastBuild Runner (x86_64 16-Core)",
-                endpointUrl = "https://build-cloud.pocketdev.io",
-                region = "us-east-1",
-                isAvailable = true,
-                costPerHourUsd = 0.05,
-                gpuAvailable = false
-            ),
-            CloudWorkerSpec(
-                name = "AI GPU Accelerator (NVIDIA L40S)",
-                endpointUrl = "https://gpu-cloud.pocketdev.io",
-                region = "us-central-1",
-                isAvailable = true,
-                costPerHourUsd = 0.20,
-                gpuAvailable = true
-            )
-        )
-    )
+    private val _knownWorkers = MutableStateFlow<List<CloudWorkerSpec>>(workerRegistry.getAllWorkers())
     val knownWorkers: StateFlow<List<CloudWorkerSpec>> = _knownWorkers.asStateFlow()
 
     private val _activeJobs = MutableStateFlow<List<HybridJob>>(emptyList())
     val activeJobs: StateFlow<List<HybridJob>> = _activeJobs.asStateFlow()
 
+    init {
+        syncState()
+    }
+
     fun setPolicy(policy: WorkloadRoutingPolicy) {
         _routingPolicy.value = policy
+        _state.value = _state.value.copy(routingPolicy = policy)
+    }
+
+    fun updateDeviceMetrics(metrics: DeviceResourceMetrics) {
+        _state.value = _state.value.copy(deviceMetrics = metrics)
     }
 
     /**
-     * Determines whether [workloadType] should be offloaded to cloud given device capabilities.
+     * Backward-compatible evaluation function.
      */
     fun shouldOffloadToCloud(workloadType: WorkloadType, deviceAvailableRamMb: Long = 2048): Boolean {
-        return when (_routingPolicy.value) {
-            WorkloadRoutingPolicy.CLOUD_OFFLOAD -> true
-            WorkloadRoutingPolicy.LOCAL_FIRST -> false
-            WorkloadRoutingPolicy.HYBRID_AUTO -> {
-                when (workloadType) {
-                    WorkloadType.HEAVY_GRADLE_BUILD -> deviceAvailableRamMb < 3000
-                    WorkloadType.GPU_MODEL_INFERENCE -> true
-                    WorkloadType.LARGE_TEST_SUITE -> deviceAvailableRamMb < 2500
-                    WorkloadType.DOCKER_CONTAINER_RUN -> true
-                    WorkloadType.LOCAL_EDIT, WorkloadType.LIGHT_SCRIPT -> false
-                }
-            }
-        }
+        val currentMetrics = _state.value.deviceMetrics.copy(availableRamMb = deviceAvailableRamMb)
+        val decision = decisionEngine.evaluate(
+            workloadType = workloadType,
+            policy = _routingPolicy.value,
+            deviceMetrics = currentMetrics,
+            availableWorkers = workerRegistry.getHealthyWorkers()
+        )
+        return decision.target == ExecutionTarget.CLOUD
     }
 
+    /**
+     * Backward-compatible job submission returning legacy HybridJob.
+     */
     fun submitJob(title: String, workloadType: WorkloadType): HybridJob {
-        val offload = shouldOffloadToCloud(workloadType)
-        val worker = if (offload) _knownWorkers.value.firstOrNull { it.isAvailable } else null
-        val job = HybridJob(
+        val execJob = submitExecutionJob(title, workloadType, runImmediately = true)
+        return execJob.toLegacyJob()
+    }
+
+    /**
+     * Comprehensive job submission supporting lifecycle, streaming, and metrics.
+     */
+    fun submitExecutionJob(
+        title: String,
+        workloadType: WorkloadType,
+        characteristics: WorkloadCharacteristics = WorkloadCharacteristics.defaultFor(workloadType),
+        runImmediately: Boolean = true
+    ): HybridExecutionJob {
+        val decision = decisionEngine.evaluate(
+            workloadType = workloadType,
+            characteristics = characteristics,
+            policy = _state.value.routingPolicy,
+            deviceMetrics = _state.value.deviceMetrics,
+            availableWorkers = workerRegistry.getHealthyWorkers()
+        )
+
+        var job = HybridExecutionJob(
             title = title,
             workloadType = workloadType,
-            routedToCloud = offload,
-            assignedWorker = worker,
-            status = if (offload) "DISPATCHED_TO_CLOUD" else "RUNNING_LOCALLY"
+            characteristics = characteristics,
+            routingPolicy = _state.value.routingPolicy,
+            routingDecision = decision,
+            assignedWorker = decision.recommendedWorker,
+            state = if (decision.target == ExecutionTarget.CLOUD) HybridJobState.EXECUTING_CLOUD else HybridJobState.EXECUTING_LOCAL
         )
-        _activeJobs.value = listOf(job) + _activeJobs.value
+
+        _state.value = _state.value.copy(
+            activeJobs = listOf(job) + _state.value.activeJobs
+        )
+        syncLegacyActiveJobs()
+
+        if (runImmediately) {
+            job = jobRunner.execute(job)
+            recordJobCompletion(job)
+        }
+
         return job
+    }
+
+    /**
+     * Registers a custom cloud execution runner node.
+     */
+    fun registerCustomWorker(
+        name: String,
+        endpointUrl: String,
+        region: String,
+        gpu: Boolean = false,
+        costPerHour: Double = 0.05,
+        cores: Int = 8
+    ): CloudWorkerSpec {
+        val worker = CloudWorkerSpec(
+            name = name,
+            endpointUrl = endpointUrl,
+            region = region,
+            gpuAvailable = gpu,
+            costPerHourUsd = costPerHour,
+            cpuCores = cores
+        )
+        workerRegistry.registerWorker(worker)
+        syncState()
+        return worker
+    }
+
+    /**
+     * Pings all registered workers to refresh network latency and health status.
+     */
+    fun pingWorkers() {
+        workerRegistry.getAllWorkers().forEach { worker ->
+            val simulatedLatency = when (worker.region) {
+                "us-east-1" -> 38L
+                "us-central-1" -> 58L
+                "eu-west-1" -> 105L
+                else -> 80L
+            }
+            workerRegistry.updateWorkerHealth(worker.id, WorkerHealthStatus.HEALTHY, simulatedLatency)
+        }
+        syncState()
+    }
+
+    private fun recordJobCompletion(completedJob: HybridExecutionJob) {
+        val current = _state.value
+        val updatedActive = current.activeJobs.filter { it.id != completedJob.id }
+        val updatedCompleted = listOf(completedJob) + current.completedJobs
+
+        val isCloud = completedJob.routingDecision?.target == ExecutionTarget.CLOUD
+        val newOffloaded = current.totalOffloadedJobs + if (isCloud) 1 else 0
+        val newLocal = current.totalLocalJobs + if (!isCloud) 1 else 0
+        val newSpend = current.totalCloudSpendUsd + completedJob.estimatedCostUsd
+
+        _state.value = current.copy(
+            activeJobs = updatedActive,
+            completedJobs = updatedCompleted,
+            totalOffloadedJobs = newOffloaded,
+            totalLocalJobs = newLocal,
+            totalCloudSpendUsd = (newSpend * 1000).toLong() / 1000.0
+        )
+        syncLegacyActiveJobs()
+    }
+
+    private fun syncState() {
+        val workers = workerRegistry.getAllWorkers()
+        _knownWorkers.value = workers
+        _state.value = _state.value.copy(registeredWorkers = workers)
+    }
+
+    private fun syncLegacyActiveJobs() {
+        _activeJobs.value = _state.value.activeJobs.map { it.toLegacyJob() }
     }
 }
