@@ -176,10 +176,12 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
      */
     fun deleteCheckpoint(projectId: String, checkpointId: String): Boolean {
         return runCatching {
+            require(checkpointId.matches(Regex("ckpt_\\d+_[A-Za-z0-9]+"))) { "Invalid checkpoint ID" }
             val dir = File(checkpointsBaseDir(projectId), checkpointId)
-            dir.deleteRecursively()
             val remaining = listCheckpoints(projectId).filterNot { it.id == checkpointId }
+            // Persist the index first; if that fails, keep the checkpoint files intact.
             saveIndex(projectId, remaining)
+            check(dir.deleteRecursively() || !dir.exists()) { "Could not delete checkpoint directory" }
             true
         }.getOrElse { false }
     }
