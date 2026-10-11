@@ -5,6 +5,7 @@ import com.jarves.mh.model.RoadmapStep
 import com.jarves.mh.model.StepStatus
 import com.jarves.mh.workspace.WorkspaceCheckpointManager
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
