@@ -22,6 +22,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     private val projectRoots = ConcurrentHashMap<String, String>()
 
     fun ensureWorkspace(projectId: String): File {
+        validateProjectId(projectId)
         val base = File(filesDir, "workspaces/$projectId").apply { mkdirs() }.canonicalFile
         val rootPath = projectRoots[projectId].orEmpty()
         if (rootPath.isBlank()) return base
@@ -31,6 +32,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
     }
 
     fun configureProjectRoot(projectId: String, rootPath: String) {
+        validateProjectId(projectId)
         val normalized = rootPath.trim().trim('/')
         require(normalized.isBlank() || (!normalized.contains("..") && !normalized.startsWith('/'))) {
             "Unsafe project root"
@@ -39,7 +41,20 @@ class WorkspaceCheckpoints(private val filesDir: File) {
         if (previous != normalized) checkpointDir(projectId).deleteRecursively()
     }
 
-    fun checkpointDir(projectId: String) = File(filesDir, "checkpoints/$projectId/latest")
+    fun checkpointDir(projectId: String): File {
+        validateProjectId(projectId)
+        return File(filesDir, "checkpoints/$projectId/latest")
+    }
+
+    private fun validateProjectId(projectId: String) {
+        require(
+            projectId.isNotBlank() &&
+                !projectId.contains('/') &&
+                !projectId.contains('\\') &&
+                projectId != "." &&
+                projectId != "..",
+        ) { "Invalid project ID" }
+    }
 
     fun createCheckpoint(projectId: String, workspace: File) {
         val checkpoint = checkpointDir(projectId)
