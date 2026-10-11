@@ -1,5 +1,7 @@
 package com.jarves.mh.runtime
 
+import com.jarves.mh.workspace.SafeFileOps
+
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.DiffLine
 import com.jarves.mh.model.DiffLineType
@@ -74,7 +76,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
             .filterNot(::isInternalRuntimePath)
             .distinct()
             .sorted()
-        manifest.writeText(JSONArray(merged).toString())
+        check(SafeFileOps.atomicWriteText(manifest, JSONArray(merged).toString())) { "Unable to persist checkpoint change manifest" }
     }
 
     fun readChangedPaths(projectId: String): List<String> {
@@ -91,7 +93,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
         if (remaining.isEmpty()) {
             checkpointDir(projectId).deleteRecursively()
         } else {
-            File(checkpointDir(projectId), "changes.json").writeText(JSONArray(remaining).toString())
+            check(SafeFileOps.atomicWriteText(File(checkpointDir(projectId), "changes.json"), JSONArray(remaining).toString())) { "Unable to persist checkpoint change manifest" }
         }
     }
 
