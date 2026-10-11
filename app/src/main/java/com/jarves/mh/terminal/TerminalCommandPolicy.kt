@@ -46,7 +46,7 @@ object TerminalCommandPolicy {
     }
 
     fun detectServerUrl(command: String): String? {
-        val match = Regex("""python(?:3)?\\s+-m\\s+http\\.server(?:\\s+(\\d{2,5}))?""")
+        val match = Regex("""python(?:3)?\s+-m\s+http\.server(?:\s+(\d{2,5}))?""")
             .find(command)
             ?: return null
         val port = match.groupValues.getOrNull(1)?.toIntOrNull() ?: 8000
