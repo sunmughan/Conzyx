@@ -645,7 +645,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val keep = userMessages > 0 || userFiles > 0
                 if (!keep) {
                     workspaceDir.deleteRecursively()
-                    terminalHistoryFile(project.id).delete()
+                    projectTerminalHistoryStore.delete(project.id)
                     preferences.deleteProjectChats(project.id)
                 }
                 keep
@@ -2620,7 +2620,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 preferences.saveProjects(_state.value.projects)
                 viewModelScope.launch(Dispatchers.IO) {
                     workspaceDir.deleteRecursively()
-                    terminalHistoryFile(active.id).delete()
+                    projectTerminalHistoryStore.delete(active.id)
                     preferences.deleteProjectChats(active.id)
                 }
             }
@@ -3628,7 +3628,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val filesDir = getApplication<Application>().filesDir
             File(filesDir, "workspaces/${project.id}").deleteRecursively()
-            terminalHistoryFile(project.id).delete()
+            projectTerminalHistoryStore.delete(project.id)
             preferences.deleteProjectChats(project.id)
         }
     }
