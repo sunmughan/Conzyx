@@ -94,7 +94,10 @@ internal object RuntimeOverlayTransaction {
                     oldLink = Files.readSymbolicLink(destination.toPath())
                 } else if (existed) {
                     backupFile = File(backupRoot, entry.relativePath)
-                    check(backupFile.parentFile?.mkdirs() != false) { "Could not create overlay backup directory" }
+                    val backupParent = backupFile.parentFile
+                    check(backupParent != null && (backupParent.isDirectory || backupParent.mkdirs())) {
+                        "Could not create overlay backup directory"
+                    }
                     check(SafeFileOps.atomicCopy(destination, backupFile)) {
                         "Could not back up ${entry.relativePath} before overlay update"
                     }
@@ -110,7 +113,9 @@ internal object RuntimeOverlayTransaction {
                 }
             }
 
-            check(backupRoot.deleteRecursively() || !backupRoot.exists()) { "Could not clean overlay backup" }
+            // Backup cleanup is best-effort after a successful apply. A cleanup
+            // failure must not trigger rollback after some backups were already removed.
+            runCatching { backupRoot.deleteRecursively() }
             true
         } catch (_: Exception) {
             originals.asReversed().forEach { state ->
