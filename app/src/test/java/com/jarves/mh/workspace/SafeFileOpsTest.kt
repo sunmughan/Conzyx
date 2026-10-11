@@ -43,6 +43,27 @@ class SafeFileOpsTest {
         assertTrue(target.readBytes().contentEquals(bytes))
     }
 
+
+    @Test
+    fun `atomicCopy replaces destination from source and leaves no temp file`() {
+        val source = File(tempFolder.root, "source.bin").apply {
+            writeBytes(ByteArray(32_768) { (it % 251).toByte() })
+        }
+        val target = File(tempFolder.root, "destination.bin").apply { writeText("old destination") }
+
+        assertTrue(SafeFileOps.atomicCopy(source, target))
+        assertTrue(source.readBytes().contentEquals(target.readBytes()))
+        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.contains(".tmp_") })
+    }
+
+    @Test
+    fun `atomicCopy failure does not change existing destination`() {
+        val target = File(tempFolder.root, "destination.txt").apply { writeText("known-good") }
+
+        assertFalse(SafeFileOps.atomicCopy(File(tempFolder.root, "missing.txt"), target))
+        assertEquals("known-good", target.readText())
+    }
+
     @Test
     fun `safeReadText returns null for non-existent or unreadable file`() {
         assertNull(SafeFileOps.safeReadText(File(tempFolder.root, "non_existent.txt")))
