@@ -63,7 +63,7 @@ class AgentSessionManager(private val baseSessionsDir: File) {
             status = AgentSessionStatus.RUNNING,
             activeRoadmap = roadmap,
         )
-        writeActiveSession(session)
+        check(writeActiveSession(session)) { "Unable to persist agent session metadata" }
         AppCrashLogger.checkpoint("AgentSessionStarted", "Session $sessionId in project $projectTitle")
     }
 
@@ -90,8 +90,8 @@ class AgentSessionManager(private val baseSessionsDir: File) {
             status = AgentSessionStatus.COMPLETED,
             summary = summary,
         )
-        archiveSession(completed)
-        activeSessionFile.delete()
+        if (!writeActiveSession(completed) || !archiveSession(completed)) return
+        deleteActiveSessionAfterArchive()
         AppCrashLogger.checkpoint("AgentSessionCompleted", "Session ${current.sessionId}")
     }
 
@@ -105,8 +105,8 @@ class AgentSessionManager(private val baseSessionsDir: File) {
             status = AgentSessionStatus.FAILED,
             summary = reason,
         )
-        archiveSession(failed)
-        activeSessionFile.delete()
+        if (!writeActiveSession(failed) || !archiveSession(failed)) return
+        deleteActiveSessionAfterArchive()
         AppCrashLogger.checkpoint("AgentSessionFailed", "Session ${current.sessionId}: $reason")
     }
 
@@ -115,13 +115,27 @@ class AgentSessionManager(private val baseSessionsDir: File) {
      */
     fun detectInterruptedSession(): PersistedAgentSession? {
         val current = readActiveSession() ?: return null
-        if (current.status == AgentSessionStatus.RUNNING) {
-            val marked = current.copy(status = AgentSessionStatus.INTERRUPTED)
-            writeActiveSession(marked)
-            AppCrashLogger.checkpoint("AgentSessionInterruptedDetected", "Detected interrupted session: ${marked.sessionId}")
-            return marked
+        return when (current.status) {
+            AgentSessionStatus.RUNNING -> {
+                val marked = current.copy(status = AgentSessionStatus.INTERRUPTED)
+                if (writeActiveSession(marked)) {
+                    AppCrashLogger.checkpoint("AgentSessionInterruptedDetected", "Detected interrupted session: ${marked.sessionId}")
+                }
+                marked
+            }
+            AgentSessionStatus.COMPLETED, AgentSessionStatus.FAILED -> {
+                // A previous process may have persisted the terminal state but died
+                // before the archive/delete sequence completed. Retry the archive now.
+                if (archiveSession(current)) deleteActiveSessionAfterArchive()
+                null
+            }
+            AgentSessionStatus.INTERRUPTED -> {
+                if (current.summary == "Cancelled by user") {
+                    if (archiveSession(current)) deleteActiveSessionAfterArchive()
+                    null
+                } else current
+            }
         }
-        return if (current.status == AgentSessionStatus.INTERRUPTED) current else null
     }
 
     fun checkInterruptedSession(): PersistedAgentSession? = detectInterruptedSession()
@@ -136,8 +150,8 @@ class AgentSessionManager(private val baseSessionsDir: File) {
             status = AgentSessionStatus.INTERRUPTED,
             summary = "Cancelled by user",
         )
-        archiveSession(cancelled)
-        activeSessionFile.delete()
+        if (!writeActiveSession(cancelled) || !archiveSession(cancelled)) return
+        deleteActiveSessionAfterArchive()
         AppCrashLogger.checkpoint("AgentSessionCancelled", "Session ${current.sessionId}")
     }
 
@@ -152,8 +166,8 @@ class AgentSessionManager(private val baseSessionsDir: File) {
             status = AgentSessionStatus.FAILED,
             summary = "Session timed out after $timeoutMinutes minutes",
         )
-        archiveSession(timedOut)
-        activeSessionFile.delete()
+        if (!writeActiveSession(timedOut) || !archiveSession(timedOut)) return
+        deleteActiveSessionAfterArchive()
         AppCrashLogger.checkpoint("AgentSessionTimeout", "Session ${current.sessionId}")
     }
 
@@ -202,14 +216,16 @@ class AgentSessionManager(private val baseSessionsDir: File) {
         return cleaned
     }
 
-    private fun writeActiveSession(session: PersistedAgentSession) {
+    private fun writeActiveSession(session: PersistedAgentSession): Boolean =
         runCatching {
             val json = serializeSession(session)
-            SafeFileOps.atomicWriteText(activeSessionFile, json.toString(2))
+            check(SafeFileOps.atomicWriteText(activeSessionFile, json.toString(2))) {
+                "Atomic write returned false for active session"
+            }
+            true
         }.onFailure {
             AppCrashLogger.log("Failed to write active session: ${it.message}")
-        }
-    }
+        }.getOrDefault(false)
 
     private fun readActiveSession(): PersistedAgentSession? {
         if (!activeSessionFile.exists()) return null
@@ -220,12 +236,25 @@ class AgentSessionManager(private val baseSessionsDir: File) {
         }.getOrNull()
     }
 
-    private fun archiveSession(session: PersistedAgentSession) {
+    private fun archiveSession(session: PersistedAgentSession): Boolean =
         runCatching {
-            val historyDir = File(sessionsDir, "history").apply { mkdirs() }
+            val historyDir = File(sessionsDir, "history")
+            if (!historyDir.exists() && !historyDir.mkdirs() && !historyDir.isDirectory) {
+                error("Unable to create session history directory")
+            }
             val archiveFile = File(historyDir, "session_${session.sessionId}.json")
             val json = serializeSession(session)
-            SafeFileOps.atomicWriteText(archiveFile, json.toString(2))
+            check(SafeFileOps.atomicWriteText(archiveFile, json.toString(2))) {
+                "Atomic write returned false for archived session"
+            }
+            true
+        }.onFailure {
+            AppCrashLogger.log("Failed to archive session ${session.sessionId}: ${it.message}")
+        }.getOrDefault(false)
+
+    private fun deleteActiveSessionAfterArchive() {
+        if (activeSessionFile.exists() && !activeSessionFile.delete()) {
+            AppCrashLogger.log("Archived session but could not delete active session marker")
         }
     }
 
