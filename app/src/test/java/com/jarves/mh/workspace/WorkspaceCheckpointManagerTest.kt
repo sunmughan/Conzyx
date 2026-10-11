@@ -81,6 +81,7 @@ class WorkspaceCheckpointManagerTest {
         first.writeText("important current data")
         val backupDir = File(filesDir, "checkpoints/proj-corrupt/snapshots/${checkpoint!!.id}/files")
         assertTrue(File(backupDir, "second.txt").delete())
+        assertFalse(manager.verifyCheckpointIntegrity("proj-corrupt", checkpoint.id))
 
         val success = manager.rollbackToCheckpoint("proj-corrupt", checkpoint.id, workspaceDir)
 
