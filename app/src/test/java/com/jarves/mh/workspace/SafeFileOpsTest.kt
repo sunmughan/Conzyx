@@ -56,6 +56,19 @@ class SafeFileOpsTest {
         assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.contains(".tmp_") })
     }
 
+
+    @Test
+    fun `atomic copy preserves executable permissions on supported filesystems`() {
+        val source = File(tempFolder.root, "executable.sh").apply {
+            writeText("#!/bin/sh\\necho ok\\n")
+            setExecutable(true, false)
+        }
+        val target = File(tempFolder.root, "copied.sh")
+
+        assertTrue(SafeFileOps.atomicCopy(source, target))
+        if (source.canExecute()) assertTrue(target.canExecute())
+    }
+
     @Test
     fun `atomicCopy failure does not change existing destination`() {
         val target = File(tempFolder.root, "destination.txt").apply { writeText("known-good") }
