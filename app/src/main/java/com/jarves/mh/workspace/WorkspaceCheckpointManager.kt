@@ -73,7 +73,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                 put("fileCount", checkpoint.fileCount)
                 put("modifiedFiles", JSONArray(checkpoint.modifiedFiles))
             }
-            metaFile.writeText(json.toString(2))
+            check(SafeFileOps.atomicWriteText(metaFile, json.toString(2))) { "Could not persist checkpoint metadata" }
 
             // Update index
             val existing = listCheckpoints(projectId).toMutableList()
@@ -121,26 +121,44 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
      */
     fun rollbackToCheckpoint(projectId: String, checkpointId: String, workspaceDir: File): Boolean {
         return runCatching {
-            val checkpointDir = File(checkpointsBaseDir(projectId), checkpointId)
+            require(checkpointId.matches(Regex("ckpt_\\d+_[A-Za-z0-9]+"))) { "Invalid checkpoint ID" }
+            val checkpointDir = File(checkpointsBaseDir(projectId), checkpointId).canonicalFile
+            val baseDir = checkpointsBaseDir(projectId).canonicalFile
+            require(checkpointDir.toPath().startsWith(baseDir.toPath())) { "Checkpoint path escapes project" }
             val backupDir = File(checkpointDir, "files")
-            if (!backupDir.exists()) return false
+            val metaFile = File(checkpointDir, "meta.json")
+            if (!backupDir.isDirectory || !metaFile.isFile) return false
+
+            val metadata = JSONObject(metaFile.readText())
+            if (metadata.optString("id") != checkpointId || metadata.optString("projectId") != projectId) return false
 
             val canonicalWorkspace = workspaceDir.canonicalFile
+            val backupFiles = backupDir.walkTopDown()
+                .filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+                .toList()
+            if (backupFiles.size != metadata.optInt("fileCount", -1)) return false
 
-            // Delete existing non-ignored files in workspace
-            canonicalWorkspace.walkTopDown()
-                .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
-                .forEach { it.delete() }
-
-            // Restore from backup
-            backupDir.walkTopDown()
-                .filter { it.isFile }
-                .forEach { sourceFile ->
-                    val relPath = sourceFile.relativeTo(backupDir).invariantSeparatorsPath
-                    val destFile = File(canonicalWorkspace, relPath)
-                    destFile.parentFile?.mkdirs()
-                    sourceFile.copyTo(destFile, overwrite = true)
+            // Restore every backed-up file atomically first. If any write fails, do not
+            // delete newer workspace files; the user can retry without losing them.
+            val restoredPaths = backupFiles.map { it.relativeTo(backupDir).invariantSeparatorsPath }.toSet()
+            for (sourceFile in backupFiles) {
+                val relativePath = sourceFile.relativeTo(backupDir).invariantSeparatorsPath
+                if (isIgnored(File(canonicalWorkspace, relativePath), canonicalWorkspace)) continue
+                val destination = safeWorkspaceFile(canonicalWorkspace, relativePath)
+                if (!SafeFileOps.atomicWriteBytes(destination, sourceFile.readBytes())) {
+                    error("Could not restore $relativePath")
                 }
+            }
+
+            // Only after all backed-up files were written successfully remove files that
+            // were created after the checkpoint. Preserve ignored runtime/build directories.
+            val extraFiles = canonicalWorkspace.walkTopDown()
+                .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
+                .filter { it.relativeTo(canonicalWorkspace).invariantSeparatorsPath !in restoredPaths }
+                .toList()
+            for (extra in extraFiles) {
+                if (!extra.delete() && extra.exists()) error("Could not remove post-checkpoint file ${extra.path}")
+            }
 
             AppCrashLogger.checkpoint("WorkspaceCheckpointRollback", "Project $projectId rolled back to $checkpointId")
             true
@@ -223,7 +241,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                 put("modifiedFiles", JSONArray(ck.modifiedFiles))
             })
         }
-        SafeFileOps.atomicWriteText(indexFile(projectId), arr.toString(2))
+        check(SafeFileOps.atomicWriteText(indexFile(projectId), arr.toString(2))) { "Could not persist checkpoint index" }
     }
 
     private fun isIgnored(file: File, base: File): Boolean {
