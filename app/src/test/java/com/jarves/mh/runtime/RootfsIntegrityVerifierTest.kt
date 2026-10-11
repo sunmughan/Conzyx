@@ -48,6 +48,22 @@ class RootfsIntegrityVerifierTest {
     }
 
     @Test
+    fun `healing never writes through an etc symlink outside rootfs`() {
+        val outside = tempFolder.newFolder("outside_rootfs")
+        File(rootfsDir, "etc").deleteRecursively()
+        java.nio.file.Files.createSymbolicLink(File(rootfsDir, "etc").toPath(), outside.toPath())
+
+        val report = RootfsIntegrityVerifier.verifyAndHeal(rootfsDir)
+
+        assertFalse(report.isValid)
+        assertTrue(report.corruptedPaths.contains("etc/passwd"))
+        assertTrue(report.corruptedPaths.contains("etc/resolv.conf"))
+        assertFalse(File(outside, "passwd").exists())
+        assertFalse(File(outside, "resolv.conf").exists())
+        assertFalse(File(outside, "hosts").exists())
+    }
+
+    @Test
     fun `verify returns valid when all required paths exist`() {
         // Pre-create all required files and dirs
         listOf("tmp", "dev", "proc", "etc", "bin", "usr/bin", "var/tmp").forEach {
