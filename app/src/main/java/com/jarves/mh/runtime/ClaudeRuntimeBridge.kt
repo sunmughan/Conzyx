@@ -712,6 +712,7 @@ class ClaudeRuntimeBridge(
     }
 
     private fun ensureWorkspace(projectId: String): File {
+        validateProjectId(projectId)
         val base = File(context.filesDir, "workspaces/$projectId").apply { mkdirs() }.canonicalFile
         val rootPath = projectRoots[projectId].orEmpty()
         if (rootPath.isBlank()) return base
@@ -721,6 +722,7 @@ class ClaudeRuntimeBridge(
     }
 
     fun configureProjectRoot(projectId: String, rootPath: String) {
+        validateProjectId(projectId)
         val normalized = rootPath.trim().trim('/')
         require(normalized.isBlank() || (!normalized.contains("..") && !normalized.startsWith('/'))) {
             "Unsafe project root"
@@ -729,7 +731,20 @@ class ClaudeRuntimeBridge(
         if (previous != normalized) checkpointDir(projectId).deleteRecursively()
     }
 
-    private fun checkpointDir(projectId: String) = File(context.filesDir, "checkpoints/$projectId/latest")
+    private fun checkpointDir(projectId: String): File {
+        validateProjectId(projectId)
+        return File(context.filesDir, "checkpoints/$projectId/latest")
+    }
+
+    private fun validateProjectId(projectId: String) {
+        require(
+            projectId.isNotBlank() &&
+                !projectId.contains('/') &&
+                !projectId.contains('\\') &&
+                projectId != "." &&
+                projectId != "..",
+        ) { "Invalid project ID" }
+    }
 
     private fun createCheckpoint(projectId: String, workspace: File) {
         val checkpoint = checkpointDir(projectId)
