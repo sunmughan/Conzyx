@@ -91,6 +91,24 @@ class WorkspaceCheckpointManagerTest {
     }
 
     @Test
+    fun testRollbackRejectsSameCountCheckpointContentTampering() {
+        val filesDir = tempFolder.newFolder("hashCheckpointFiles")
+        val workspaceDir = tempFolder.newFolder("hashCheckpointWorkspace")
+        val current = File(workspaceDir, "config.json").apply { writeText("baseline") }
+        val manager = WorkspaceCheckpointManager(filesDir)
+        val checkpoint = manager.createCheckpoint("proj-hash", workspaceDir, "hash baseline")
+        assertNotNull(checkpoint)
+
+        current.writeText("current data")
+        val backupFile = File(filesDir, "checkpoints/proj-hash/snapshots/${checkpoint!!.id}/files/config.json")
+        backupFile.writeText("tampered") // Same file count, different content.
+
+        assertFalse(manager.verifyCheckpointIntegrity("proj-hash", checkpoint.id))
+        assertFalse(manager.rollbackToCheckpoint("proj-hash", checkpoint.id, workspaceDir))
+        assertEquals("current data", current.readText())
+    }
+
+    @Test
     fun testRollbackRejectsTraversalCheckpointIdWithoutTouchingWorkspace() {
         val filesDir = tempFolder.newFolder("traversalCheckpointFiles")
         val workspaceDir = tempFolder.newFolder("traversalCheckpointWorkspace")
