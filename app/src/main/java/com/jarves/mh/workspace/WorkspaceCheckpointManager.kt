@@ -197,7 +197,10 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
      * Verifies that a checkpoint's metadata and backup file trees are intact.
      */
     fun verifyCheckpointIntegrity(projectId: String, checkpointId: String): Boolean {
-        val checkpointDir = File(checkpointsBaseDir(projectId), checkpointId)
+        if (!checkpointId.matches(Regex("ckpt_\\d+_[A-Za-z0-9]+"))) return false
+        val checkpointDir = File(checkpointsBaseDir(projectId), checkpointId).canonicalFile
+        val baseDir = checkpointsBaseDir(projectId).canonicalFile
+        if (!checkpointDir.toPath().startsWith(baseDir.toPath())) return false
         val metaFile = File(checkpointDir, "meta.json")
         val backupDir = File(checkpointDir, "files")
         if (!metaFile.isFile || !backupDir.isDirectory) return false
