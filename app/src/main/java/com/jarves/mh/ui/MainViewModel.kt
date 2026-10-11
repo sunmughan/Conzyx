@@ -1093,7 +1093,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun saveProjectTerminal(projectId: String, cwd: String, lines: List<TerminalOutputLine>) {
         val guestRoot = _state.value.activeProject?.takeIf { it.id == projectId }?.let(::projectGuestRoot)
-            ?: "/workspace/${projectId}"
+            ?: "/workspace"
         if (!projectTerminalHistoryStore.save(projectId, cwd, guestRoot, lines)) {
             AppCrashLogger.log("Failed to persist terminal history for project $projectId")
         }
