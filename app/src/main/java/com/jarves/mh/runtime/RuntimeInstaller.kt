@@ -181,8 +181,8 @@ class RuntimeInstaller(private val context: Context) {
             check(staging.mkdirs() || staging.isDirectory) { "Could not create runtime staging directory" }
             extractZstdTar(archive, staging)
             stripMacosMetadataArtifacts(staging)
-            require(isRootfsCoreValid(staging)) { "Core bundle is missing Bash or the expected runtime marker" }
             check(ensureRootfsCompatibilityLinks(staging)) { "Core runtime has an invalid Linux filesystem layout" }
+            require(isRootfsCoreValid(staging)) { "Core bundle is missing required runtime files or the expected version marker" }
 
             RuntimeDirectoryTransaction.activate(
                 staging = staging,
@@ -2119,10 +2119,22 @@ class RuntimeInstaller(private val context: Context) {
      * making every ELF executable misleadingly fail with ENOENT. Restore only
      * the known Ubuntu compatibility links and never replace real directories.
      */
-    private fun isRootfsCoreValid(directory: File): Boolean =
-        directory.isDirectory &&
-            File(directory, "usr/bin/bash").isFile &&
-            File(directory, ".pocket-rootfs-version").readTextOrNull() == ROOTFS_VERSION
+    private fun isRootfsCoreValid(directory: File): Boolean {
+        if (!directory.isDirectory ||
+            !File(directory, "usr/bin/bash").canExecute() ||
+            !File(directory, ".pocket-rootfs-version").readTextOrNull().equals(ROOTFS_VERSION) ||
+            !File(directory, "usr/bin/env").canExecute() ||
+            !File(directory, "lib/ld-linux-aarch64.so.1").exists()
+        ) return false
+
+        return mapOf("bin" to "usr/bin", "lib" to "usr/lib", "sbin" to "usr/sbin").all { (name, destination) ->
+            val link = File(directory, name)
+            if (java.nio.file.Files.isSymbolicLink(link.toPath())) {
+                runCatching { java.nio.file.Files.readSymbolicLink(link.toPath()).toString() == destination }
+                    .getOrDefault(false)
+            } else link.isDirectory
+        }
+    }
 
     private fun ensureRootfsCompatibilityLinks(directory: File = rootfs): Boolean {
         if (!directory.isDirectory) return false
