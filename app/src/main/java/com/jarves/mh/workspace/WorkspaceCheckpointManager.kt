@@ -81,17 +81,34 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
      * Creates a full workspace snapshot checkpoint with metadata.
      */
     fun createCheckpoint(projectId: String, workspaceDir: File, label: String): WorkspaceCheckpoint? {
+        var pendingCheckpointDir: File? = null
+        var checkpointPublished = false
         return runCatching {
             val id = "ckpt_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
-            val checkpointDir = File(checkpointsBaseDir(projectId), id).apply { mkdirs() }
-            val backupDir = File(checkpointDir, "files").apply { mkdirs() }
+            val checkpointDir = File(checkpointsBaseDir(projectId), id)
+            pendingCheckpointDir = checkpointDir
+            check(checkpointDir.mkdirs() || checkpointDir.isDirectory) { "Could not create checkpoint staging directory" }
+            val backupDir = File(checkpointDir, "files")
+            check(backupDir.mkdirs() || backupDir.isDirectory) { "Could not create checkpoint files directory" }
 
             var fileCount = 0
             val relativePaths = mutableListOf<String>()
 
             val canonicalWorkspace = workspaceDir.canonicalFile
+            val workspacePath = canonicalWorkspace.toPath()
             canonicalWorkspace.walkTopDown()
-                .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
+                .onEnter { directory ->
+                    directory == canonicalWorkspace || (
+                        !java.nio.file.Files.isSymbolicLink(directory.toPath()) &&
+                            runCatching { directory.canonicalFile.toPath().startsWith(workspacePath) }.getOrDefault(false)
+                        )
+                }
+                .filter {
+                    it.isFile &&
+                        !java.nio.file.Files.isSymbolicLink(it.toPath()) &&
+                        !isIgnored(it, canonicalWorkspace) &&
+                        runCatching { it.canonicalFile.toPath().startsWith(workspacePath) }.getOrDefault(false)
+                }
                 .forEach { sourceFile ->
                     val relPath = sourceFile.relativeTo(canonicalWorkspace).invariantSeparatorsPath
                     val destFile = File(backupDir, relPath)
@@ -137,10 +154,16 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             val existing = listCheckpoints(projectId).toMutableList()
             existing.add(0, checkpoint)
             saveIndex(projectId, existing)
+            checkpointPublished = true
 
             AppCrashLogger.checkpoint("WorkspaceCheckpointCreated", "Project $projectId: ${checkpoint.label} ($fileCount files)")
             checkpoint
         }.getOrElse {
+            if (!checkpointPublished) {
+                pendingCheckpointDir?.let { incomplete ->
+                    runCatching { incomplete.deleteRecursively() }
+                }
+            }
             AppCrashLogger.log("Failed to create checkpoint: ${it.message}")
             null
         }
