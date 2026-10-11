@@ -43,12 +43,11 @@ Baseline: `main` at `a8a1740e397f5a5f366d7779cc979dd27c4005f5`
 - [ ] Review exclusions, glob handling, large-file limits, symlink behaviour and replacement failures.
 - [ ] Add undo/preview integration tests and verify file contents remain intact when writes fail.
 
-### E. Authentication diagnostics
-- [x] Remove the hard-coded Google OAuth client fallback and fail with a clear message if `default_web_client_id` is absent/invalid.
-- [x] Improve exception logging and avoid broad “message contains 10” error classification.
-- [ ] Confirm generated `default_web_client_id` exists in online debug and release resources.
-- [ ] After SHA-1 registration, test Google sign-in on the exact signed APK; validate cancellation, no eligible credential, successful Firebase credential exchange and provider errors.
-- [ ] Test email/password flows for regression. Facebook is not part of this Phase 1 acceptance gate unless the existing app flow exposes it.
+### E. Authentication diagnostics — owner-deferred
+- [x] Owner instruction: do not continue Google Sign-In work during this Phase 1 execution; do not spend Phase 1 time on SHA-1 registration or Google Sign-In device validation.
+- [x] Existing branch changes to authentication are not being extended or reworked in response to this instruction.
+- [ ] Deferred for a separately authorized authentication task: validate generated `default_web_client_id`, signed-APK Google Sign-In scenarios, and email/password regression.
+- Scope note: these deferred authentication checks are not Phase 1 exit blockers unless the owner explicitly brings them back into scope.
 
 ### F. CI and release gates
 - [x] Add the custom Phase 1 branch to the existing Android QA workflow's push trigger.
@@ -66,7 +65,7 @@ Baseline: `main` at `a8a1740e397f5a5f366d7779cc979dd27c4005f5`
 3. Checkpoint manifests were written using direct `File.writeText`. These writes now use `SafeFileOps.atomicWriteText` and fail explicitly if persistence fails.
 4. Regression tests were added/expanded for storage operations, global replacement beyond 500 preview matches, literal replacement strings and checkpoint persistence/path safety.
 5. The Phase 1 branch path in `.github/workflows/android.yml` runs online/offline unit tests and debug builds without release signing secrets. GitHub Actions run [`38168309273`](https://github.com/sunmughan/Mobile-Harness-Extended/actions/runs/38168309273), for commit `4aa75c2b32123bd3d21a66956b625a4d293ea426`, completed with conclusion **success**; both online and offline test/build steps completed successfully. Release/publish jobs were skipped as intended.
-6. Google sign-in remains **not device-verified** pending SHA-1 registration and a signed APK test. Firebase Google provider enablement is owner-confirmed; this is not being treated as the current blocker for other Phase 1 work.
+6. Per owner instruction, Google Sign-In and authentication validation are deferred from this Phase 1 execution. Do not touch authentication implementation or perform SHA-1/device-validation work unless separately authorized.
 
 ## Exit gate
 Phase 1 is complete only when all checklist items are either verified complete with evidence or explicitly agreed as out of scope by the project owner, all required CI/device tests pass, and a final diff review confirms no regressions. Code presence, a successful commit, or a workflow file alone is not proof of completion.
