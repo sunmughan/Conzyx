@@ -194,5 +194,45 @@ class WorkspaceCheckpointManagerTest {
         assertEquals("current user data", current.readText())
         assertEquals("outside must remain unchanged", File(outside, "inside.txt").readText())
     }
+
+    @Test
+    fun `checkpoint creation ignores symlinks that escape the workspace`() {
+        val filesDir = tempFolder.newFolder("symlink-source-files")
+        val workspace = tempFolder.newFolder("symlink-source-workspace")
+        val outside = tempFolder.newFolder("symlink-source-outside")
+        File(workspace, "safe.txt").writeText("safe")
+        File(outside, "secret.txt").writeText("outside data")
+        java.nio.file.Files.createSymbolicLink(
+            File(workspace, "linked-file.txt").toPath(),
+            File(outside, "secret.txt").toPath(),
+        )
+        java.nio.file.Files.createSymbolicLink(
+            File(workspace, "linked-directory").toPath(),
+            outside.toPath(),
+        )
+
+        val manager = WorkspaceCheckpointManager(filesDir)
+        val checkpoint = manager.createCheckpoint("symlink-source", workspace, "safe baseline")
+
+        assertNotNull(checkpoint)
+        assertEquals(1, checkpoint!!.fileCount)
+        val snapshot = File(filesDir, "checkpoints/symlink-source/snapshots/${checkpoint.id}/files")
+        assertEquals(setOf("safe.txt"), snapshot.walkTopDown().filter { it.isFile }.map { it.name }.toSet())
+        assertEquals("outside data", File(outside, "secret.txt").readText())
+    }
+
+    @Test
+    fun `failed checkpoint creation leaves no partial snapshot behind`() {
+        val filesDir = tempFolder.newFolder("failed-checkpoint-files")
+        val manager = WorkspaceCheckpointManager(filesDir)
+        val unavailableWorkspace = File(tempFolder.root, "workspace-that-does-not-exist")
+
+        assertEquals(null, manager.createCheckpoint("failed-project", unavailableWorkspace, "should fail"))
+        val snapshots = File(filesDir, "checkpoints/failed-project/snapshots")
+        assertTrue(snapshots.isDirectory)
+        assertTrue(snapshots.listFiles().orEmpty().isEmpty())
+        assertTrue(manager.listCheckpoints("failed-project").isEmpty())
+    }
+
 }
 
