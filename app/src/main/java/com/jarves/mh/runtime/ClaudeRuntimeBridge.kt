@@ -1,5 +1,7 @@
 package com.jarves.mh.runtime
 
+import com.jarves.mh.workspace.SafeFileOps
+
 import android.content.Context
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -764,7 +766,7 @@ class ClaudeRuntimeBridge(
             .filterNot(::isInternalRuntimePath)
             .distinct()
             .sorted()
-        manifest.writeText(JSONArray(merged).toString())
+        check(SafeFileOps.atomicWriteText(manifest, JSONArray(merged).toString())) { "Unable to persist checkpoint change manifest" }
     }
 
     private fun readChangedPaths(projectId: String): List<String> {
@@ -781,7 +783,7 @@ class ClaudeRuntimeBridge(
         if (remaining.isEmpty()) {
             checkpointDir(projectId).deleteRecursively()
         } else {
-            File(checkpointDir(projectId), "changes.json").writeText(JSONArray(remaining).toString())
+            check(SafeFileOps.atomicWriteText(File(checkpointDir(projectId), "changes.json"), JSONArray(remaining).toString())) { "Unable to persist checkpoint change manifest" }
         }
     }
 
