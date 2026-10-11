@@ -27,12 +27,34 @@ class WorkspaceCheckpoints(private val filesDir: File) {
 
     fun ensureWorkspace(projectId: String): File {
         validateProjectId(projectId)
-        val base = File(filesDir, "workspaces/$projectId").apply { mkdirs() }.canonicalFile
-        val rootPath = projectRoots[projectId].orEmpty()
-        if (rootPath.isBlank()) return base
-        val selected = File(base, rootPath).canonicalFile
+        val storageRoot = filesDir.canonicalFile
+        val workspacesRoot = File(storageRoot, "workspaces")
+        check(workspacesRoot.mkdirs() || workspacesRoot.isDirectory) { "Workspace storage is unavailable" }
+        val canonicalWorkspacesRoot = workspacesRoot.canonicalFile
+        require(canonicalWorkspacesRoot.toPath().startsWith(storageRoot.toPath())) {
+            "Workspace storage escapes app storage"
+        }
+
+        val projectDirectory = File(canonicalWorkspacesRoot, projectId)
+        require(!Files.isSymbolicLink(projectDirectory.toPath())) { "Project workspace cannot be a symbolic link" }
+        check(projectDirectory.mkdirs() || projectDirectory.isDirectory) { "Could not create project workspace" }
+        val base = projectDirectory.canonicalFile
+        require(base.toPath().startsWith(canonicalWorkspacesRoot.toPath())) { "Project workspace escapes storage" }
+
+        val configuredRoot = projectRoots[projectId].orEmpty()
+        if (configuredRoot.isBlank()) return base
+        var selectedPath = base
+        val segments = configuredRoot.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe project root" }
+        for (segment in segments) {
+            selectedPath = File(selectedPath, segment)
+            require(!Files.isSymbolicLink(selectedPath.toPath())) { "Project root cannot traverse symbolic links" }
+        }
+        val selected = selectedPath.canonicalFile
         require(selected.toPath().startsWith(base.toPath())) { "Unsafe project root" }
-        return selected.apply { mkdirs() }
+        check(selected.mkdirs() || selected.isDirectory) { "Could not create selected project root" }
+        require(selected.canonicalFile.toPath().startsWith(base.toPath())) { "Project root escapes workspace" }
+        return selected
     }
 
     fun configureProjectRoot(projectId: String, rootPath: String) {
