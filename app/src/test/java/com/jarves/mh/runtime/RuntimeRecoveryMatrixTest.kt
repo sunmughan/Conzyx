@@ -97,10 +97,10 @@ private class FakeInstallPipeline(
 }
 
 /** Minimal staging-commit writer mirroring the pattern SafeFileOps callers use. */
-private class StagedWriter(private val write: (File, String) -> Boolean) {
+private class StagedWriter(private val writeFn: (File, String) -> Boolean) {
     fun write(target: File, content: String): Boolean {
         val staging = File(target.parentFile, "${target.name}.staging_${System.nanoTime()}")
-        if (!runCatching { write(staging, content) }.getOrDefault(false)) {
+        if (!runCatching { writeFn(staging, content) }.getOrDefault(false)) {
             runCatching { staging.delete() }
             return false
         }
@@ -311,7 +311,7 @@ class RuntimeRecoveryMatrixTest {
         val target = File(dir, "data.json").apply { writeText("""{"v":1}""") }
 
         // Injected ENOSPC simulation: the write function reports failure.
-        val writer = StagedWriter(write = { _, _ -> false })
+        val writer = StagedWriter(writeFn = { _, _ -> false })
 
         assertFalse("write must report failure when storage gives out", writer.write(target, """{"v":2}"""))
         assertEquals("original content must survive the failed write", """{"v":1}""", target.readText())
@@ -326,7 +326,7 @@ class RuntimeRecoveryMatrixTest {
         val dir = tempFolder.newFolder("storage2")
         val target = File(dir, "data.json").apply { writeText("""{"v":1}""") }
 
-        val writer = StagedWriter(write = { _, _ -> throw IOException("No space left on device (ENOSPC)") })
+        val writer = StagedWriter(writeFn = { _, _ -> throw IOException("No space left on device (ENOSPC)") })
 
         assertFalse(writer.write(target, """{"v":2}"""))
         assertEquals("""{"v":1}""", target.readText())
@@ -346,25 +346,22 @@ class RuntimeRecoveryMatrixTest {
     fun `staged writer promotes content on success control`() {
         val dir = tempFolder.newFolder("storage3")
         val target = File(dir, "data.json")
-        // TEMPORARY DIAGNOSTIC 2: replicate StagedWriter's exact path construction.
-        val staging = File(target.parentFile, "${target.name}.staging_${System.nanoTime()}")
-        val diag = buildString {
-            append("target=${target.absolutePath} ")
-            append("parentFile=${target.parentFile?.absolutePath} ")
-            append("staging=${staging.absolutePath} ")
-            append("dir=${dir.absolutePath} ")
-            append("parentEqualsDir=${target.parentFile == dir} ")
-        }
-        val writeOk = runCatching { staging.writeText("""{"v":1}""") }.isSuccess
-        val stagingExists = staging.exists()
-        val renameOk = if (stagingExists) staging.renameTo(target) else false
+        // Control: StagedWriter must promote content when the write succeeds.
+        // Uses a real file write (not SafeFileOps, which depends on android.os.Build
+        // and has its own dedicated passing tests in SafeFileOpsTest); this test
+        // verifies the staging/promotion logic, not SafeFileOps.
+        val writer = StagedWriter(writeFn = { file, content ->
+            runCatching { file.writeText(content) }.isSuccess
+        })
+        assertTrue(writer.write(target, """{"v":1}"""))
+        assertEquals("""{"v":1}""", target.readText())
         assertTrue(
-            "DIAG2 $diag writeOk=$writeOk stagingExists=$stagingExists renameOk=$renameOk",
-            writeOk && stagingExists && renameOk,
+            "no staging debris may be left behind",
+            dir.listFiles()!!.none { it.name.contains(".staging_") },
         )
     }
 
-    // ------------------------------------------------------------------
+// ------------------------------------------------------------------
     // (e) Concurrent external edit between snapshot and check is detected.
     // ------------------------------------------------------------------
 
