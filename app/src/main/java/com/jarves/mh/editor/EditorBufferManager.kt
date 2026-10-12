@@ -48,6 +48,24 @@ class EditorBufferManager {
         )
     }
 
+    /**
+     * Restores a persisted view state without clamping (used for session
+     * restore, where the buffer may be a placeholder until the file loads;
+     * clamping happens when real content arrives via [syncFromDisk]).
+     */
+    fun restoreViewState(path: String, viewState: EditorViewState) {
+        val existing = buffers[path] ?: run {
+            buffers[path] = EditorBuffer(
+                path = path,
+                currentContent = "",
+                savedContent = "",
+                viewState = viewState,
+            )
+            return
+        }
+        buffers[path] = existing.copy(viewState = viewState)
+    }
+
     /** Marks [path] as saved: disk and buffer agree again. */
     fun markSaved(path: String, content: String) {
         val existing = buffers[path] ?: run {

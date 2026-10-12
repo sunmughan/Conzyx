@@ -98,6 +98,18 @@ class EditorBufferManagerTest {
     }
 
     @Test
+    fun restoreViewStateDoesNotClampPlaceholder() {
+        val manager = EditorBufferManager()
+        // Session restore for a clean tab: placeholder buffer, real cursor.
+        manager.restoreViewState("a.txt", EditorViewState(cursorOffset = 42, scrollLine = 10))
+        assertEquals(42, manager.getBuffer("a.txt")?.viewState?.cursorOffset)
+        // When the real file loads, the view state clamps to content length.
+        manager.syncFromDisk("a.txt", "short")
+        assertEquals(5, manager.getBuffer("a.txt")?.viewState?.cursorOffset)
+        assertEquals(10, manager.getBuffer("a.txt")?.viewState?.scrollLine)
+    }
+
+    @Test
     fun sessionStoreRoundTripPreservesDirtyBuffersAndViewState() {
         val dir = Files.createTempDirectory("editor-session-test").toFile()
         try {

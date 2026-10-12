@@ -432,12 +432,10 @@ class EditorCoordinator(
             bufferManager.updateViewState(buffer.path, buffer.viewState)
         }
         // Restore view states for clean tabs too (they have no persisted buffer).
+        // restoreViewState does not clamp: the buffer is a placeholder until
+        // the file loads, and syncFromDisk clamps when real content arrives.
         session.viewStates.forEach { (path, viewState) ->
-            if (bufferManager.getBuffer(path) == null) {
-                bufferManager.openBuffer(path, "")
-                bufferManager.markSaved(path, "")
-            }
-            bufferManager.updateViewState(path, viewState)
+            bufferManager.restoreViewState(path, viewState)
         }
         host.updateState {
             it.copy(

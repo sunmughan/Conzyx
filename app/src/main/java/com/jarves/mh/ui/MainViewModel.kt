@@ -1625,7 +1625,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val terminal = loadProjectTerminal(project)
         // Milestone 2: restore the persisted editor session (dirty buffers,
         // cursor/scroll, split state) before the UI reads tab state.
-        val editorSession = editorCoordinator.restoreEditorSession(project)
+        editorCoordinator.restoreEditorSession(project)
         val savedTabs = preferences.getOpenEditorTabs(project.id)
         val initialOpenedPath = savedTabs.firstOrNull()
         val suggestedRoot = if (project.rootPath.isBlank()) detectNestedProjectRoot(project) else null
