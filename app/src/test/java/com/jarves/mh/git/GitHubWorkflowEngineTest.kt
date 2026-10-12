@@ -5,7 +5,6 @@ import com.jarves.mh.git.workflow.GitHubWorkflowEngine
 import com.jarves.mh.git.workflow.WorkflowStage
 import com.jarves.mh.git.workflow.WorkflowStepStatus
 import com.jarves.mh.network.GitHubClient
-import com.jarves.mh.network.GitHubClient
 import com.jarves.mh.network.GitHubIssue
 import com.jarves.mh.network.GitHubPullRequest
 import com.jarves.mh.workspace.GitDomainController
