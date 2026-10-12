@@ -101,6 +101,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import com.jarves.mh.ui.coordinators.isClaudeRuntimeMetadata
+import com.jarves.mh.ui.coordinators.guestRootFor
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -891,7 +892,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             "-Pandroid.aapt2FromMavenOverride=/root/android-sdk/build-tools/35.0.0/aapt2 " +
                             "--no-daemon assembleDebug --console=plain",
                     ),
-                    projectGuestRoot(project),
+                    guestRootFor(project),
                 )
                 val exitCode = process.waitFor()
                 val rawBuildOutput = (process as? NativeSpawnProcess)?.outputFile?.readTailText(MAX_PROCESS_OUTPUT_BYTES).orEmpty()
@@ -2424,7 +2425,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             slug = slug,
         )
         configureBridgeRoots(project.id, project.rootPath)
-        val guestRoot = projectGuestRoot(project)
+        val guestRoot = guestRootFor(project)
         _state.update {
             it.copy(
                 projects = listOf(project) + it.projects,
@@ -2730,7 +2731,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 configureBridgeRoots(updated.id, updated.rootPath)
                 val projects = _state.value.projects.map { if (it.id == updated.id) updated else it }
                 preferences.saveProjects(projects)
-                val guestRoot = projectGuestRoot(updated)
+                val guestRoot = guestRootFor(updated)
                 _state.update { state ->
                     state.copy(
                         projects = projects,
@@ -2768,9 +2769,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val updated = project.copy(rootPath = normalized, updatedAtMillis = System.currentTimeMillis())
         configureBridgeRoots(updated.id, updated.rootPath)
         val projects = current.projects.map { if (it.id == updated.id) updated else it }
-        val guestRoot = projectGuestRoot(updated)
+        val guestRoot = guestRootFor(updated)
         preferences.saveProjects(projects)
-        saveProjectTerminal(updated.id, guestRoot, current.projectTerminalLines)
+        terminalCoordinator.saveProjectTerminal(updated.id, guestRoot, current.projectTerminalLines)
         _state.update {
             it.copy(
                 projects = projects,
@@ -2856,9 +2857,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val updated = project.copy(rootPath = root)
         configureBridgeRoots(updated.id, updated.rootPath)
         val projects = current.projects.map { if (it.id == updated.id) updated else it }
-        val guestRoot = projectGuestRoot(updated)
+        val guestRoot = guestRootFor(updated)
         preferences.saveProjects(projects)
-        saveProjectTerminal(updated.id, guestRoot, current.projectTerminalLines)
+        terminalCoordinator.saveProjectTerminal(updated.id, guestRoot, current.projectTerminalLines)
         _state.update {
             it.copy(
                 projects = projects,
@@ -3574,7 +3575,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             modeInstruction = modeInstruction,
             mentionedPaths = mentionedPaths,
             attachments = attachments,
-            guestRoot = projectGuestRoot(project),
+            guestRoot = guestRootFor(project),
             skillContext = skillManager.buildPromptContext(state.value.agentKind),
         )
         failedApiKeyIds.clear()
@@ -4337,7 +4338,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 appendLine("<mentioned_files>")
                 appendLine("The user explicitly referenced these workspace files with @mentions. Inspect the referenced files before deciding what to change; they are context pointers, not permission to modify other files.")
                 mentionedPaths.forEach { relativePath ->
-                    appendLine("- " + projectGuestRoot(project) + "/" + relativePath)
+                    appendLine("- " + guestRootFor(project) + "/" + relativePath)
                 }
                 appendLine("</mentioned_files>")
             }
@@ -4345,7 +4346,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 appendLine()
                 appendLine("<attached_files>")
                 attachments.forEach { attachment ->
-                    appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+                    appendLine("- ${attachment.displayName}: ${guestRootFor(project)}/${attachment.relativePath} (${attachment.mimeType})")
                 }
                 appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
                 appendLine("</attached_files>")
@@ -4606,6 +4607,75 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun removeSkill(name: String) =
         skillsCoordinator.removeSkill(name)
+
+    // Milestone 1: restored — these were accidentally dropped by the
+    // Security/MCP/Skills extraction (commit b4cd244); bodies verbatim
+    // from the pre-extraction file.
+    private fun touchProject(projectId: String) {
+        val now = System.currentTimeMillis()
+        _state.update { current ->
+            val updatedProjects = current.projects.map { p ->
+                if (p.id == projectId) p.copy(updatedAtMillis = now) else p
+            }
+            val active = if (current.activeProject?.id == projectId) current.activeProject?.copy(updatedAtMillis = now) else current.activeProject
+            current.copy(projects = updatedProjects, activeProject = active)
+        }
+        preferences.saveProjects(_state.value.projects)
+    }
+
+    private fun persistMessages(includeLiveProcess: Boolean = true) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        val chatId = current.activeChatId ?: return
+        val liveItems = if (includeLiveProcess) current.liveProcess.filterNot(::isNoisyRuntimeItem) else emptyList()
+        val messages = if (liveItems.isEmpty() && !current.liveThinking) {
+            current.messages
+        } else {
+            val startedAt = current.workSegmentStartedAtMillis ?: current.taskStartedAtMillis ?: System.currentTimeMillis()
+            current.messages + ChatMessage(
+                id = "interrupted-${current.activeSessionId ?: chatId}",
+                fromUser = false,
+                text = "",
+                workItems = liveItems.map { it.copy(isComplete = true) } + ActivityItem(
+                    "Task interrupted",
+                    "The agent process stopped before reporting completion. Continue this chat to resume its official session.",
+                ),
+                workedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+            )
+        }
+        transcriptWrites.trySend(TranscriptWrite(project.id, chatId, messages))
+    }
+
+    private fun openExternalUrl(url: String) {
+        runCatching {
+            getApplication<Application>().startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure {
+            _state.update { state -> state.copy(toastMessage = "Could not open the browser. Copy the URL instead.") }
+        }
+    }
+
+    private fun updateActiveChatTitle(prompt: String) {
+        val project = _state.value.activeProject ?: return
+        val chatId = _state.value.activeChatId ?: return
+        val now = System.currentTimeMillis()
+        val title = prompt.replace(Regex("\\s+"), " ").trim().let {
+            if (it.length <= 42) it else it.take(39).trimEnd() + "…"
+        }
+        _state.update { current ->
+            val chats = current.projectChats.map { chat ->
+                if (chat.id == chatId) {
+                    chat.copy(
+                        title = if (chat.title == "New chat") title else chat.title,
+                        updatedAtMillis = now,
+                    )
+                } else chat
+            }.sortedByDescending { it.updatedAtMillis }
+            current.copy(projectChats = chats)
+        }
+        preferences.saveProjectChats(project.id, _state.value.projectChats)
+    }
 
     fun toggleAutoUpdateToolsAndSkills(enabled: Boolean) =
         skillsCoordinator.toggleAutoUpdateToolsAndSkills(enabled)
@@ -4960,7 +5030,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         val project = _state.value.activeProject ?: return
         val dir = projectWorkspaceRoot(project)
         val repo = _state.value.gitConnectedRepo ?: project.name
-        val guestPath = projectGuestRoot(project)
+        val guestPath = guestRootFor(project)
 
         viewModelScope.launch {
             // Explicit, validated token retrieval: blank token fails the workflow fast (engine-side).

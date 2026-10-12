@@ -555,7 +555,25 @@ class TerminalCoordinator(
     private fun terminalHistoryFile(projectId: String): File =
         File(host.appContext.filesDir, "terminal-history/$projectId.json")
 
-    private fun projectGuestRoot(project: Project): String = "/workspace/${project.slug}"
+    internal fun saveProjectTerminal(projectId: String, cwd: String, lines: List<TerminalOutputLine>) {
+        runCatching {
+            val file = terminalHistoryFile(projectId)
+            file.parentFile?.mkdirs()
+            val array = JSONArray()
+            lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY).forEach { line ->
+                array.put(
+                    JSONObject()
+                        .put("id", line.id)
+                        .put("command", line.command)
+                        .put("output", line.output.takeLast(MAX_PROJECT_TERMINAL_OUTPUT))
+                        .put("exitCode", line.exitCode),
+                )
+            }
+            file.writeText(JSONObject().put("cwd", cwd).put("lines", array).toString())
+        }
+    }
+
+    private fun projectGuestRoot(project: Project): String = guestRootFor(project)
 
     private fun requiresAndroidToolchain(command: String): Boolean =
         Regex("(?m)(^|[;&|]\\s*)(?:\\./)?gradle(?:w)?(?:\\s|$)", RegexOption.IGNORE_CASE).containsMatchIn(command)
@@ -565,3 +583,12 @@ class TerminalCoordinator(
         private const val MAX_PROJECT_TERMINAL_OUTPUT = 200_000
     }
 }
+
+/**
+ * Shared guest-workspace-root helper (Milestone 1).
+ *
+ * Identical logic to the former `MainViewModel.projectGuestRoot` private
+ * helper; promoted to package-internal so both the coordinator and the
+ * ViewModel share one definition.
+ */
+internal fun guestRootFor(project: com.jarves.mh.model.Project): String = "/workspace/${project.slug}"
