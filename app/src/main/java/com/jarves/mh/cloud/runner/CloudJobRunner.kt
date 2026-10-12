@@ -25,6 +25,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Real remote dispatch (authenticated job API, log streaming, artifact download and
  * verification) is Milestone 11 work; until then the cloud path honestly reports
  * NOT_CONFIGURED.
+ *
+ * Milestone 11 update: pass a [cloudOrchestrator] (M11 protocol) to enable real
+ * remote dispatch. When it is null, the cloud path keeps reporting NOT_CONFIGURED.
  */
 class CloudJobRunner(
     /**
@@ -37,6 +40,13 @@ class CloudJobRunner(
      * and for wiring the PRoot runtime environment.
      */
     private val localCommandRunner: (command: String) -> OperationResult = ::defaultLocalCommandRunner,
+    /**
+     * M11 real cloud execution orchestrator. When set, cloud-routed jobs are
+     * dispatched through the authenticated worker API (delta upload, log
+     * streaming, artifact verification, cost controls). When null, the cloud
+     * path honestly reports NOT_CONFIGURED.
+     */
+    private val cloudOrchestrator: com.jarves.mh.cloud.exec.CloudExecutionOrchestrator? = null,
 ) {
 
     private val runningJobs = ConcurrentHashMap<String, Boolean>()
@@ -72,6 +82,12 @@ class CloudJobRunner(
             appendLog("[CloudRunner] Probing worker ${worker.name} (${worker.region}) at ${worker.endpointUrl} ...")
             if (!isRunning(jobId)) {
                 return job.copy(state = HybridJobState.CANCELLED, finishedAt = System.currentTimeMillis())
+            }
+            val orchestrator = cloudOrchestrator
+            if (orchestrator != null) {
+                appendLog("[CloudRunner] Dispatching '${job.title}' to ${worker.name} via the M11 cloud execution protocol ...")
+                runningJobs.remove(jobId)
+                return orchestrator.executeCloudJob(job, worker, onLogChunk = ::appendLog)
             }
             if (!runCatching { workerReachability(worker) }.getOrDefault(false)) {
                 appendLog("[CloudRunner] Worker endpoint is not reachable: ${worker.endpointUrl}")
@@ -162,6 +178,7 @@ class CloudJobRunner(
 
     fun cancel(jobId: String) {
         runningJobs[jobId] = false
+        cloudOrchestrator?.cancel(jobId)
     }
 
     fun isRunning(jobId: String): Boolean = runningJobs[jobId] ?: false
