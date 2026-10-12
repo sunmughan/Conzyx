@@ -44,7 +44,7 @@ class CloudCodeRuntimeBridge(
     }
 
     override suspend fun stopSession(sessionId: String) {
-        eventBus.emit(RuntimeEvent.SessionStopped(sessionId))
+        eventBus.emit(RuntimeEvent.SessionCompleted(sessionId))
     }
 
     override suspend fun stopActiveSession() {
