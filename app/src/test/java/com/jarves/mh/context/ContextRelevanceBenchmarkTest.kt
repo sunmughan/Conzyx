@@ -65,7 +65,7 @@ class ContextRelevanceBenchmarkTest {
             package com.example.auth
 
             class TokenManager {
-                fun issue(username: String): String = "tok-$username"
+                fun issue(username: String): String = "tok-${'$'}username"
                 fun validate(token: String): Boolean = token.startsWith("tok-")
                 fun revoke(token: String) { /* ... */ }
             }
