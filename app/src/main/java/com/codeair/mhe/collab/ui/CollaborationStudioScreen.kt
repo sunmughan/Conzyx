@@ -709,7 +709,7 @@ private fun CodeReviewsTabContent(
 
         if (comments.isEmpty()) {
             item {
-                Text("No open review comments. All code changes approved!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Code review threads appear here when teammates comment on changes. Start the first thread to request a review.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             items(comments) { comment ->
@@ -821,7 +821,7 @@ private fun CheckpointsAndJobsTabContent(
 
         if (checkpoints.isEmpty()) {
             item {
-                Text("No shared checkpoints yet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Checkpoints save the team's shared workspace state. Create one before a risky change so anyone can restore it.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             items(checkpoints) { cp ->
@@ -869,7 +869,7 @@ private fun CheckpointsAndJobsTabContent(
 
         if (agentJobs.isEmpty()) {
             item {
-                Text("No shared agent jobs dispatched.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Shared agent sessions let the whole team watch an AI work on the same task. Dispatch one to get started.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             items(agentJobs) { job ->

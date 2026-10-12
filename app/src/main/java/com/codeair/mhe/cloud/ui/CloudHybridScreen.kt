@@ -558,7 +558,7 @@ private fun HybridJobsPipelineTab(coordinator: CloudHybridCoordinator) {
 
     if (allJobs.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No jobs executed yet. Trigger a task from the Telemetry tab.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Cloud jobs appear here after you run a task. Trigger one from the Telemetry tab to see routing in action.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     } else {
         LazyColumn(
