@@ -119,7 +119,7 @@ class CheckpointStore(private val baseDir: File) {
                     .put("exitCode", res.exitCode ?: JSONObject.NULL)
                     .put("error", res.error ?: JSONObject.NULL)
                     .put("verificationEvidence", res.verificationEvidence ?: JSONObject.NULL)
-                    .put("logs", JSONArray(res.logs))
+                    .put("logs", JSONArray(res.logs)))
             }
             results.put(id, o)
         }
