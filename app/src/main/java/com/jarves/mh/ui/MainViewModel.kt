@@ -520,6 +520,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ),
     )
 
+    // ---- Milestone 1: moved above init — the init block deletes stale terminal history. ----
+    private val coordinatorHost = com.jarves.mh.ui.coordinators.CoordinatorHost(
+        appContext = getApplication(),
+        scope = viewModelScope,
+        state = { _state.value },
+        updateState = { transform -> _state.update(transform) },
+        showToast = { message -> showToast(message) },
+    )
+
+    private val terminalCoordinator =
+        com.jarves.mh.ui.coordinators.TerminalCoordinator(
+            host = coordinatorHost,
+            installer = installer,
+            terminalSessionController = terminalSessionController,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            refreshProjectFiles = { refreshProjectFiles() },
+        )
     init {
         AppCrashLogger.log("MainViewModel.init entered")
         // GitHub's official CLI owns its OAuth credential. Remove credentials from
@@ -664,13 +681,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ---- Milestone 1: domain coordinators extracted from this ViewModel. ----
     // Each coordinator owns one domain's operations and state machine;
     // MainViewModel keeps a stable public API by delegating to them.
-    private val coordinatorHost = com.jarves.mh.ui.coordinators.CoordinatorHost(
-        appContext = getApplication(),
-        scope = viewModelScope,
-        state = { _state.value },
-        updateState = { transform -> _state.update(transform) },
-        showToast = { message -> showToast(message) },
-    )
     private val marketplaceCoordinator =
         com.jarves.mh.ui.coordinators.MarketplaceCoordinator(coordinatorHost, marketplaceInstallManager)
     private val teamCoordinator =
@@ -731,14 +741,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences = preferences,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             openProject = { project -> openProject(project) },
-        )
-    private val terminalCoordinator =
-        com.jarves.mh.ui.coordinators.TerminalCoordinator(
-            host = coordinatorHost,
-            installer = installer,
-            terminalSessionController = terminalSessionController,
-            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
-            refreshProjectFiles = { refreshProjectFiles() },
         )
     private val projectsCoordinator =
         com.jarves.mh.ui.coordinators.ProjectsCoordinator(
