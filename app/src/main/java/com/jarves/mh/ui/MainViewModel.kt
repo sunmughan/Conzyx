@@ -4350,6 +4350,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     error("This file is too large to edit safely in the mobile editor")
                 }
                 if (existing != null && existing.readText() == content) return@runCatching Unit
+                val originalBytes = existing?.readBytes()
 
                 editorCheckpoints.createCheckpoint(project.id, workspace)
                 check(target.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
@@ -4358,7 +4359,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 check(SafeFileOps.atomicWriteText(target, content)) {
                     "Could not safely save $path"
                 }
-                editorCheckpoints.saveChangedPaths(project.id, listOf(path))
+                try {
+                    editorCheckpoints.saveChangedPaths(project.id, listOf(path))
+                } catch (manifestFailure: Throwable) {
+                    // The editor save is one logical operation: if its change manifest
+                    // cannot be committed, restore the pre-edit bytes (or remove a newly
+                    // created file) so the UI never reports failure after leaving an
+                    // untracked partial edit behind.
+                    val reverted = runCatching {
+                        if (originalBytes != null) {
+                            check(SafeFileOps.atomicWriteBytes(target, originalBytes)) {
+                                "Could not restore the original file after manifest failure"
+                            }
+                        } else {
+                            check(!target.exists() || target.delete()) {
+                                "Could not remove the new file after manifest failure"
+                            }
+                        }
+                    }
+                    reverted.exceptionOrNull()?.let(manifestFailure::addSuppressed)
+                    throw manifestFailure
+                }
             }
         }
         return result.fold(
