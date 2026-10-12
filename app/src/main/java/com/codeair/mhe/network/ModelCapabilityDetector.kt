@@ -167,7 +167,7 @@ object ModelCapabilityDetector {
             "gpt-5" to 400_000,
             "gemini-2" to 1_000_000,
             "gemini-1.5" to 1_000_000,
-            "llama-3.2-vision" to 128_000,
+            "llama-3.2" to 128_000, // 90B/11B are vision; 1B/3B text fall through harmlessly as vision=false only if unmatched below
             "llama-4-scout" to 10_000_000,
             "llama-4-maverick" to 1_000_000,
             "qwen2.5-vl" to 128_000,
@@ -176,7 +176,11 @@ object ModelCapabilityDetector {
             "pixtral" to 128_000,
         )
         for ((family, ctx) in visionFamilies) {
-            if (family in id) return DetectedModelCapabilities(true, ctx)
+            if (family in id) {
+                // llama-3.2 1B/3B text models are not vision; only the 11B/90B vision ones are.
+                if (family == "llama-3.2" && "vision" !in id) continue
+                return DetectedModelCapabilities(true, ctx)
+            }
         }
         // Text-only families.
         val textFamilies = listOf(
