@@ -4878,15 +4878,15 @@ private fun WorkspaceScreen(
             // Milestone 2 — persistent buffers: restore cursor, track edits.
             initialViewState = state.openedFilePath?.let { state.editorViewStates[it] },
             onContentChanged = { updatedText ->
-                state.openedFilePath?.let { viewModel.onEditorContentChanged(it, updatedText) }
+                state.openedFilePath?.let { viewModel?.onEditorContentChanged(it, updatedText) }
             },
             onViewStateChanged = { viewState ->
-                state.openedFilePath?.let { viewModel.onEditorViewStateChanged(it, viewState) }
+                state.openedFilePath?.let { viewModel?.onEditorViewStateChanged(it, viewState) }
             },
             // Milestone 2 — rename with preview + undo.
-            onPlanRename = { oldName, newName -> viewModel.planRenameSymbol(oldName, newName) },
-            onApplyRename = { preview -> viewModel.applyRenameSymbol(preview) },
-            onUndoRename = { viewModel.undoLastRename() },
+            onPlanRename = { oldName, newName -> viewModel?.planRenameSymbol(oldName, newName) },
+            onApplyRename = { preview -> viewModel?.applyRenameSymbol(preview) },
+            onUndoRename = { viewModel?.undoLastRename() },
         )
         return
     }
