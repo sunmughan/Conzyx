@@ -346,7 +346,13 @@ class RuntimeRecoveryMatrixTest {
     fun `staged writer promotes content on success control`() {
         val dir = tempFolder.newFolder("storage3")
         val target = File(dir, "data.json")
-        val writer = StagedWriter(write = SafeFileOps::atomicWriteText)
+        // Control: StagedWriter must promote content when the write succeeds.
+        // Uses a real file write (not SafeFileOps, which depends on android.os.Build
+        // and has its own dedicated passing tests in SafeFileOpsTest); this test
+        // verifies the staging/promotion logic, not SafeFileOps.
+        val writer = StagedWriter(write = { file, content ->
+            runCatching { file.writeText(content) }.isSuccess
+        })
         assertTrue(writer.write(target, """{"v":1}"""))
         assertEquals("""{"v":1}""", target.readText())
     }
