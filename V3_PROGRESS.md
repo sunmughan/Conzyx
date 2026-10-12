@@ -226,3 +226,31 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 **Deliberately deferred:**
 - Model-exact tokenizers (tiktoken etc.) — interface + registry ready; approximate tokenizer honestly labelled until a model-specific one is bundled.
 - Semantic vector retrieval — ranking is over real symbol/dependency graphs, not embeddings; honestly scoped.
+
+## Milestone 5 — COMPLETE (2026-10-12)
+
+**Safety gateway** (Phase 6, before autonomous writes). All four checklist items implemented. CI green (run 38248702993).
+
+### Single gateway for all side effects
+- `security/SafetyOperation.kt` (new): sealed hierarchy — `FileOp` (READ/CREATE/WRITE/DELETE), `ShellExec`, `GitOp` (COMMIT/PUSH/BRANCH/CLONE/FETCH), `McpToolCall`, `NetworkRequest`, `ApkInstall`, `RemoteExec`. Each carries a `describe()` used verbatim in prompts and audit logs.
+- `security/SafetyGateway.kt` (new): the single choke point. Decision order per operation: (1) emergency kill switch denies everything; (2) path audit — traversal/symlink/absolute-escape is a hard deny, never promptable; (2b) dangerous-command audit for non-shell command carriers (remote exec) so a critical payload cannot bypass detection by switching provider; (3) MCP tool calls consult `McpPermissionManager`, DENY wins; (4) `PermissionPolicyEngine` evaluation (dangerous commands, sensitive files, explicit deny, grants, baselines). `requireAllowed()` throws `SafetyDeniedException` on DENY — no bypass path.
+- `security/ProviderSafetyAdapters.kt` (new): `FileSafetyAdapter`, `ShellSafetyAdapter`, `GitSafetyAdapter`, `McpSafetyAdapter`, `NetworkSafetyAdapter`, `ApkSafetyAdapter`, `RemoteWorkSafetyAdapter`. Each routes through the gateway; the effect lambda runs ONLY on ALLOW. DENY throws `SafetyDeniedException`, PROMPT throws `SafetyPromptRequiredException` carrying the precise prompt.
+
+### Path traversal / symlink / command-chain audit
+- `security/PathSecurityAuditor.kt` (new): pure-JVM, deterministic. Rejects null bytes/control chars, `..` segments escaping the base (structural depth check), absolute paths outside the allowed root, and symlink escapes — classified by comparing lexical containment (no resolution) vs resolved containment (real path, tolerating non-existent tails via nearest-existing-ancestor resolution). Lexically-inside but resolved-outside = `SYMLINK_ESCAPE`; lexically-outside = `ABSOLUTE_ESCAPE`.
+- Command chains already split and inspected per sub-command by `DangerousCommandDetector` (`;`, `&&`, `||`, `|`, newlines); the gateway additionally applies it to remote-exec commands.
+
+### Precise authorization prompts, persistent by intended scope
+- `security/AuthorizationPrompt.kt` (new): prompt model naming the exact operation and target, assessed `PromptRisk` (LOW/MEDIUM/HIGH/CRITICAL), what will happen if allowed, and the grant scopes on offer (high-risk operations offer only ONCE/SESSION). `renderText()` for UI display.
+- `SafetyGateway.recordGrant()`: grants persist by intended scope — PROJECT/ALWAYS persisted to disk via `PermissionPolicyEngine` (and MCP tool grants via `McpPermissionManager`); SESSION/ONCE live in memory only, by design. Tests prove PROJECT/ALWAYS survive engine recreation and SESSION does not.
+
+### Deny/approve test matrix for all providers (acceptance gate)
+- `SafetyTestMatrix` (test, shared): 23 deterministic cases across all 7 provider families — allow/baseline, prompt, explicit-deny, traversal, chained-critical, kill-switch, MCP-deny cases.
+- `ProviderSafetyMatrixTest`: every adapter runs the SAME matrix. Gate assertion: on DENY the effect lambda never executes (`SafetyDeniedException`); on PROMPT it never executes (`SafetyPromptRequiredException`); on ALLOW it runs and returns. A critical `rm -rf /` via remote exec is denied (gateway-level command audit closed the SHELL_EXEC-only gap in the policy engine).
+- `PathSecurityAuditorTest` (10): traversal, absolute escape, null byte, empty path, real-symlink escape (existing + non-existent tail), in-root symlink allowed.
+- `AuthorizationPromptTest` (8): prompt precision per operation kind, risk levels, scope narrowing for high risk.
+- `SafetyGatewayTest` (14): gateway decisions, MCP deny precedence, kill switch over all families, grant persistence by scope, audit-log writes.
+
+**Deliberately deferred:**
+- Rewiring every existing call site (terminal, git engine, cloud runner, installer) to the adapters — the gateway + adapters are the choke point and fully tested; call-site migration is M6 work when the autonomous workflow starts producing writes.
+- Remote MCP transport/auth — M7 scope.
