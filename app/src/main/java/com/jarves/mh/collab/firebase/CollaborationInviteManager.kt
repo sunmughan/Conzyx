@@ -29,6 +29,21 @@ open class CollaborationInviteManager(
             ?.let { WorkspaceMemberDocument.fromMap(it) }
     }
 
+    /**
+     * Resolves the caller's membership, converting transport failures into an
+     * honest [OperationResult] instead of letting the exception escape.
+     * Returns (member, null) on success or (null, failure) when the lookup failed.
+     */
+    private suspend fun resolveCaller(
+        workspaceId: String
+    ): Pair<WorkspaceMemberDocument?, OperationResult?> {
+        return try {
+            callerMember(workspaceId) to null
+        } catch (e: Exception) {
+            null to OperationResult.failure("Failed to verify workspace membership: ${e.message}")
+        }
+    }
+
     private fun callerCanInvite(member: WorkspaceMemberDocument?): OperationResult? {
         if (member == null) {
             return OperationResult.failure("You are not a member of this workspace, so you cannot manage invites.")
@@ -59,7 +74,9 @@ open class CollaborationInviteManager(
         if (role == TeamMemberRole.OWNER) {
             return OperationResult.failure("Invites cannot grant the Owner role directly.")
         }
-        callerCanInvite(callerMember(workspaceId))?.let { return it }
+        val (caller, lookupFailure) = resolveCaller(workspaceId)
+        lookupFailure?.let { return it }
+        callerCanInvite(caller)?.let { return it }
 
         val now = clock()
         val invite = InviteDocument(
@@ -133,7 +150,9 @@ open class CollaborationInviteManager(
     suspend fun revokeInvite(workspaceId: String, code: String): OperationResult {
         val uid = identity.currentUid()
         requireSignedIn(uid, "revoke an invite")?.let { return it }
-        callerCanInvite(callerMember(workspaceId))?.let { return it }
+        val (caller, lookupFailure) = resolveCaller(workspaceId)
+        lookupFailure?.let { return it }
+        callerCanInvite(caller)?.let { return it }
 
         val path = FirestorePaths.invite(workspaceId, code.trim().uppercase())
         val raw = runCatching { gateway.getDocument(path) }.getOrElse { e ->
@@ -158,8 +177,11 @@ open class CollaborationInviteManager(
     suspend fun changeRole(workspaceId: String, memberUid: String, newRole: TeamMemberRole): OperationResult {
         val uid = identity.currentUid()
         requireSignedIn(uid, "change a member role")?.let { return it }
-        val caller = callerMember(workspaceId)
-            ?: return OperationResult.failure("You are not a member of this workspace.")
+        val (caller, lookupFailure) = resolveCaller(workspaceId)
+        lookupFailure?.let { return it }
+        if (caller == null) {
+            return OperationResult.failure("You are not a member of this workspace.")
+        }
         if (caller.role != TeamMemberRole.OWNER) {
             return OperationResult.failure("Only the workspace Owner can change member roles.")
         }
@@ -192,8 +214,11 @@ open class CollaborationInviteManager(
     suspend fun removeMember(workspaceId: String, memberUid: String): OperationResult {
         val uid = identity.currentUid()
         requireSignedIn(uid, "remove a member")?.let { return it }
-        val caller = callerMember(workspaceId)
-            ?: return OperationResult.failure("You are not a member of this workspace.")
+        val (caller, lookupFailure) = resolveCaller(workspaceId)
+        lookupFailure?.let { return it }
+        if (caller == null) {
+            return OperationResult.failure("You are not a member of this workspace.")
+        }
         val isSelf = memberUid == uid
         val callerPerms = TeamPermissions.forRole(caller.role)
         if (!isSelf && !callerPerms.canInviteMembers) {

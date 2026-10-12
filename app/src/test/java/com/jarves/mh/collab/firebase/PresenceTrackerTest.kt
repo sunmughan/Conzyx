@@ -40,7 +40,7 @@ class PresenceTrackerTest {
         t.heartbeat("ws1", "Ada", "Pixel")
         now = 10_000L + 60_000L // 1 minute later: still fresh (staleAfter = 2 min)
         tracker(gw, "u2").heartbeat("ws1", "Bo", "OnePlus")
-        now = 10_000L + 60_000L + 3 * 60_000L // Ada's heartbeat now 4 min old
+        now = 150_000L // Ada's heartbeat now 140s old (stale), Bo's 80s old (fresh)
         val active = t.listActive("ws1")
         assertEquals(1, active.size)
         assertEquals("u2", active[0].uid)
