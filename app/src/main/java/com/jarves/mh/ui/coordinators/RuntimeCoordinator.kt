@@ -94,7 +94,8 @@ class RuntimeCoordinator(
             .checkDevice(com.jarves.mh.core.resources.AndroidResourceProbe(host.appContext))
         if (!resourceCheck.isSuccess) {
             host.updateState { it.copy(toastMessage = resourceCheck.error) }
-        }        val setupSnapshot = RuntimeSetupController.snapshot.value
+        }
+        val setupSnapshot = RuntimeSetupController.snapshot.value
         if (setupSnapshot.status == RuntimeSetupStatus.RUNNING) {
             onSetupSnapshot(setupSnapshot)
             resumeRuntimeSetupService()

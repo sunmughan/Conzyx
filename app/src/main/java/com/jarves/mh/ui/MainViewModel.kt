@@ -636,7 +636,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val keep = userMessages > 0 || userFiles > 0
                 if (!keep) {
                     workspaceDir.deleteRecursively()
-                    terminalHistoryFile(project.id).delete()
+                    terminalCoordinator.deleteTerminalHistory(project.id)
                     preferences.deleteProjectChats(project.id)
                 }
                 keep
@@ -1710,7 +1710,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 preferences.saveProjects(_state.value.projects)
                 viewModelScope.launch(Dispatchers.IO) {
                     workspaceDir.deleteRecursively()
-                    terminalHistoryFile(active.id).delete()
+                    terminalCoordinator.deleteTerminalHistory(active.id)
                     preferences.deleteProjectChats(active.id)
                 }
             }
@@ -2302,7 +2302,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val filesDir = getApplication<Application>().filesDir
             File(filesDir, "workspaces/${project.id}").deleteRecursively()
-            terminalHistoryFile(project.id).delete()
+            terminalCoordinator.deleteTerminalHistory(project.id)
             preferences.deleteProjectChats(project.id)
         }
     }
@@ -4203,7 +4203,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             return
         }
         _state.update { it.copy(toastMessage = "Running autonomous verification with ${tool.name}...") }
-        runProjectTerminalCommand(tool.verificationCommand)
+        terminalCoordinator.requestProjectTerminalCommand(tool.verificationCommand)
     }
 
     // ---- Milestone 1: visual-inspection state moved to VisualCoordinator. ----

@@ -13,7 +13,7 @@ import com.jarves.mh.network.GitHubClient
 import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.runtime.readTailText
-import com.jarves.mh.ui.CoordinatorHost
+import com.jarves.mh.ui.coordinators.CoordinatorHost
 import com.jarves.mh.ui.GitHubAuthStatus
 import com.jarves.mh.ui.sanitizeTerminalOutput
 import com.jarves.mh.workspace.GitDomainController

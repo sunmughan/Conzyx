@@ -369,7 +369,7 @@ class TerminalCoordinator(
     }
 
     /** Loads persisted terminal history; called by openProject in the ViewModel. */
-    fun loadProjectTerminal(project: Project): ProjectTerminalSnapshot {
+    internal fun loadProjectTerminal(project: Project): ProjectTerminalSnapshot {
         val file = terminalHistoryFile(project.id)
         val guestRoot = projectGuestRoot(project)
         if (!file.isFile) return ProjectTerminalSnapshot(cwd = guestRoot)
@@ -571,6 +571,11 @@ class TerminalCoordinator(
             }
             file.writeText(JSONObject().put("cwd", cwd).put("lines", array).toString())
         }
+    }
+
+    /** Deletes persisted terminal history for a project (e.g. on project deletion). */
+    fun deleteTerminalHistory(projectId: String) {
+        runCatching { terminalHistoryFile(projectId).delete() }
     }
 
     private fun projectGuestRoot(project: Project): String = guestRootFor(project)
