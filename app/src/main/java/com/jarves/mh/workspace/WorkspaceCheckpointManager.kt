@@ -556,8 +556,10 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                     check(destination.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
                         "Could not create restore path for ${source.name}"
                     }
-                    if (!destination.exists()) {
-                        check(SafeFileOps.atomicCopy(source, destination)) { "Could not safely restore ${source.path}" }
+                    // A restore must reconcile existing files with the backup too;
+                    // copying only missing files silently leaves user data in a mixed state.
+                    check(SafeFileOps.atomicCopy(source, destination)) {
+                        "Could not safely restore ${source.path}"
                     }
                 }
                 count++
