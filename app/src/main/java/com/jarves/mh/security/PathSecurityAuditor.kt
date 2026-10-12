@@ -36,19 +36,19 @@ class PathSecurityAuditor {
      */
     fun audit(requestedPath: String, allowedRoot: File?): PathAuditResult {
         if (requestedPath.isBlank()) {
-            return PathAuditResult.Rejected("Empty path", PathAuditResult.RejectionKind.TRAVERSAL)
+            return PathAuditResult.Rejected("Empty path", RejectionKind.TRAVERSAL)
         }
         if (requestedPath.contains('\u0000')) {
             return PathAuditResult.Rejected(
                 "Path contains null byte",
-                PathAuditResult.RejectionKind.NULL_BYTE
+                RejectionKind.NULL_BYTE
             )
         }
         val normalized = requestedPath.replace('\\', '/')
         if (normalized.any { it.code < 0x20 }) {
             return PathAuditResult.Rejected(
                 "Path contains control characters",
-                PathAuditResult.RejectionKind.NULL_BYTE
+                RejectionKind.NULL_BYTE
             )
         }
 
@@ -66,7 +66,7 @@ class PathSecurityAuditor {
                     if (depth < 0) {
                         return PathAuditResult.Rejected(
                             "Path traversal: '..' escapes the base directory in '$requestedPath'",
-                            PathAuditResult.RejectionKind.TRAVERSAL
+                            RejectionKind.TRAVERSAL
                         )
                     }
                 }
@@ -85,7 +85,7 @@ class PathSecurityAuditor {
             if (!isWithin(canonicalRequested, root)) {
                 return PathAuditResult.Rejected(
                     "Absolute path escapes allowed root: '$requestedPath'",
-                    PathAuditResult.RejectionKind.ABSOLUTE_ESCAPE
+                    RejectionKind.ABSOLUTE_ESCAPE
                 )
             }
         }
@@ -98,7 +98,7 @@ class PathSecurityAuditor {
             if (resolved != null && !isWithin(resolved, root)) {
                 return PathAuditResult.Rejected(
                     "Symlink escape: resolved path '${resolved.path}' is outside the allowed root",
-                    PathAuditResult.RejectionKind.SYMLINK_ESCAPE
+                    RejectionKind.SYMLINK_ESCAPE
                 )
             }
         }
