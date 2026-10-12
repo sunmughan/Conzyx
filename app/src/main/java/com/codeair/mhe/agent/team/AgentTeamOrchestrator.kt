@@ -22,6 +22,9 @@ import com.codeair.mhe.agent.team.model.TeamTaskPriority
 import com.codeair.mhe.agent.team.model.TeamTaskStatus
 import com.codeair.mhe.agent.team.review.TeamReviewGatekeeper
 import com.codeair.mhe.agent.team.runtime.ConcurrentTeamDispatcher
+import com.codeair.mhe.agent.team.runtime.LiveTaskInfo
+import com.codeair.mhe.agent.team.runtime.LiveTaskStatus
+import com.codeair.mhe.agent.team.runtime.RealTeamAgentExecutor
 import com.codeair.mhe.agent.team.runtime.TeamAgentExecutor
 import com.codeair.mhe.agent.team.runtime.TeamRoleValidator
 import com.codeair.mhe.agent.team.runtime.TeamRunReport
@@ -30,9 +33,14 @@ import com.codeair.mhe.model.AgentKind
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 // Typealiases for backward compatibility with existing codebase
 typealias TeamRole = com.codeair.mhe.agent.team.model.TeamRole
@@ -91,6 +99,16 @@ class AgentTeamOrchestrator(
 
     private val roleInstances = ConcurrentHashMap<TeamRole, AgentKind>()
     private val roleConfigs = ConcurrentHashMap<TeamRole, TeamRoleConfig>()
+
+    /**
+     * Live per-agent execution snapshots from the real executor (Antigravity-style
+     * observability). Empty when no real executor is wired.
+     */
+    val liveTasks: StateFlow<Map<String, LiveTaskInfo>> =
+        (teamExecutor as? RealTeamAgentExecutor)?.liveTasks
+            ?: MutableStateFlow<Map<String, LiveTaskInfo>>(emptyMap())
+
+    private val observerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
      * Lazily-built real dispatcher (Milestone 10). Null until a [teamExecutor]
@@ -152,6 +170,15 @@ class AgentTeamOrchestrator(
         // Synchronize CommBus messages into session state
         commBus.subscribe { _ ->
             syncState()
+        }
+
+        // Mirror live parallel-execution state into the session: the UI reads
+        // activeTaskCount to show "N agents running".
+        observerScope.launch {
+            liveTasks.collect { tasks ->
+                val running = tasks.count { it.value.status == LiveTaskStatus.RUNNING }
+                _sessionState.update { it.copy(activeTaskCount = running) }
+            }
         }
     }
 

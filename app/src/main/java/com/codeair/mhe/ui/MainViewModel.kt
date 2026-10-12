@@ -402,12 +402,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val teamOrchestrator = com.codeair.mhe.agent.team.AgentTeamOrchestrator(
         teamExecutor = com.codeair.mhe.agent.team.runtime.RealTeamAgentExecutor(
             workspaceBaseDir = File(application.filesDir, "team-workspaces"),
-            bridges = mapOf(
-                AgentKind.CLAUDE_CODE to claudeRuntime,
-                AgentKind.DEEPSEEK_HARNESS to dshRuntime,
-                AgentKind.ANTIGRAVITY to antigravityRuntime,
-                AgentKind.CLOUD_CODE to cloudCodeRuntime,
-            ),
+            bridgeFactory = { kind ->
+                // Fresh bridge instance per execution: separate instance means a
+                // separate OS process, which is what makes parallel agents real.
+                when (kind) {
+                    AgentKind.CLAUDE_CODE -> ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                    AgentKind.DEEPSEEK_HARNESS -> DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                    AgentKind.ANTIGRAVITY -> AntigravityRuntimeBridge(
+                        application,
+                        model = { _state.value.antigravityModel },
+                        effort = { _state.value.antigravityEffort },
+                        conversationId = { projectId ->
+                            _state.value.activeChatId?.let { preferences.loadAgentConversation(AgentKind.ANTIGRAVITY, projectId, it) }
+                        },
+                        saveConversationId = { projectId, id ->
+                            _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
+                        },
+                    )
+                    AgentKind.CLOUD_CODE -> CloudCodeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                    else -> ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                }
+            },
             installer = installer,
             providerFor = { kind -> preferences.loadProvider(vault, kind) },
             secretFor = { profile -> vault.get(profile.kind.name) },

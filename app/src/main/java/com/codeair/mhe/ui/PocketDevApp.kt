@@ -3509,7 +3509,6 @@ private fun ClaudeSubscriptionCredentialsStep(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Composable
 private fun StudioCardsSection(
     onOpenAppFactory: () -> Unit,
     onOpenTeamStudio: () -> Unit,
@@ -3723,6 +3722,8 @@ private fun StudioCardsSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun ProjectsScreen(
     state: AppUiState,
     listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },

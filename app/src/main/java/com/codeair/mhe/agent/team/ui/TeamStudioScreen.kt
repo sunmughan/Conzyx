@@ -399,6 +399,7 @@ private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
 @Composable
 private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
     val sessionState by orchestrator.sessionState.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier.fillMaxSize(),
