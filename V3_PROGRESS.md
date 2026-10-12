@@ -274,7 +274,7 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - `workflow/WorkflowReviewer.kt` (new): `CallbackWorkflowReviewer` for production wiring; `TestOnlyAutoApproveReviewer` explicitly labelled tests/demos only.
 - `workflow/WorkflowRunner.kt` (new): orchestrates PLANNING → EXECUTING → REVIEWING → COMMITTING → DONE. The commit phase runs only after an APPROVE verdict — REJECT/REQUEST_CHANGES (or a reviewer throwing) stops the run before any commit. Real `git status --porcelain` empty-diff guard (M0 rule, injectable `diffChecker`) refuses no-op commits. `rollbackOnFailure` unwinds checkpointed writes on any failure. State published via `StateFlow<WorkflowRunState?>`; `resume(runId)` continues from the first incomplete step without re-executing successes; unknown run ids fail honestly.
 
-### Tests (41 new)
+### Tests (40 new)
 - `TaskDecomposerTest` (9): template shapes per kind, dependency order, CUSTOM validation, refusals (blank title, no steps, duplicate ids, unknown dep, cycle).
 - `CheckpointStoreTest` (8): snapshot/rollback round-trips, absent-file deletion, discard, state save/load round-trip incl. operation results, corrupt/missing state → null.
 - `PlanExecutorTest` (9): dependency order, dependent skipping, repair success within budget, exhausted budget, advisor-declined retry stops, missing executor, resume keeps successes, invalid plan, in-subset cycle.
