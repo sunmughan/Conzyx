@@ -154,11 +154,21 @@ class PlanExecutorTest {
     }
 
     @Test
+    fun `dependency cycle inside subset fails honestly`() = runBlocking {
+        val exec = PlanExecutor(emptyMap())
+        val a = PlanStep("a", PlanStepKind.RUN_COMMAND, "A", dependsOn = listOf("b"))
+        val b = PlanStep("b", PlanStepKind.RUN_COMMAND, "B", dependsOn = listOf("a"))
+        val results = exec.executeSubset(listOf(a, b), ctx())
+        assertTrue(results.all { it.status == StepRunStatus.FAILED })
+        assertTrue(results.first().result!!.error!!.contains("cycle", ignoreCase = true))
+    }
+
+    @Test
     fun `invalid plan fails every step with the reason`() = runBlocking {
         val exec = PlanExecutor(emptyMap())
         val steps = listOf(PlanStep("a", PlanStepKind.RUN_COMMAND, "A", dependsOn = listOf("ghost")))
         val results = exec.executeSubset(steps, ctx())
         assertEquals(StepRunStatus.FAILED, results.single().status)
-        assertTrue(results.single().result!!.error!!.contains("unknown step"))
+        assertTrue(results.single().result!!.error!!.contains("not satisfied"))
     }
 }

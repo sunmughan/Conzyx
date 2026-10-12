@@ -74,14 +74,34 @@ class PlanExecutor(
         ctx: WorkflowContext,
         previous: Map<String, StepRunResult> = emptyMap(),
     ): List<StepRunResult> {
-        val ordered = try {
-            WorkflowPlan(WorkflowGoal("subset"), steps).topologicalOrder()
+        val ids = steps.map { it.id }.toSet()
+        // Dependencies outside this subset (e.g. commit steps depending on
+        // work steps) must already be SUCCEEDED in `previous`; they are not
+        // re-executed here.
+        val unsatisfied = steps.flatMap { step ->
+            step.dependsOn
+                .filter { it !in ids }
+                .filter { depId -> previous[depId]?.status != StepRunStatus.SUCCEEDED }
+                .map { depId -> "'${step.id}' needs '$depId'" }
+        }
+        if (unsatisfied.isNotEmpty()) {
+            val reason = "External dependencies not satisfied: ${unsatisfied.joinToString()}"
+            return steps.map {
+                StepRunResult(it.id, StepRunStatus.FAILED, 0, false,
+                    OperationResult.failure(reason))
+            }
+        }
+        val byId = steps.associateBy { it.id }
+        val internalSteps = steps.map { it.copy(dependsOn = it.dependsOn.filter { dep -> dep in ids }) }
+        val orderedIds = try {
+            WorkflowPlan(WorkflowGoal("subset"), internalSteps).topologicalOrder().map { it.id }
         } catch (e: IllegalArgumentException) {
             return steps.map {
                 StepRunResult(it.id, StepRunStatus.FAILED, 0, false,
                     OperationResult.failure("Plan is invalid: ${e.message}"))
             }
         }
+        val ordered = orderedIds.map { byId.getValue(it) }
         val results = LinkedHashMap<String, StepRunResult>()
         // Seed with previous results; resume keeps successes.
         previous.forEach { (id, r) -> results[id] = r }
@@ -173,14 +193,11 @@ class PlanExecutor(
             if (outcome.status == OperationStatus.SUCCESS) {
                 return StepRunResult(step.id, StepRunStatus.SUCCEEDED, attempt, repaired, outcome)
             }
-            if (attempt < maxAttempts) {
-                val advice = runCatching { repairAdvisor.advise(step, outcome, attempt, maxAttempts) }
-                    .getOrDefault(RepairAdvice(false, "Repair advisor failed"))
-                if (advice.shouldRetry) {
-                    repaired = true
-                    continue
-                }
-            }
+            if (attempt >= maxAttempts) break
+            val advice = runCatching { repairAdvisor.advise(step, outcome, attempt, maxAttempts) }
+                .getOrDefault(RepairAdvice(false, "Repair advisor failed"))
+            if (!advice.shouldRetry) break
+            repaired = true
         }
         return StepRunResult(step.id, StepRunStatus.FAILED, attempt, repaired, last)
     }
