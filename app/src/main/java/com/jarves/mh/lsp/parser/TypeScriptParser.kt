@@ -706,6 +706,12 @@ class TypeScriptParser(
                     if (depth == 1 && parenDepth == 0 && statementTokens.isEmpty() &&
                         t.type == TokenType.IDENTIFIER
                     ) {
+                        // Variable/function declarations (in function bodies).
+                        if (t.text in setOf("const", "let", "var", "function", "class", "interface", "type", "enum")) {
+                            flushStatement()
+                            parseDeclarationOrSkip()
+                            continue@blockLoop
+                        }
                         if (tryParseClassMember()) continue@blockLoop
                     }
                     if (t.type == TokenType.SYMBOL) {

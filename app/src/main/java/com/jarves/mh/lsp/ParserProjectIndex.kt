@@ -139,11 +139,17 @@ class ParserProjectIndex {
         val raw = import.rawText
         return when (parsedLanguageOf(fromPath)) {
             "kotlin", "java" -> {
-                // com.example.Foo -> */Foo.kt or */Foo.java with matching package.
+                // com.example.Foo -> file defining Foo (case-insensitive file
+                // name match, or a top-level symbol with that name).
                 val simpleName = raw.substringAfterLast('.')
                 allPaths.firstOrNull { p ->
                     val name = p.substringAfterLast('/').substringBeforeLast('.')
-                    name == simpleName && (p.endsWith(".kt") || p.endsWith(".java"))
+                    name.equals(simpleName, ignoreCase = true) &&
+                        (p.endsWith(".kt") || p.endsWith(".java"))
+                } ?: allPaths.firstOrNull { p ->
+                    parsedFiles[p]?.symbols?.any {
+                        it.name == simpleName && it.depth == 0
+                    } == true
                 }
             }
             "typescript", "javascript" -> {
@@ -231,10 +237,12 @@ class ParserProjectIndex {
                 return listOf(match.toLocation(filePath))
             }
         }
-        // File top-level symbols.
-        parsed.symbols.firstOrNull { it.name == name && it.depth == 0 }?.let {
-            return listOf(it.toLocation(filePath))
-        }
+        // 2. File symbols (top-level first, then members): a simple in-file
+        //    reference like `greet(...)` usually means the method in this file.
+        parsed.symbols
+            .filter { it.name == name }
+            .minByOrNull { it.depth }
+            ?.let { return listOf(it.toLocation(filePath)) }
 
         // 2. Imported names.
         for (import in parsed.imports) {

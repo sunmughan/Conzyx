@@ -179,13 +179,18 @@ class KotlinParser(
             // After an identifier: a dot continues the path (possibly to `*`);
             // anything else ends the import.
             val n = peek()
-            if (n.type == TokenType.SYMBOL && n.text == ".") {
+            if (n.type == TokenType.SYMBOL && (n.text == "." || n.text == ".*")) {
+                if (n.text == ".*") {
+                    isStar = true
+                    advance()
+                    break
+                }
                 advance() // .
                 if (peek().type == TokenType.SYMBOL && peek().text == "*") {
                     isStar = true
                     advance()
+                    break
                 }
-                if (isStar) break
                 // Otherwise the next loop iteration expects an identifier.
             } else {
                 break
