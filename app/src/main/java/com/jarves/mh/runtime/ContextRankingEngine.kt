@@ -1,5 +1,7 @@
 package com.jarves.mh.runtime
 
+import com.jarves.mh.context.ContextTraceBuilder
+import com.jarves.mh.context.TraceSignal
 import java.io.File
 
 enum class UserIntent {
@@ -134,6 +136,7 @@ object ContextRankingEngine {
         gitModifiedPaths: List<String> = emptyList(),
         errorContext: ErrorContext? = null,
         limit: Int = 15,
+        trace: ContextTraceBuilder? = null,
     ): List<RankedContextFile> {
         val queryTokens = request.lowercase()
             .split(Regex("[^a-zA-Z0-9_]"))
@@ -175,6 +178,8 @@ object ContextRankingEngine {
             var score = 0
             val reasons = mutableListOf<String>()
             val matchedSymbols = mutableListOf<String>()
+            // Milestone 4: per-signal contributions for the context trace.
+            val signalContributions = mutableListOf<Triple<TraceSignal, Int, String>>()
             val filePathLower = file.path.lowercase()
             val fileName = file.path.substringAfterLast('/').lowercase()
 
@@ -182,6 +187,7 @@ object ContextRankingEngine {
             if (file.path in mentionedSet) {
                 score += 1000
                 reasons.add("Explicit @mention")
+                signalContributions.add(Triple(TraceSignal.EXPLICIT_MENTION, 1000, "explicitly mentioned in request"))
             }
 
             // Tier 2: Stack trace error target (+800)
@@ -189,6 +195,7 @@ object ContextRankingEngine {
             if (isErrorTarget) {
                 score += 800
                 reasons.add("Stack trace error target")
+                signalContributions.add(Triple(TraceSignal.ERROR_TARGET, 800, "matches stack-trace target file"))
             }
 
             // Tier 3: Git modified / uncommitted (+400)
@@ -196,24 +203,28 @@ object ContextRankingEngine {
             if (isGitModified) {
                 score += 400
                 reasons.add("Recently modified in Git")
+                signalContributions.add(Triple(TraceSignal.GIT_MODIFIED, 400, "uncommitted/modified in git"))
             }
 
             // Tier 4: Symbol Graph relation (+250)
             if (file.path in symbolGraphConnectedFiles) {
                 score += 250
                 reasons.add("Symbol graph relation")
+                signalContributions.add(Triple(TraceSignal.SYMBOL_GRAPH, 250, "caller/callee/inheritance relation to query symbol"))
             }
 
             // Tier 5: Direct dependency (+200)
             if (file.path in directConnectedFiles) {
                 score += 200
                 reasons.add("Direct dependency of target")
+                signalContributions.add(Triple(TraceSignal.DEPENDENCY, 200, "imports or is imported by target file"))
             }
 
             // Tier 6: Filename match (+120)
             if (queryTokens.any { fileName.contains(it) }) {
                 score += 120
                 reasons.add("File name match")
+                signalContributions.add(Triple(TraceSignal.FILENAME_MATCH, 120, "file name matches query token"))
             }
 
             // Tier 7: Symbol matching (+45 per symbol)
@@ -224,6 +235,11 @@ object ContextRankingEngine {
                     matchedSymbols.add(sym)
                 }
             }
+            if (matchedSymbols.isNotEmpty()) {
+                signalContributions.add(
+                    Triple(TraceSignal.SYMBOL_MATCH, matchedSymbols.size * 45, "symbols matched: ${matchedSymbols.distinct().take(6).joinToString(", ")}")
+                )
+            }
 
             // Tier 8: Import matching (+15 per import)
             val matchingImports = file.imports.count { imp ->
@@ -231,23 +247,63 @@ object ContextRankingEngine {
             }
             if (matchingImports > 0) {
                 score += matchingImports * 15
+                signalContributions.add(
+                    Triple(TraceSignal.IMPORT_MATCH, matchingImports * 15, "$matchingImports imports match query tokens")
+                )
             }
 
             val targetLine = errorContext?.lineNumbers?.get(fileName)
                 ?: errorContext?.lineNumbers?.get(file.path)
 
-            RankedContextFile(
-                file = file,
-                score = score,
-                matchedSymbols = matchedSymbols.distinct().take(6),
-                reason = reasons.ifEmpty { listOf("Keyword relevance") }.joinToString(", "),
-                targetLine = targetLine,
+            ScoredFile(
+                ranked = RankedContextFile(
+                    file = file,
+                    score = score,
+                    matchedSymbols = matchedSymbols.distinct().take(6),
+                    reason = reasons.ifEmpty { listOf("Keyword relevance") }.joinToString(", "),
+                    targetLine = targetLine,
+                ),
+                signalContributions = signalContributions,
             )
         }
-            .filter { it.score > 0 }
-            .sortedByDescending { it.score }
-            .take(limit)
+            .filter { it.ranked.score > 0 }
+            .sortedByDescending { it.ranked.score }
+            .let { scored ->
+                val top = scored.take(limit)
+                val topPaths = top.map { it.ranked.file.path }.toSet()
+                // Milestone 4: record the trace — why each file was included or excluded.
+                if (trace != null) {
+                    for (s in scored) {
+                        val included = s.ranked.file.path in topPaths
+                        if (s.signalContributions.isEmpty()) {
+                            trace.record(
+                                TraceSignal.KEYWORD, s.ranked.file.path, 0, included,
+                                if (included) "keyword relevance only" else "no signal fired; excluded",
+                            )
+                        } else {
+                            for ((signal, points, detail) in s.signalContributions) {
+                                trace.record(signal, s.ranked.file.path, points, included, detail)
+                            }
+                        }
+                    }
+                    for (file in files) {
+                        if (scored.none { it.ranked.file.path == file.path }) {
+                            trace.record(
+                                TraceSignal.KEYWORD, file.path, 0, false,
+                                "score 0: no signal fired; excluded",
+                            )
+                        }
+                    }
+                }
+                top.map { it.ranked }
+            }
     }
+
+    /** Internal holder pairing a ranked file with its per-signal trace contributions. */
+    private data class ScoredFile(
+        val ranked: RankedContextFile,
+        val signalContributions: List<Triple<TraceSignal, Int, String>>,
+    )
 
     /**
      * Extracts relevant source code blocks around matched symbols or error lines.

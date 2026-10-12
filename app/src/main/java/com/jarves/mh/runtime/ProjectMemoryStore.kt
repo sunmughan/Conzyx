@@ -26,6 +26,8 @@ data class ProjectMemoryItem(
     val content: String,
     val confidence: Float = 1.0f,
     val timestampMillis: Long = System.currentTimeMillis(),
+    /** Milestone 4: where this memory came from (file path, conversation ref, URL...). */
+    val sourceRef: String? = null,
 )
 
 data class ProjectMemorySnapshot(
@@ -57,6 +59,7 @@ class ProjectMemoryStore(private val baseDir: File) {
                         content = obj.optString("content"),
                         confidence = obj.optDouble("confidence", 1.0).toFloat(),
                         timestampMillis = obj.optLong("timestampMillis", System.currentTimeMillis()),
+                        sourceRef = obj.optString("sourceRef").takeIf { it.isNotEmpty() },
                     )
                 }
             }
@@ -70,6 +73,7 @@ class ProjectMemoryStore(private val baseDir: File) {
         key: String,
         content: String,
         confidence: Float = 1.0f,
+        sourceRef: String? = null,
     ): ProjectMemoryItem {
         val existing = load(projectId)
         val filtered = existing.items.filterNot { it.category == category && it.key.equals(key, ignoreCase = true) }
@@ -78,10 +82,39 @@ class ProjectMemoryStore(private val baseDir: File) {
             key = key,
             content = content,
             confidence = confidence,
+            sourceRef = sourceRef,
         )
         val updatedList = (filtered + newItem).takeLast(MAX_ITEMS_PER_PROJECT)
         persist(projectId, updatedList)
         return newItem
+    }
+
+    /**
+     * Milestone 4: explicit edit control for a memory item. Only the supplied
+     * fields change; the id, category and original timestamp are preserved and
+     * a fresh edit is NOT re-stamped as new knowledge (confidence may be
+     * adjusted by the caller). Returns the updated item, or null when the id
+     * does not exist.
+     */
+    fun updateMemory(
+        projectId: String,
+        id: String,
+        key: String? = null,
+        content: String? = null,
+        confidence: Float? = null,
+        sourceRef: String? = null,
+    ): ProjectMemoryItem? {
+        val snapshot = load(projectId)
+        val existing = snapshot.items.firstOrNull { it.id == id } ?: return null
+        val updated = existing.copy(
+            key = key ?: existing.key,
+            content = content ?: existing.content,
+            confidence = confidence ?: existing.confidence,
+            sourceRef = sourceRef ?: existing.sourceRef,
+        )
+        val updatedList = snapshot.items.map { if (it.id == id) updated else it }
+        persist(projectId, updatedList)
+        return updated
     }
 
     fun recordProjectMetadata(projectId: String, key: String, content: String, confidence: Float = 1.0f): ProjectMemoryItem =
@@ -159,6 +192,7 @@ class ProjectMemoryStore(private val baseDir: File) {
                     .put("content", item.content)
                     .put("confidence", item.confidence.toDouble())
                     .put("timestampMillis", item.timestampMillis)
+                    .put("sourceRef", item.sourceRef ?: "")
             )
         }
         val rootJson = JSONObject()
