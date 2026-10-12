@@ -4570,10 +4570,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
     }
 
     companion object {
-        private const val MINIMUM_INITIALIZATION_SCREEN_MS = 3_000L
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
-        private const val MAX_PROJECT_TERMINAL_HISTORY = 100
-        private const val MAX_PROJECT_TERMINAL_OUTPUT = 200_000
         private const val MAX_ATTACHMENTS_PER_MESSAGE = 5
         private const val MAX_PROCESS_OUTPUT_BYTES = 512 * 1024
         private const val MAX_ATTACHMENT_BYTES = 25L * 1024L * 1024L
