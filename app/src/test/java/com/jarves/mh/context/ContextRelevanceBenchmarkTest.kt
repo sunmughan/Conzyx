@@ -122,9 +122,16 @@ class ContextRelevanceBenchmarkTest {
 
         val semanticIndex = WorkspaceSemanticIndex(workspaceDir).indexWorkspace()
         val parserIndex = ParserProjectIndex()
-        workspaceDir.walkTopDown().filter { it.isFile }.forEach { file ->
+        val workspaceFiles = workspaceDir.walkTopDown().filter { it.isFile }.toList()
+        // Two passes: index all files first, then re-link so every import
+        // resolves against the complete file set regardless of walk order.
+        workspaceFiles.forEach { file ->
             val rel = file.relativeTo(workspaceDir).invariantSeparatorsPath
             parserIndex.indexFile(rel, file.readText())
+        }
+        workspaceFiles.forEach { file ->
+            val rel = file.relativeTo(workspaceDir).invariantSeparatorsPath
+            parserIndex.updateFile(rel, file.readText())
         }
 
         engine = ContextEngine(

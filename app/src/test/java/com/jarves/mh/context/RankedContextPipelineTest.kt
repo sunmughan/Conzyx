@@ -41,14 +41,16 @@ class RankedContextPipelineTest {
     @Test
     fun `pipeline merges real parser dependency edges over heuristic ones`() {
         val parserIndex = ParserProjectIndex()
-        parserIndex.indexFile(
-            "src/A.kt",
-            "import com.example.B\nclass A { fun use() { B().run() } }",
-            "kotlin",
-        )
+        // Index the dependency target FIRST: import resolution only links to
+        // files already present in the index at relink time.
         parserIndex.indexFile(
             "src/B.kt",
             "package com.example\nclass B { fun run() {} }",
+            "kotlin",
+        )
+        parserIndex.indexFile(
+            "src/A.kt",
+            "import com.example.B\nclass A { fun use() { B().run() } }",
             "kotlin",
         )
 
