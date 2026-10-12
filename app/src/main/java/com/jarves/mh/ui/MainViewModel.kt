@@ -402,9 +402,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitHubClient = com.jarves.mh.network.GitHubClient()
     val gitWorkflowEngine = com.jarves.mh.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val marketplaceInstallManager = com.jarves.mh.marketplace.MarketplaceInstallManager(application)
-    private val _marketplaceInstalledIds =
-        MutableStateFlow(marketplaceInstallManager.installedIds())
-    val marketplaceInstalledIds: StateFlow<Set<String>> = _marketplaceInstalledIds.asStateFlow()
     val teamOrchestrator = com.jarves.mh.agent.team.AgentTeamOrchestrator()
     val cloudHybridCoordinator = com.jarves.mh.cloud.CloudHybridCoordinator()
     val workspaceCollaborationManager = com.jarves.mh.collab.WorkspaceCollaborationManager()
@@ -681,6 +678,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     val state: StateFlow<AppUiState> = _state.asStateFlow()
+
+    // ---- Milestone 1: domain coordinators extracted from this ViewModel. ----
+    // Each coordinator owns one domain's operations and state machine;
+    // MainViewModel keeps a stable public API by delegating to them.
+    private val coordinatorHost = com.jarves.mh.ui.coordinators.CoordinatorHost(
+        appContext = getApplication(),
+        scope = viewModelScope,
+        state = { _state.value },
+        updateState = { transform -> _state.update(transform) },
+        showToast = { message -> showToast(message) },
+    )
+    private val marketplaceCoordinator =
+        com.jarves.mh.ui.coordinators.MarketplaceCoordinator(coordinatorHost, marketplaceInstallManager)
+    private val teamCoordinator =
+        com.jarves.mh.ui.coordinators.TeamCoordinator(teamOrchestrator)
+    private val cloudCoordinator =
+        com.jarves.mh.ui.coordinators.CloudCoordinator(cloudHybridCoordinator)
+    private val collaborationCoordinator =
+        com.jarves.mh.ui.coordinators.CollaborationCoordinator(workspaceCollaborationManager)
+    private val visualCoordinator =
+        com.jarves.mh.ui.coordinators.VisualCoordinator(
+            host = coordinatorHost,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            sendPrompt = { prompt -> sendPrompt(prompt) },
+        )
+
+    val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
+    val visualConsoleLogs: StateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>> = visualCoordinator.visualConsoleLogs
+    val visualNetworkLogs: StateFlow<List<com.jarves.mh.visual.NetworkLogEntry>> = visualCoordinator.visualNetworkLogs
+    val inspectedDomElement: StateFlow<com.jarves.mh.visual.DomElementInfo?> = visualCoordinator.inspectedDomElement
+    val visualSnapshots: StateFlow<List<com.jarves.mh.visual.VisualSnapshot>> = visualCoordinator.visualSnapshots
+    val visualComparisonPair: StateFlow<com.jarves.mh.visual.VisualComparisonPair?> = visualCoordinator.visualComparisonPair
+    val activeViewportPreset: StateFlow<com.jarves.mh.visual.ViewportPreset> = visualCoordinator.activeViewportPreset
+    val detectedPortInfos: StateFlow<List<com.jarves.mh.visual.LocalhostPortInfo>> = visualCoordinator.detectedPortInfos
+    val detectedLocalhostPorts: StateFlow<List<Int>> = visualCoordinator.detectedLocalhostPorts
 
     private val _terminalLines = MutableStateFlow<List<TerminalOutputLine>>(
         listOf(
@@ -4363,32 +4395,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private val _detectedLocalhostPorts = kotlinx.coroutines.flow.MutableStateFlow<List<Int>>(emptyList())
-    val detectedLocalhostPorts: kotlinx.coroutines.flow.StateFlow<List<Int>> = _detectedLocalhostPorts.asStateFlow()
-
-    fun scanActiveLocalhostPorts(onComplete: (List<Int>) -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val commonPorts = listOf(3000, 5173, 8080, 8000, 4200, 5000, 9222)
-            val openPorts = mutableListOf<Int>()
-            for (port in commonPorts) {
-                try {
-                    java.net.Socket().use { socket ->
-                        socket.connect(java.net.InetSocketAddress("127.0.0.1", port), 200)
-                        openPorts.add(port)
-                    }
-                } catch (_: Exception) {}
-            }
-            _detectedLocalhostPorts.value = openPorts
-            withContext(Dispatchers.Main) {
-                onComplete(openPorts)
-            }
-        }
-    }
-
-    fun attachVisualInspectionToAgent(url: String, note: String = "") {
-        val prompt = "Visual Inspection Report for $url: ${note.ifBlank { "Please inspect this web page layout and verify all components are rendering properly." }}"
-        sendPrompt(prompt)
-    }
+    // ---- Milestone 1: port-detection state moved to VisualCoordinator. ----
 
 
     private fun loadFileContent(project: Project, path: String) {
@@ -6093,145 +6100,53 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         runProjectTerminalCommand(tool.verificationCommand)
     }
 
-    val localhostPortManager = com.jarves.mh.visual.LocalhostPortManager()
+    // ---- Milestone 1: visual-inspection state moved to VisualCoordinator. ----
+    // ---- Milestone 1: visual-inspection domain moved to VisualCoordinator. ----
+    fun recordVisualConsoleLog(entry: com.jarves.mh.visual.ConsoleLogEntry) =
+        visualCoordinator.recordVisualConsoleLog(entry)
 
-    private val _visualConsoleLogs = MutableStateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>>(emptyList())
-    val visualConsoleLogs: StateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>> = _visualConsoleLogs.asStateFlow()
+    fun recordVisualNetworkLog(entry: com.jarves.mh.visual.NetworkLogEntry) =
+        visualCoordinator.recordVisualNetworkLog(entry)
 
-    private val _visualNetworkLogs = MutableStateFlow<List<com.jarves.mh.visual.NetworkLogEntry>>(emptyList())
-    val visualNetworkLogs: StateFlow<List<com.jarves.mh.visual.NetworkLogEntry>> = _visualNetworkLogs.asStateFlow()
+    fun setInspectedDomElement(element: com.jarves.mh.visual.DomElementInfo?) =
+        visualCoordinator.setInspectedDomElement(element)
 
-    private val _inspectedDomElement = MutableStateFlow<com.jarves.mh.visual.DomElementInfo?>(null)
-    val inspectedDomElement: StateFlow<com.jarves.mh.visual.DomElementInfo?> = _inspectedDomElement.asStateFlow()
+    fun clearVisualLogs() =
+        visualCoordinator.clearVisualLogs()
 
-    private val _visualSnapshots = MutableStateFlow<List<com.jarves.mh.visual.VisualSnapshot>>(emptyList())
-    val visualSnapshots: StateFlow<List<com.jarves.mh.visual.VisualSnapshot>> = _visualSnapshots.asStateFlow()
+    fun setViewportPreset(preset: com.jarves.mh.visual.ViewportPreset) =
+        visualCoordinator.setViewportPreset(preset)
 
-    private val _visualComparisonPair = MutableStateFlow<com.jarves.mh.visual.VisualComparisonPair?>(null)
-    val visualComparisonPair: StateFlow<com.jarves.mh.visual.VisualComparisonPair?> = _visualComparisonPair.asStateFlow()
-
-    private val _activeViewportPreset = MutableStateFlow(com.jarves.mh.visual.ViewportPreset.RESPONSIVE)
-    val activeViewportPreset: StateFlow<com.jarves.mh.visual.ViewportPreset> = _activeViewportPreset.asStateFlow()
-
-    private val _detectedPortInfos = MutableStateFlow<List<com.jarves.mh.visual.LocalhostPortInfo>>(emptyList())
-    val detectedPortInfos: StateFlow<List<com.jarves.mh.visual.LocalhostPortInfo>> = _detectedPortInfos.asStateFlow()
-
-    fun recordVisualConsoleLog(entry: com.jarves.mh.visual.ConsoleLogEntry) {
-        _visualConsoleLogs.update { (listOf(entry) + it).take(200) }
-    }
-
-    fun recordVisualNetworkLog(entry: com.jarves.mh.visual.NetworkLogEntry) {
-        _visualNetworkLogs.update { (listOf(entry) + it).take(100) }
-    }
-
-    fun setInspectedDomElement(element: com.jarves.mh.visual.DomElementInfo?) {
-        _inspectedDomElement.value = element
-    }
-
-    fun clearVisualLogs() {
-        _visualConsoleLogs.value = emptyList()
-        _visualNetworkLogs.value = emptyList()
-    }
-
-    fun setViewportPreset(preset: com.jarves.mh.visual.ViewportPreset) {
-        _activeViewportPreset.value = preset
-    }
+    fun scanActiveLocalhostPorts(onComplete: (List<Int>) -> Unit = {}) =
+        visualCoordinator.scanActiveLocalhostPorts(onComplete)
 
     fun scanLocalhostPortsWithHeuristics(
         customPorts: List<Int> = emptyList(),
         onComplete: (List<com.jarves.mh.visual.LocalhostPortInfo>) -> Unit = {},
-    ) {
-        viewModelScope.launch {
-            val infos = localhostPortManager.scanPorts(customPorts)
-            _detectedPortInfos.value = infos
-            _detectedLocalhostPorts.value = infos.map { it.port }
-            withContext(Dispatchers.Main) {
-                onComplete(infos)
-            }
-        }
-    }
+    ) = visualCoordinator.scanLocalhostPortsWithHeuristics(customPorts, onComplete)
 
     fun saveVisualSnapshot(
         bitmap: android.graphics.Bitmap,
         title: String,
         url: String,
         onSaved: (com.jarves.mh.visual.VisualSnapshot) -> Unit = {},
-    ) {
-        val project = _state.value.activeProject ?: return
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val snapshot = com.jarves.mh.visual.VisualCaptureEngine.saveSnapshot(
-                projectRoot = workspace,
-                bitmap = bitmap,
-                title = title,
-                url = url,
-                consoleErrorsCount = _visualConsoleLogs.value.count { it.level == com.jarves.mh.visual.LogLevel.ERROR },
-                networkErrorsCount = _visualNetworkLogs.value.count { it.isFailed },
-                domSummary = _inspectedDomElement.value?.displayName,
-            )
-            _visualSnapshots.update { listOf(snapshot) + it }
-            withContext(Dispatchers.Main) {
-                onSaved(snapshot)
-            }
-        }
-    }
+    ) = visualCoordinator.saveVisualSnapshot(bitmap, title, url, onSaved)
 
-    fun setBaselineComparisonSnapshot(snapshot: com.jarves.mh.visual.VisualSnapshot) {
-        val current = _visualComparisonPair.value
-        _visualComparisonPair.value = if (current != null) {
-            current.copy(beforeSnapshot = snapshot)
-        } else {
-            com.jarves.mh.visual.VisualComparisonPair(
-                beforeSnapshot = snapshot,
-                afterSnapshot = snapshot,
-                title = "UI Comparison",
-            )
-        }
-    }
+    fun setBaselineComparisonSnapshot(snapshot: com.jarves.mh.visual.VisualSnapshot) =
+        visualCoordinator.setBaselineComparisonSnapshot(snapshot)
 
-    fun setAfterComparisonSnapshot(snapshot: com.jarves.mh.visual.VisualSnapshot) {
-        val current = _visualComparisonPair.value
-        _visualComparisonPair.value = if (current != null) {
-            current.copy(afterSnapshot = snapshot)
-        } else {
-            com.jarves.mh.visual.VisualComparisonPair(
-                beforeSnapshot = snapshot,
-                afterSnapshot = snapshot,
-                title = "UI Comparison",
-            )
-        }
-    }
+    fun setAfterComparisonSnapshot(snapshot: com.jarves.mh.visual.VisualSnapshot) =
+        visualCoordinator.setAfterComparisonSnapshot(snapshot)
 
     fun dispatchAiVisualBugReport(
         url: String,
         userNotes: String = "",
         snapshot: com.jarves.mh.visual.VisualSnapshot? = null,
         onDispatched: () -> Unit = {},
-    ) {
-        val project = _state.value.activeProject ?: return
-        val workspace = projectWorkspaceRoot(project)
+    ) = visualCoordinator.dispatchAiVisualBugReport(url, userNotes, snapshot, onDispatched)
 
-        val prompt = com.jarves.mh.visual.AiVisualDebugger.generateBugReportPrompt(
-            url = url,
-            viewport = _activeViewportPreset.value,
-            selectedElement = _inspectedDomElement.value,
-            consoleLogs = _visualConsoleLogs.value,
-            networkLogs = _visualNetworkLogs.value,
-            snapshot = snapshot,
-            userNotes = userNotes,
-        )
-
-        if (snapshot != null) {
-            val attachment = com.jarves.mh.visual.AiVisualDebugger.createChatAttachment(snapshot, workspace)
-            if (attachment != null) {
-                _state.update { it.copy(pendingAttachments = it.pendingAttachments + attachment) }
-            }
-        }
-
-        sendPrompt(prompt)
-        onDispatched()
-    }
-
+    fun attachVisualInspectionToAgent(url: String, note: String = "") =
+        visualCoordinator.attachVisualInspectionToAgent(url, note)
     fun generateAppFactoryBlueprint(
         prompt: String,
         framework: com.jarves.mh.factory.model.AppFramework = com.jarves.mh.factory.model.AppFramework.ANDROID_COMPOSE,
@@ -6782,69 +6697,36 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
      * the package is materialized on disk and recorded durably. Failures are
      * reported honestly instead of a toast-only fake install (Milestone 0).
      */
-    fun installMarketplaceItem(item: com.jarves.mh.marketplace.MarketplaceItem) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val outcome = when (val result = marketplaceInstallManager.install(item)) {
-                is com.jarves.mh.marketplace.MarketplaceInstallResult.Installed ->
-                    "Installed ${item.name}"
-                is com.jarves.mh.marketplace.MarketplaceInstallResult.Failed ->
-                    "Install failed: ${result.reason}"
-                com.jarves.mh.marketplace.MarketplaceInstallResult.AlreadyInstalled ->
-                    "${item.name} is already installed"
-            }
-            _marketplaceInstalledIds.value = marketplaceInstallManager.installedIds()
-            withContext(Dispatchers.Main) {
-                _state.update { it.copy(toastMessage = outcome) }
-            }
-        }
-    }
+    // ---- Milestone 1: delegated to domain coordinators (public API unchanged). ----
+    fun installMarketplaceItem(item: com.jarves.mh.marketplace.MarketplaceItem) =
+        marketplaceCoordinator.installMarketplaceItem(item)
 
-    /**
-     * Uninstalls a marketplace item through the real [MarketplaceInstallManager]:
-     * removes the package directory and its durable record.
-     */
-    fun uninstallMarketplaceItem(item: com.jarves.mh.marketplace.MarketplaceItem) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val removed = marketplaceInstallManager.uninstall(item.id)
-            _marketplaceInstalledIds.value = marketplaceInstallManager.installedIds()
-            val outcome = if (removed) "Uninstalled ${item.name}" else "${item.name} was not installed"
-            withContext(Dispatchers.Main) {
-                _state.update { it.copy(toastMessage = outcome) }
-            }
-        }
-    }
+    fun uninstallMarketplaceItem(item: com.jarves.mh.marketplace.MarketplaceItem) =
+        marketplaceCoordinator.uninstallMarketplaceItem(item)
 
-    fun planTeamProject(goal: String) {
-        teamOrchestrator.planProject(goal)
-    }
+    fun planTeamProject(goal: String) =
+        teamCoordinator.planTeamProject(goal)
 
-    fun stepTeamTask(): com.jarves.mh.agent.team.model.TeamTask? {
-        return teamOrchestrator.runNextReadyTask()
-    }
+    fun stepTeamTask(): com.jarves.mh.agent.team.model.TeamTask? =
+        teamCoordinator.stepTeamTask()
 
-    fun autoRunTeamTasks(): Int {
-        return teamOrchestrator.autoRunAll()
-    }
+    fun autoRunTeamTasks(): Int =
+        teamCoordinator.autoRunTeamTasks()
 
-    fun cancelTeamSession() {
-        teamOrchestrator.cancelSession()
-    }
+    fun cancelTeamSession() =
+        teamCoordinator.cancelTeamSession()
 
-    fun setCloudRoutingPolicy(policy: com.jarves.mh.cloud.model.WorkloadRoutingPolicy) {
-        cloudHybridCoordinator.setPolicy(policy)
-    }
+    fun setCloudRoutingPolicy(policy: com.jarves.mh.cloud.model.WorkloadRoutingPolicy) =
+        cloudCoordinator.setCloudRoutingPolicy(policy)
 
-    fun submitHybridWorkload(title: String, type: com.jarves.mh.cloud.model.WorkloadType): com.jarves.mh.cloud.model.HybridExecutionJob {
-        return cloudHybridCoordinator.submitExecutionJob(title, type)
-    }
+    fun submitHybridWorkload(title: String, type: com.jarves.mh.cloud.model.WorkloadType): com.jarves.mh.cloud.model.HybridExecutionJob =
+        cloudCoordinator.submitHybridWorkload(title, type)
 
-    fun createCollaborationSession(projectId: String, projectName: String): com.jarves.mh.collab.model.SharedProjectSession {
-        return workspaceCollaborationManager.createShareSession(projectId, projectName)
-    }
+    fun createCollaborationSession(projectId: String, projectName: String): com.jarves.mh.collab.model.SharedProjectSession =
+        collaborationCoordinator.createCollaborationSession(projectId, projectName)
 
-    fun joinCollaborationSession(shareToken: String, name: String, email: String): com.jarves.mh.collab.model.SharedProjectSession? {
-        return workspaceCollaborationManager.joinSession(shareToken, name, email)
-    }
+    fun joinCollaborationSession(shareToken: String, name: String, email: String): com.jarves.mh.collab.model.SharedProjectSession? =
+        collaborationCoordinator.joinCollaborationSession(shareToken, name, email)
 
     override fun onCleared() {
         super.onCleared()
