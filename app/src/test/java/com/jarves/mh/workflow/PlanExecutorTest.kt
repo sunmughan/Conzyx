@@ -31,8 +31,8 @@ class PlanExecutorTest {
     }
 
     private fun executorFor(
-        behavior: suspend (PlanStep, WorkflowContext) -> OperationResult,
         advisor: RepairAdvisor = AutoFixRepairAdvisor(),
+        behavior: suspend (PlanStep, WorkflowContext) -> OperationResult,
     ): Pair<PlanExecutor, FakeStepExecutor> {
         val fake = FakeStepExecutor(PlanStepKind.RUN_COMMAND, behavior)
         val exec = PlanExecutor(mapOf(PlanStepKind.RUN_COMMAND to fake), advisor)
@@ -113,10 +113,10 @@ class PlanExecutorTest {
             override suspend fun advise(step: PlanStep, failed: OperationResult, attempt: Int, maxAttempts: Int) =
                 RepairAdvice(false, "not worth retrying")
         }
-        val (exec, _) = executorFor({ _, _ ->
+        val (exec, _) = executorFor(noRetry) { _, _ ->
             calls++
             OperationResult.failure("broken")
-        }, noRetry)
+        }
         val steps = listOf(PlanStep("a", PlanStepKind.RUN_COMMAND, "A", maxAttempts = 5))
         val results = exec.executeSubset(steps, ctx())
         assertEquals(1, calls)
