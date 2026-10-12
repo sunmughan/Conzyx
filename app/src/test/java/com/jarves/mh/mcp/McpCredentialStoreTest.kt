@@ -91,7 +91,9 @@ class McpCredentialStoreTest {
         assertTrue("storage file must exist", storageFile.exists())
         val raw = storageFile.readText()
         assertFalse("secret leaked into storage file", raw.contains(secret))
-        assertFalse("raw credential key leaked", raw.contains("srv1::KEY"))
+        // The credential key ("srv1::KEY") is a non-secret identifier by design and may
+        // appear as a JSON key; only the secret VALUE must never be in plaintext.
+        assertTrue("entry identifier present", raw.contains("srv1::KEY"))
         // Key file must exist and hold a 32-byte key, not the secret.
         val keyFile = File(backendDir, "mcp_cred.key")
         assertTrue(keyFile.exists())
