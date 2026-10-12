@@ -29,17 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudQueue
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -76,104 +68,50 @@ data class OnboardingTourSlide(
 )
 
 /**
- * Comprehensive Product Onboarding & Feature Tour for v3.0.0.
- * Highlights all 14 engineering phases and architectural breakthroughs.
+ * Product Onboarding: 3 slides, each selling ONE outcome.
+ * Slide 1 carries a prominent "Try it now" action.
  */
 @Composable
 fun ProductOnboardingScreen(
     onComplete: () -> Unit,
+    onTryNow: () -> Unit = onComplete,
 ) {
     val slides = listOf(
         OnboardingTourSlide(
-            title = "Desktop-Grade Mobile IDE",
-            subtitle = "Full Linux userspace powered by PRoot on Android",
-            icon = Icons.Default.Terminal,
+            title = "Chat with AI that writes code",
+            subtitle = "Describe what you want. The AI writes, runs, and fixes code on your phone.",
+            icon = Icons.Default.AutoAwesome,
             highlights = listOf(
-                "Real Ubuntu 20.04 ARM64 userspace inside PRoot — zero root required",
-                "Full terminal with bash, zsh, coreutils, Node.js, Python, Git, and Clang",
-                "Monaco-class code editor with syntax tree, tabs, multi-cursor, and undo stack",
-                "Autonomous local verification: runs builds & tests directly on-device",
+                "Ask in plain words, get working code back in seconds",
+                "The agent runs builds and tests right on your device",
+                "Fixes its own errors until the code actually works",
             ),
-            badges = listOf("PRoot Linux", "No Root", "Native ARM64", "Full Terminal"),
-            quote = "Your Android phone is now a complete desktop-grade development workstation.",
+            badges = listOf("No setup", "On-device", "Self-fixing"),
+            quote = "Your pocket pair programmer, available 24/7.",
         ),
         OnboardingTourSlide(
-            title = "Multi-Agent Engineering Team",
-            subtitle = "10 Specialized autonomous agents collaborating in real-time",
-            icon = Icons.Default.Groups,
-            highlights = listOf(
-                "10 Specialized roles: Manager, Architect, Frontend, Backend, QA, DevOps, Security, DBA, Docs, UX",
-                "Hierarchical orchestration: Manager breaks down goals into milestones and task DAGs",
-                "Iterative peer review loops: QA and Security review code diffs before merge",
-                "Budget control, milestone tracking, and dynamic task replanning",
-            ),
-            badges = listOf("10 Specialized Roles", "Task DAG", "Automated QA", "Security Auditor"),
-            quote = "Deploy an entire engineering department directly inside a single project workspace.",
-        ),
-        OnboardingTourSlide(
-            title = "Autonomous Issue-to-PR Engine",
-            subtitle = "From GitHub Issue triage to tested pull request automatically",
-            icon = Icons.Default.RocketLaunch,
-            highlights = listOf(
-                "Native GitHub integration with gh CLI, OAuth token auth, and repo context indexing",
-                "Autonomous triage: analyzes issues, reproduces errors, checks out feature branches",
-                "Multi-file atomic code edits with syntax verification and test assertions",
-                "Self-healing compile loops: automatically re-runs tests until 100% pass, then pushes PR",
-            ),
-            badges = listOf("GitHub Native", "Self-Healing", "Issue Triage", "Signed PRs"),
-            quote = "Submit a bug report or feature request and watch the agent code, test, and ship the PR.",
-        ),
-        OnboardingTourSlide(
-            title = "Cloud + Phone Hybrid Engine",
-            subtitle = "Adaptive workload offloading with thermal & battery intelligence",
-            icon = Icons.Default.CloudQueue,
-            highlights = listOf(
-                "Smart decision matrix: factors in battery level, thermal throttle, network, and RAM",
-                "Lightweight code editing & fast unit tests remain snappy on the local device",
-                "Heavy Gradle builds, docker compilation, and LLM inference offload to remote runners",
-                "FastBuild artifact caching and seamless synchronization back to phone workspace",
-            ),
-            badges = listOf("Battery Aware", "Thermal Routing", "Remote Runners", "FastBuild Cache"),
-            quote = "Save device battery and thermals by seamlessly offloading intensive builds to the cloud.",
-        ),
-        OnboardingTourSlide(
-            title = "Visual DevTools & DOM Inspector",
-            subtitle = "Embedded browser runtime with live DOM manipulation and inspection",
+            title = "Preview real apps instantly",
+            subtitle = "See your work running in the built-in browser as you build.",
             icon = Icons.Default.Language,
             highlights = listOf(
-                "Embedded Chromium browser with responsive viewport presets (Mobile, Tablet, Desktop)",
-                "Interactive DOM element picker, computed CSS inspector, and live console logs",
-                "Active localhost port auto-discovery and instant reverse proxy",
-                "Direct screenshot & DOM snippet attachment into the agent prompt context",
+                "Live preview with mobile, tablet, and desktop viewports",
+                "Inspect elements and read console logs without leaving the app",
+                "Localhost ports auto-detected from your projects",
             ),
-            badges = listOf("Live DOM", "CSS Inspector", "Localhost Proxy", "Console Logs"),
-            quote = "Inspect, test, and debug frontend web apps without leaving the IDE.",
+            badges = listOf("Live preview", "DOM inspector", "Localhost"),
+            quote = "What you build is what you see, the moment you build it.",
         ),
         OnboardingTourSlide(
-            title = "Android App Factory v2.0",
-            subtitle = "Production app scaffolding, native compilation, and Play Store prep",
-            icon = Icons.Default.Build,
+            title = "Ship to GitHub in one tap",
+            subtitle = "Commit, push, and open pull requests without touching a terminal.",
+            icon = Icons.Default.CloudUpload,
             highlights = listOf(
-                "AI Blueprint Engine: decomposes prompts into production UI layouts and navigation models",
-                "Multi-framework generators: Jetpack Compose, Flutter, React Native, and HTML5 WebApps",
-                "Automated Gradle daemon build execution and debug APK package output",
-                "Release pipeline: keystore generation, version bumping, and Play Store asset bundles",
+                "Sign in with GitHub once, push from any project",
+                "AI writes your commit messages and PR descriptions",
+                "Review diffs and merge right from your phone",
             ),
-            badges = listOf("Compose + Flutter", "APK Build", "Keystore Sign", "Play Store Ready"),
-            quote = "Turn a single idea prompt into a fully compiled Android APK ready for release.",
-        ),
-        OnboardingTourSlide(
-            title = "Marketplace & Team Collaboration",
-            subtitle = "1-click developer registry & real-time workspace collaboration",
-            icon = Icons.Default.Storefront,
-            highlights = listOf(
-                "AI Developer Marketplace: 1-click install for Agents, MCP Servers, Skills, and Templates",
-                "Custom package registry: publish and share tools directly with your team",
-                "Role-based access control (RBAC): Owner, Admin, Member, and Viewer permissions",
-                "Collaborative workspaces: code comments, live review approvals, and activity audit trails",
-            ),
-            badges = listOf("MCP Servers", "Custom Skills", "RBAC Security", "Audit Trails"),
-            quote = "Scale your development with vetted AI tools, MCP integrations, and team workflows.",
+            badges = listOf("One-tap push", "AI commits", "PR ready"),
+            quote = "From idea to pull request, entirely from your pocket.",
         ),
     )
 
@@ -356,7 +294,26 @@ fun ProductOnboardingScreen(
                     }
                 }
 
-                // Action Buttons
+                // Action Buttons: bottom-anchored primary action per Linear pattern.
+                // Slide 1 gets a prominent "Try it now" that finishes the tour.
+                val isFirstPage = pagerState.currentPage == 0
+                val isLastPage = pagerState.currentPage == slides.lastIndex
+                if (isFirstPage) {
+                    Button(
+                        onClick = onTryNow,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Text(
+                            text = "Try it now",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -375,10 +332,10 @@ fun ProductOnboardingScreen(
                         }
                     }
 
-                    val isLastPage = pagerState.currentPage == slides.lastIndex
+                    val isLast = pagerState.currentPage == slides.lastIndex
                     Button(
                         onClick = {
-                            if (isLastPage) {
+                            if (isLast) {
                                 onComplete()
                             } else {
                                 scope.launch {
@@ -393,7 +350,7 @@ fun ProductOnboardingScreen(
                         ),
                     ) {
                         Text(
-                            text = if (isLastPage) "Get Started" else "Next (${pagerState.currentPage + 1}/${slides.size})",
+                            text = if (isLast) "Get Started" else "Next (${pagerState.currentPage + 1}/${slides.size})",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                         )
