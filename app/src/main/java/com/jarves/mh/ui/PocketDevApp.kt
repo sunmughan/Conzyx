@@ -4885,8 +4885,8 @@ private fun WorkspaceScreen(
             },
             // Milestone 2 — rename with preview + undo.
             onPlanRename = { oldName, newName -> viewModel?.planRenameSymbol(oldName, newName) },
-            onApplyRename = { preview -> viewModel?.applyRenameSymbol(preview) },
-            onUndoRename = { viewModel?.undoLastRename() },
+            onApplyRename = { preview -> viewModel?.applyRenameSymbol(preview) ?: "" },
+            onUndoRename = { viewModel?.undoLastRename() ?: false },
         )
         return
     }
