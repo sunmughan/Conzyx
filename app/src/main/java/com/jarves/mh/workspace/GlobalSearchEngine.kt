@@ -127,7 +127,9 @@ object GlobalSearchEngine {
         matchCase: Boolean = false,
         wholeWord: Boolean = false,
     ): Int {
-        if (!file.isFile || Files.isSymbolicLink(file.toPath()) || query.isEmpty()) return 0
+        if (!file.isFile || Files.isSymbolicLink(file.toPath()) || query.isEmpty() ||
+            file.length() > MAX_FILE_SIZE_BYTES
+        ) return 0
         val pattern = buildRegexPattern(query, isRegex, matchCase, wholeWord) ?: return 0
         val original = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return 0
         val matcher = pattern.matcher(original)
