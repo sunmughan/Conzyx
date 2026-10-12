@@ -64,15 +64,19 @@ class ParserBackedProviderTest {
 
     @Test
     fun `kotlin rename returns definition plus references`() {
-        val index = kotlinIndex()
-        index.indexFile("app/Main.kt", kotlinMain)
+        val index = ParserProjectIndex()
+        val lib = "package calc\nfun add(a: Int, b: Int): Int = a + b\n"
+        val main = "package app\nimport calc.add\nfun main() {\n    val t = add(1, 2)\n}\n"
+        index.indexFile("calc/Add.kt", lib)
+        index.indexFile("app/Main.kt", main)
         val provider = ParserBackedIntelligenceProvider.kotlinProvider(index)
-        // Rename the `add` method: cursor on `c.add` (line 5).
-        val locations = provider.renameLocations("app/Main.kt", kotlinMain, 5, 17, "plus")
+        // Rename the `add` function: cursor on the call (line 4).
+        val locations = provider.renameLocations("app/Main.kt", main, 4, 13, "plus")
         assertTrue(locations != null && locations.isNotEmpty())
-        assertTrue(locations!!.any { it.filePath == "calc/Calc.kt" })
+        assertTrue(locations!!.any { it.filePath == "calc/Add.kt" })
+        assertTrue(locations.any { it.filePath == "app/Main.kt" && it.kind == "reference" })
         // Invalid new name -> empty, not a guess.
-        val invalid = provider.renameLocations("app/Main.kt", kotlinMain, 5, 17, "not valid!")
+        val invalid = provider.renameLocations("app/Main.kt", main, 4, 13, "not valid!")
         assertTrue(invalid != null && invalid.isEmpty())
     }
 
