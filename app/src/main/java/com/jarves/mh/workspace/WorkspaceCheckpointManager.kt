@@ -241,7 +241,23 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             // Only after all backed-up files were written successfully remove files that
             // were created after the checkpoint. Preserve ignored runtime/build directories.
             val extraFiles = canonicalWorkspace.walkTopDown()
-                .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
+                .onEnter { directory ->
+                    directory == canonicalWorkspace || (
+                        !java.nio.file.Files.isSymbolicLink(directory.toPath()) &&
+                            !isIgnored(directory, canonicalWorkspace) &&
+                            runCatching {
+                                directory.canonicalFile.toPath().startsWith(canonicalWorkspace.toPath())
+                            }.getOrDefault(false)
+                        )
+                }
+                .filter {
+                    it.isFile &&
+                        !java.nio.file.Files.isSymbolicLink(it.toPath()) &&
+                        !isIgnored(it, canonicalWorkspace) &&
+                        runCatching {
+                            it.canonicalFile.toPath().startsWith(canonicalWorkspace.toPath())
+                        }.getOrDefault(false)
+                }
                 .filter { it.relativeTo(canonicalWorkspace).invariantSeparatorsPath !in restoredPaths }
                 .toList()
             for (extra in extraFiles) {
