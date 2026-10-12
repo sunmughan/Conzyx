@@ -364,3 +364,33 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Wiring `VisualDevLoop`/`AppFactoryLoop` into UI view-models / `MainViewModel` coordinators — engines are complete and tested; UI integration is product work, not milestone work.
 - WebView→PixelBuffer production adapter for `ScreenshotProvider` (needs the Android runtime) — seam is defined and tested with scripted providers.
 - `jarsigner` fallback path in `ApkSignatureVerifier` — enum reserves `JARSIGNER_FALLBACK`; apksigner covers the current landscape.
+
+## Milestone 9 — COMPLETE (2026-10-12)
+
+**GitHub automation remainder** (Phase 10): the remaining GitHub API surface and the automation engines on top of it. CI green first pass (run 38262759355 → 38262759375; no fix rounds needed).
+
+### Client API extensions (`network/GitHubClient.kt`, `network/GitHubModels.kt`)
+- PR detail: `getPullRequest` (mergeable/merged/draft/mergeableState/headSha — null mergeable means "still computing", never assumed), `updatePullRequest`, `requestReviewers`
+- Merge gating data: `getCombinedStatus` (commit status rollup for a ref)
+- Issue management: `addLabels`, `removeLabel`, `assignIssue`, `updateIssue`, `listIssueComments`
+- Releases: `createGitRef` (tag creation), `generateReleaseNotes`, `uploadReleaseAsset` (multipart POST to the release upload URL), `deleteRelease`; `GitHubRelease` gains `uploadUrl`
+- Workflows: `getWorkflowRun`, `listWorkflowRunsForWorkflow`, `cancelWorkflowRun`, `rerunWorkflow`
+- New models: `GitHubPullRequestDetail`, `GitHubLabel`, `CombinedStatus`, `GitHubWorkflowJob`
+- All newly-used client methods made `open` so tests subclass with fakes (follows the existing `createPullRequest` seam)
+
+### Automation engines (new package `com.jarves.mh.git.automation`)
+All return `OperationResult`, refuse blank tokens with `NOT_CONFIGURED`, and propagate real API errors — no fake success anywhere.
+- `PullRequestAutomation` — policy-gated auto-merge (`AutoMergePolicy`: requireCiGreen, requiredApprovals, method, allowDraft). Gates evaluated against live API data: already-merged/closed/draft/conflicted PRs refused; null mergeability refused as unknown; pending CI refused; latest-review-state approval counting (CHANGES_REQUESTED cancels an earlier APPROVED). Merge refusal by the API is FAILED, never success.
+- `IssueAutomation` — rule-based triage (`IssueTriageRule`: labels/assignees/comment/title/close) with per-action logging and partial-state failure reporting; `postStatusComment` refuses blank comments.
+- `ReleaseAutomation` — tag → release → asset-upload pipeline (`ReleaseRequest`). Refuses blank tag, missing asset files, oversized assets, and missing upload URLs; each failure names the file and reports the partial state (release URL + assets uploaded so far).
+- `WorkflowAutomation` — `dispatch`, `dispatchAndAwait` (baseline max-run-id detection + bounded poll loop with timeout; non-"success" conclusions are FAILED with the run URL), `cancelRun`.
+
+### Tests (33 new)
+- `PullRequestAutomationTest` (12): all-gates-pass merge, CI failing/pending refusal, unmet approvals, CHANGES_REQUESTED cancels approval, conflict refusal, unknown-mergeability refusal, already-merged refusal, draft refusal, API merge refusal, blank token, zero-approval policy
+- `IssueAutomationTest` (7): full triage, empty rule no-op, partial-failure log, blank token, status comment success/blank-refusal/blank-token
+- `ReleaseAutomationTest` (7): tag+release+asset publish, generated notes, missing upload URL, missing file named, oversized refusal, blank tag, blank token
+- `WorkflowAutomationTest` (8): dispatch accepted/rejected/blank-token, dispatchAndAwait success/failure-conclusion/timeout, cancel, cancel blank-token
+
+**Deliberately deferred:**
+- Wiring the automation engines into `GitHubStudioScreen` / `MainViewModel` coordinators — engines are complete and tested; UI integration is product work, not milestone work.
+- Approval-before-commit hook in `GitHubWorkflowEngine` (M0-noted remainder) — the M5 `SafetyGateway` authorization-prompt layer now owns approval UX; wiring the workflow engine's commit stage through it is M6/M10 integration work.
