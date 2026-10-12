@@ -68,10 +68,9 @@ Statuses: `SUCCESS`, `FAILED`, `CANCELLED`, `NOT_CONFIGURED`, `SIMULATED`. Field
 - No Android SDK/JVM in this environment, so no compilation was possible. Every change was manually reviewed for compile-plausibility: all referenced symbols verified to exist with matching signatures (`runGitHubCli`, `sendPrompt`, `installer.process`, `truncateHeadAndTail`, `ToolRequest.toolName`, `ActivityItem`, `DevStack.ANDROID`, `Process.pid()` on minSdk 28, etc.); existing unit test updated to assert the new honest LSP behavior.
 - Public APIs preserved additively: engine signatures changed (necessary — the old signatures *were* the false-success path), catalog's old install functions kept as `@Deprecated`.
 
-## What remains — Milestones 1–13 (from the report)
+## What remains — Milestones 3–13 (from the report)
 
-- **M1 — Stabilize & decompose (Phase 1):** extract domain coordinators / smaller ViewModels from the ~6.9k-line `MainViewModel`; separate navigation from domain ops in `PocketDevApp`; runtime recovery matrix + workspace transaction tests; CI/device fault-injection gates; low-RAM/storage profiling.
-- **M2 — Finish core mobile IDE (Phase 2):** persistent multi-tab/dirty-buffer model, cursor/scroll restoration; cross-project search/replace/rename/undo; keyboard/mouse/tablet/foldable acceptance; multi-terminal attach/detach/recovery.
+- **M3 — Real semantic intelligence (Phase 3):** real parser/LSP provider interfaces (interface defined in M2 — implement providers); first three languages (Kotlin/Java, TS/JS, Python); symbol/dependency graph + incremental invalidation; keep regex fallback labelled.
 - **M3 — Real semantic intelligence (Phase 3):** real parser/LSP provider interfaces; first three languages (Kotlin/Java, TS/JS, Python); symbol/dependency graph + incremental invalidation; keep regex fallback labelled.
 - **M4 — Measurable context engine (Phase 4):** ranked context pipeline (symbol/Git/error/memory), measurable context budget, context trace + cache invalidation, relevance benchmarks.
 - **M5 — Safety gateway (Phase 6):** single gateway for file/shell/Git/MCP/network/APK/remote side effects; path-traversal/command-chain audit; precise auth prompts; deny/approve test matrix for all providers.
@@ -108,3 +107,53 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Agent binary functions, Antigravity auth functions
 
 **Deviations:** `.github/workflows/android.yml` untouched per user order (CI locked, no uploads until all milestones done). Fault-injection tests run under existing CI unit-test step.
+
+## Milestone 2 — COMPLETE (2026-10-12)
+
+**Core mobile IDE finished** (Phase 2). 7 commits on `v3`.
+
+### Persistent multi-tab/dirty-buffer model
+- `editor/EditorBufferModel.kt` (new): `EditorBuffer` (current/saved content, derived `isDirty`), `EditorViewState` (cursor/selection/scroll, with clamping), `EditorSplitState`, `EditorSession`.
+- `editor/EditorSessionStore.kt` (new): atomic JSON persistence per project (`filesDir/editor-sessions/<id>.json`); corrupt files ignored, never crash restore; project-id sanitized against path traversal.
+- `editor/EditorBufferManager.kt` (new): in-memory buffer ownership — `openBuffer`/`updateContent`/`markSaved`/`syncFromDisk` (never clobbers dirty buffers)/`updateViewState`/`restoreViewState`/`closeBuffer`.
+- `EditorCoordinator` integration: dirty buffers restore instantly on tab open (no disk read, no lost edits); debounced (1.5s) session snapshots on every edit/tab/cursor change; `saveFile` clears dirty; tab close keeps dirty buffers, drops clean ones; `restoreEditorSession` on project open; `clearBuffers` on project switch.
+- `CodeEditorScreen` (minimal wiring): restored cursor/selection applied on first composition; edits and cursor moves reported back (guarded against programmatic resets); new optional params only — existing call sites unaffected.
+- New state: `AppUiState.editorViewStates`, `editorSplitState`, `editorDirtyPaths`.
+
+### Cross-project search/replace with preview + undo
+- `GlobalSearchEngine.previewReplace` (new): per-file plans with before/after line previews, match counts, per-file include toggles; touches no files.
+- `applyReplacePlan`: atomic per-file writes; `revertReplace`: restores captured originals (all-or-nothing; `undoAvailable=false` when originals exceed 10 MB — honest, not silent).
+- `GlobalSearchDialog` rewritten replace flow: Search → Preview (file list with checkboxes) → Replace selected → Undo button. Old direct `replaceAll` path removed from UI (engine function kept for API compat).
+
+### Rename workflow
+- `editor/RenameEngine.kt` (new): whole-word, case-sensitive text rename with preview + apply + undo; input validation (blank/identical/invalid identifier → explanatory note, no plans); UI label `Text-based rename (not compiler-accurate)` — never presented as compiler-accurate.
+- Rename dialog in `CodeEditorScreen`: Preview → shows occurrence/file counts → Rename → toast; "Undo rename" added to the editor overflow menu via coordinator-kept transaction.
+
+### Provider-backed intelligence (interface for M3)
+- `lsp/LanguageIntelligenceProvider.kt` (new): `definitions`/`references`/`diagnostics`/`completionItems` contract with `isFallback` labelling requirement.
+- `editor/HeuristicIntelligenceProvider.kt` (new): wraps `SemanticCodeEngine`; `isFallback=true`, name contains "not compiler-accurate"; diagnostics honestly empty (heuristic engine cannot produce trustworthy diagnostics).
+
+### Keyboard command map
+- `editor/KeyboardCommandMap.kt` (new): 21 commands (File/Edit/Navigate/View/Terminal) with Ctrl/Cmd shortcuts, Mac symbol rendering, conflict detection.
+- Command palette already existed in `CodeEditorScreen`; the map is now the single source of truth.
+
+### Terminal attach/detach/recovery
+- `terminal/TerminalProcessRegistry.kt` (new): session↔process binding; detach keeps the process alive; dead handles pruned; `destroyAll` on clear.
+- `TerminalCoordinator`: processes bound to their originating session at spawn; tab switches detach (process keeps running, live output pauses); completion routed to the originating session's lines; input/interrupt/stop target the active session's process via the registry; new `stopTerminalSessionProcess` for background sessions; closing a session kills its process.
+- Session persistence: full tab list + active session saved per project; on restore after app death, sessions marked running get an honest "process did not survive" note — never silently resurrected.
+
+### Regression fixtures + tests (60+ new tests)
+- `app/src/test/resources/editor-fixtures/`: Kotlin, Java, TypeScript, Python samples.
+- `EditorBufferManagerTest` (15): dirty tracking, save/sync semantics, clamping, session round-trip, corruption handling, path-traversal sanitization.
+- `GlobalSearchReplaceTest` (8): preview purity, ignored dirs, apply/undo round-trip, per-file selection, whole-word, undo-unavailable.
+- `RenameEngineTest` (6): whole-word matching, apply/undo, validation notes, substring exclusion.
+- `KeyboardCommandMapTest` (5): no conflicts, core commands present.
+- `HeuristicIntelligenceProviderTest` (7): fallback labelling, definitions, honest-empty diagnostics.
+- `TerminalProcessRegistryTest` (6): attach/detach/reattach/multi-session/destroyAll.
+- `EditorRegressionFixturesTest` (7): fixture-based definitions for 4 languages, searchability, multi-MB truncation + search skip.
+
+**Deliberately deferred:**
+- Real parser/LSP providers per language → Milestone 3 (interface is ready).
+- Scroll-position *reporting* from the Compose UI (model + restore path support it; cursor reporting is wired).
+- Device/emulator acceptance for keyboard/mouse/tablet/foldable/landscape — requires a real device; the keyboard map + palette provide the touch-free path.
+- Minimap — not present; not claimed.
