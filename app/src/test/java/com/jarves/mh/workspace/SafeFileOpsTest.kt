@@ -115,6 +115,16 @@ class SafeFileOpsTest {
     }
 
     @Test
+    fun `atomic write reports unavailable storage without leaving staging files`() {
+        val blockingFile = File(tempFolder.root, "not-a-directory").apply { writeText("keep") }
+        val target = File(blockingFile, "child.txt")
+
+        assertFalse(SafeFileOps.atomicWriteText(target, "must not be written"))
+        assertEquals("keep", blockingFile.readText())
+        assertFalse(File(tempFolder.root, "not-a-directory.tmp_").exists())
+    }
+
+    @Test
     fun `atomic write failure preserves an existing directory target`() {
         val target = File(tempFolder.root, "target-directory").apply { mkdirs() }
         val sentinel = File(target, "known-good.txt").apply { writeText("keep this data") }
