@@ -182,6 +182,8 @@ object ModelCapabilityDetector {
                 return DetectedModelCapabilities(true, ctx)
             }
         }
+        // Generic fallback: any model id containing "vision" is vision-capable.
+        if ("vision" in id) return DetectedModelCapabilities(true, 128_000)
         // Text-only families.
         val textFamilies = listOf(
             "deepseek-chat" to 128_000,
