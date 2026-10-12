@@ -556,6 +556,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             openProject = { project -> openProject(project) },
         )
+    // ---- Moved above init: init block calls refreshPermissionPolicies() /
+    // ---- refreshMcpServers() / loadMcpAuditLogs() synchronously via Dispatchers.Main.immediate,
+    // ---- which runs before later-declared properties initialize.
+    private val securityCoordinator =
+        com.codeair.mhe.ui.coordinators.SecurityCoordinator(
+            host = coordinatorHost,
+            permissionPolicyEngine = permissionPolicyEngine,
+            stopTask = { stopTask() },
+        )
+    private val mcpCoordinator =
+        com.codeair.mhe.ui.coordinators.McpCoordinator(
+            host = coordinatorHost,
+            mcpRegistry = mcpRegistry,
+            mcpAuditLogger = mcpAuditLogger,
+            mcpPermissionManager = mcpPermissionManager,
+            mcpClientRunner = mcpClientRunner,
+        )
     init {
         AppCrashLogger.log("MainViewModel.init entered")
         // GitHub's official CLI owns its OAuth credential. Remove credentials from
@@ -713,20 +730,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             host = coordinatorHost,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             sendPrompt = { prompt -> sendPrompt(prompt) },
-        )
-    private val securityCoordinator =
-        com.codeair.mhe.ui.coordinators.SecurityCoordinator(
-            host = coordinatorHost,
-            permissionPolicyEngine = permissionPolicyEngine,
-            stopTask = { stopTask() },
-        )
-    private val mcpCoordinator =
-        com.codeair.mhe.ui.coordinators.McpCoordinator(
-            host = coordinatorHost,
-            mcpRegistry = mcpRegistry,
-            mcpAuditLogger = mcpAuditLogger,
-            mcpPermissionManager = mcpPermissionManager,
-            mcpClientRunner = mcpClientRunner,
         )
     private val skillsCoordinator =
         com.codeair.mhe.ui.coordinators.SkillsCoordinator(

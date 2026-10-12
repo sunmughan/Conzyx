@@ -87,6 +87,10 @@ object AppCrashLogger {
 
     fun logThrowable(message: String, throwable: Throwable) {
         if (!initialized) return
+        // Forward to Crashlytics as well so it appears in the Firebase console.
+        runCatching {
+            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(throwable)
+        }
         val stack = StringWriter()
         PrintWriter(stack).use { throwable.printStackTrace(it) }
         write(
