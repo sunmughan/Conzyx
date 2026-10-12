@@ -212,14 +212,30 @@ object DeveloperMarketplaceCatalog {
     private val installedItemIds = mutableSetOf<String>()
     private val customItems = mutableListOf<MarketplaceItem>()
 
+    /**
+     * @deprecated Install state is owned by [MarketplaceInstallManager] (durable,
+     * real installation). This in-memory set is kept only for backward
+     * compatibility and must not be treated as the source of truth.
+     */
+    @Deprecated(
+        "Install state is owned by MarketplaceInstallManager; do not use the catalog's in-memory set.",
+        ReplaceWith("MarketplaceInstallManager.isInstalled(itemId)")
+    )
     fun markInstalled(itemId: String) {
         installedItemIds.add(itemId)
     }
 
+    @Deprecated(
+        "Install state is owned by MarketplaceInstallManager; do not use the catalog's in-memory set.",
+        ReplaceWith("MarketplaceInstallManager.uninstall(itemId)")
+    )
     fun uninstallItem(itemId: String) {
         installedItemIds.remove(itemId)
     }
 
+    @Deprecated(
+        "Install state is owned by MarketplaceInstallManager; do not use the catalog's in-memory set."
+    )
     fun toggleInstall(itemId: String): Boolean {
         return if (installedItemIds.contains(itemId)) {
             installedItemIds.remove(itemId)
@@ -230,6 +246,10 @@ object DeveloperMarketplaceCatalog {
         }
     }
 
+    @Deprecated(
+        "Install state is owned by MarketplaceInstallManager; do not use the catalog's in-memory set.",
+        ReplaceWith("MarketplaceInstallManager.isInstalled(itemId)")
+    )
     fun isInstalled(itemId: String): Boolean {
         return installedItemIds.contains(itemId)
     }

@@ -401,6 +401,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val mcpClientRunner = com.jarves.mh.runtime.McpClientRunner()
     val gitHubClient = com.jarves.mh.network.GitHubClient()
     val gitWorkflowEngine = com.jarves.mh.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
+    val marketplaceInstallManager = com.jarves.mh.marketplace.MarketplaceInstallManager(application)
+    private val _marketplaceInstalledIds =
+        MutableStateFlow(marketplaceInstallManager.installedIds())
+    val marketplaceInstalledIds: StateFlow<Set<String>> = _marketplaceInstalledIds.asStateFlow()
     val teamOrchestrator = com.jarves.mh.agent.team.AgentTeamOrchestrator()
     val cloudHybridCoordinator = com.jarves.mh.cloud.CloudHybridCoordinator()
     val workspaceCollaborationManager = com.jarves.mh.collab.WorkspaceCollaborationManager()
@@ -6770,6 +6774,43 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 }
             }
             refreshGitStudio(dir)
+        }
+    }
+
+    /**
+     * Installs a marketplace item through the real [MarketplaceInstallManager]:
+     * the package is materialized on disk and recorded durably. Failures are
+     * reported honestly instead of a toast-only fake install (Milestone 0).
+     */
+    fun installMarketplaceItem(item: com.jarves.mh.marketplace.MarketplaceItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val outcome = when (val result = marketplaceInstallManager.install(item)) {
+                is com.jarves.mh.marketplace.MarketplaceInstallResult.Installed ->
+                    "Installed ${item.name}"
+                is com.jarves.mh.marketplace.MarketplaceInstallResult.Failed ->
+                    "Install failed: ${result.reason}"
+                com.jarves.mh.marketplace.MarketplaceInstallResult.AlreadyInstalled ->
+                    "${item.name} is already installed"
+            }
+            _marketplaceInstalledIds.value = marketplaceInstallManager.installedIds()
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(toastMessage = outcome) }
+            }
+        }
+    }
+
+    /**
+     * Uninstalls a marketplace item through the real [MarketplaceInstallManager]:
+     * removes the package directory and its durable record.
+     */
+    fun uninstallMarketplaceItem(item: com.jarves.mh.marketplace.MarketplaceItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val removed = marketplaceInstallManager.uninstall(item.id)
+            _marketplaceInstalledIds.value = marketplaceInstallManager.installedIds()
+            val outcome = if (removed) "Uninstalled ${item.name}" else "${item.name} was not installed"
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(toastMessage = outcome) }
+            }
         }
     }
 

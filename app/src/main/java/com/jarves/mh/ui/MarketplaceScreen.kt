@@ -75,11 +75,19 @@ fun MarketplaceScreen(
     onBack: (() -> Unit)? = null,
     onInstallItem: (MarketplaceItem) -> Unit = {},
     onUninstallItem: (MarketplaceItem) -> Unit = {},
+    /**
+     * Installed package IDs from the real [MarketplaceInstallManager], so the
+     * screen reflects durable install state (not just in-memory session state).
+     */
+    initiallyInstalledIds: Set<String> = emptySet(),
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<MarketplaceCategory?>(null) }
     var showOnlyInstalled by rememberSaveable { mutableStateOf(false) }
-    var installedSet by remember { mutableStateOf(setOf<String>()) }
+    // Install state is owned by MarketplaceInstallManager (durable). The screen never
+    // mutates install state locally: it renders the manager's set and delegates
+    // install/uninstall to the callbacks, which report real results.
+    val installedSet = initiallyInstalledIds
     var showPublishDialog by rememberSaveable { mutableStateOf(false) }
     var catalogVersion by remember { mutableStateOf(0) }
 
@@ -101,7 +109,7 @@ fun MarketplaceScreen(
             }
         }
         if (showOnlyInstalled) {
-            searched.filter { installedSet.contains(it.id) || DeveloperMarketplaceCatalog.isInstalled(it.id) }
+            searched.filter { installedSet.contains(it.id) }
         } else {
             searched
         }
@@ -201,7 +209,7 @@ fun MarketplaceScreen(
                     selected = showOnlyInstalled,
                     onClick = { showOnlyInstalled = !showOnlyInstalled },
                     label = {
-                        val installedCount = DeveloperMarketplaceCatalog.getInstalledItems().size.coerceAtLeast(installedSet.size)
+                        val installedCount = installedSet.size
                         Text("Installed ($installedCount)")
                     },
                     colors = FilterChipDefaults.filterChipColors(
@@ -241,20 +249,12 @@ fun MarketplaceScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(allItems, key = { it.id }) { item ->
-                    val isInstalled = installedSet.contains(item.id) || DeveloperMarketplaceCatalog.isInstalled(item.id)
+                    val isInstalled = installedSet.contains(item.id)
                     MarketplaceItemCard(
                         item = item,
                         isInstalled = isInstalled,
-                        onInstall = {
-                            DeveloperMarketplaceCatalog.markInstalled(item.id)
-                            installedSet = installedSet + item.id
-                            onInstallItem(item)
-                        },
-                        onUninstall = {
-                            DeveloperMarketplaceCatalog.uninstallItem(item.id)
-                            installedSet = installedSet - item.id
-                            onUninstallItem(item)
-                        },
+                        onInstall = { onInstallItem(item) },
+                        onUninstall = { onUninstallItem(item) },
                         onDeleteCustom = if (item.isCustom) {
                             {
                                 DeveloperMarketplaceCatalog.removeCustomItem(item.id)

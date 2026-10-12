@@ -304,6 +304,7 @@ fun PocketDevApp(
     authViewModel: AuthViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val marketplaceInstalledIds by viewModel.marketplaceInstalledIds.collectAsStateWithLifecycle()
     val authState by authViewModel.authState.collectAsStateWithLifecycle()
     val detectedPorts by viewModel.detectedLocalhostPorts.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -406,12 +407,9 @@ fun PocketDevApp(
     if (showMarketplaceScreen) {
         MarketplaceScreen(
             onBack = { showMarketplaceScreen = false },
-            onInstallItem = { item ->
-                viewModel.showToast("Marketplace: installed ${item.name}")
-            },
-            onUninstallItem = { item ->
-                viewModel.showToast("Marketplace: uninstalled ${item.name}")
-            },
+            onInstallItem = { item -> viewModel.installMarketplaceItem(item) },
+            onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
+            initiallyInstalledIds = marketplaceInstalledIds,
         )
         return
     }
@@ -2532,12 +2530,9 @@ private fun RootScreenHost(
                 )
                 RootScreen.MARKETPLACE -> MarketplaceScreen(
                     onBack = { screen = RootScreen.PROJECTS },
-                    onInstallItem = { item ->
-                        viewModel.showToast("Marketplace: installed ${item.name}")
-                    },
-                    onUninstallItem = { item ->
-                        viewModel.showToast("Marketplace: uninstalled ${item.name}")
-                    },
+                    onInstallItem = { item -> viewModel.installMarketplaceItem(item) },
+                    onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
+                    initiallyInstalledIds = marketplaceInstalledIds,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
