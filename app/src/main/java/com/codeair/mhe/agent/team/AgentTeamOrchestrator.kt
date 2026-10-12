@@ -92,6 +92,12 @@ class AgentTeamOrchestrator(
     val projectDir: File? = null,
     /** Upper bound on concurrently executing agents in real mode. */
     val maxConcurrentAgents: Int = 3,
+    /**
+     * Adaptive resource-aware scheduler. When present, the hardware baseline
+     * caps [maxConcurrentAgents] and thermal/memory/battery pressure throttles
+     * it dynamically during runs.
+     */
+    val concurrencyController: AdaptiveConcurrencyController? = null,
 ) {
 
     private val _sessionState = MutableStateFlow(TeamSessionState())
@@ -107,6 +113,20 @@ class AgentTeamOrchestrator(
     val liveTasks: StateFlow<Map<String, LiveTaskInfo>> =
         (teamExecutor as? RealTeamAgentExecutor)?.liveTasks
             ?: MutableStateFlow<Map<String, LiveTaskInfo>>(emptyMap())
+
+    /**
+     * Adaptive throttle state for the UI header
+     * ("2 agents running (thermal throttle)"). Never throttled without a controller.
+     */
+    val throttleState: StateFlow<AdaptiveConcurrencyController.ThrottleState> =
+        concurrencyController?.state
+            ?: MutableStateFlow(
+                AdaptiveConcurrencyController.ThrottleState(
+                    effectiveMaxAgents = maxConcurrentAgents,
+                    baselineMaxAgents = maxConcurrentAgents,
+                    throttleReason = null,
+                )
+            )
 
     private val observerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -128,7 +148,13 @@ class AgentTeamOrchestrator(
             roleAgents = roleInstances.toMap(),
             projectDir = projectDir,
             goal = _sessionState.value.activeGoal,
-            maxConcurrentAgents = maxConcurrentAgents,
+            // Hardware baseline caps the configured maximum; dynamic pressure
+            // throttles it further per stage inside the dispatcher.
+            maxConcurrentAgents = minOf(
+                maxConcurrentAgents,
+                concurrencyController?.baselineMaxAgents ?: maxConcurrentAgents
+            ),
+            concurrencyController = concurrencyController,
         )
     }
 

@@ -1,7 +1,15 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.codeair.mhe.agent.team.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +20,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -44,19 +54,24 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -66,6 +81,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -84,10 +100,12 @@ import com.codeair.mhe.agent.team.model.TeamRolePermissions
 import com.codeair.mhe.agent.team.model.TeamTask
 import com.codeair.mhe.agent.team.model.TeamTaskPriority
 import com.codeair.mhe.agent.team.model.TeamTaskStatus
+import com.codeair.mhe.agent.team.runtime.LiveTaskInfo
+import com.codeair.mhe.agent.team.runtime.LiveTaskStatus
 import kotlinx.coroutines.launch
 
 /**
- * Multi-Agent Engineering Studio Dashboard (Phase 11 v2.2).
+ * Multi-Agent Engineering Studio Dashboard.
  * 5-tab visual studio covering Roster, Task DAG, Inter-Agent Comms, Shared Blackboard, and Review/Budget.
  */
 @Composable
@@ -97,11 +115,27 @@ fun TeamStudioScreen(
     onDispatchToAgent: (String) -> Unit = {}
 ) {
     val sessionState by orchestrator.sessionState.collectAsState()
+    val liveTasks by orchestrator.liveTasks.collectAsState()
+    val throttle by orchestrator.throttleState.collectAsState()
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
     var inputGoal by remember { mutableStateOf(sessionState.activeGoal.ifBlank { "Build robust offline mobile feature with testing and CI" }) }
 
     val tabs = listOf("Roster", "Task DAG", "Comms", "Blackboard", "Review & Budget")
+
+    // Antigravity-style header status: parallel count wins over single-role text.
+    // When the adaptive scheduler throttles, the reason is shown inline.
+    val runningLive = liveTasks.values.filter { it.status == LiveTaskStatus.RUNNING }
+    val headerStatusText: String? = when {
+        runningLive.isNotEmpty() -> {
+            val countText = if (runningLive.size == 1) "1 agent running" else "${runningLive.size} agents running"
+            val detail = if (runningLive.size == 1) "Executing: ${runningLive.first().role.title}" else countText
+            val reason = throttle.throttleReason
+            if (reason != null) "$countText ($reason)" else detail
+        }
+        sessionState.isRunning -> sessionState.activeRole?.let { "Executing: ${it.title}" } ?: "Running"
+        else -> null
+    }
 
     Column(
         modifier = Modifier
@@ -153,10 +187,9 @@ fun TeamStudioScreen(
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (sessionState.isRunning) {
+                            headerStatusText?.let { statusText ->
                                 Text(
-                                    text = sessionState.activeRole?.let { "Executing: ${it.title}" }
-                                        ?: "Running",
+                                    text = statusText,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -273,7 +306,9 @@ fun TeamStudioScreen(
 @Composable
 private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
     val sessionState by orchestrator.sessionState.collectAsState()
+    val liveTasks by orchestrator.liveTasks.collectAsState()
     val usages = orchestrator.budgetTracker.getAllRoleUsages()
+    var selectedRole by remember { mutableStateOf<TeamRole?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -281,18 +316,25 @@ private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
     ) {
         items(TeamRole.entries) { role ->
             val isActive = sessionState.activeRole == role
+            // Latest live task for this role (running now or most recent finished).
+            val live = liveTasks.values
+                .filter { it.role == role }
+                .maxByOrNull { it.startedAtMs }
+            val isRunning = live?.status == LiveTaskStatus.RUNNING
+            val highlighted = isActive || isRunning
             val permissions = TeamRolePermissions.forRole(role)
             val usage = usages[role]
 
             Card(
+                onClick = { selectedRole = role },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(
-                    width = if (isActive) 1.5.dp else 1.dp,
-                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    width = if (highlighted) 1.5.dp else 1.dp,
+                    color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 ),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
+                    containerColor = if (highlighted) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
                 )
             ) {
                 Column(
@@ -307,11 +349,12 @@ private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+                                color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -324,33 +367,58 @@ private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
                                         },
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp),
-                                        tint = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
+                                        tint = if (highlighted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
                                     )
                                 }
                             }
-                            Column {
-                                Text(
-                                    text = role.title,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = role.name,
-                                    fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = role.title,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (isRunning) PulsingDot()
+                                }
+                                if (isRunning && live != null) {
+                                    Text(
+                                        text = live.taskTitle,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                } else {
+                                    Text(
+                                        text = role.name,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
 
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = if (isActive) Color(0xFF2E7D32) else MaterialTheme.colorScheme.surfaceVariant
+                            color = when {
+                                isRunning -> Color(0xFF2E7D32)
+                                isActive -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            }
                         ) {
                             Text(
-                                text = if (isActive) "ACTIVE" else "IDLE",
+                                text = when {
+                                    isRunning -> "RUNNING"
+                                    isActive -> "ACTIVE"
+                                    else -> "IDLE"
+                                },
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isActive) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isRunning || isActive) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             )
                         }
@@ -390,6 +458,279 @@ private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
                 }
             }
         }
+    }
+
+    // Antigravity-style drill-down: tap a role to inspect its live task.
+    val role = selectedRole
+    if (role != null) {
+        val live = liveTasks.values
+            .filter { it.role == role }
+            .maxByOrNull { it.startedAtMs }
+        ModalBottomSheet(
+            onDismissRequest = { selectedRole = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            AgentDetailSheet(
+                role = role,
+                live = live,
+                orchestrator = orchestrator
+            )
+        }
+    }
+}
+
+/**
+ * Pulsing green dot marking a role that is executing right now.
+ */
+@Composable
+private fun PulsingDot() {
+    val transition = rememberInfiniteTransition(label = "livePulse")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .alpha(alpha)
+            .background(Color(0xFF2E7D32), CircleShape)
+    )
+}
+
+/**
+ * Bottom-sheet drill-down for one agent role: current or last task, live
+ * streaming output, stats, and produced artifacts.
+ */
+@Composable
+private fun AgentDetailSheet(
+    role: TeamRole,
+    live: LiveTaskInfo?,
+    orchestrator: AgentTeamOrchestrator
+) {
+    val sessionState by orchestrator.sessionState.collectAsState()
+    val usages = orchestrator.budgetTracker.getAllRoleUsages()
+    val usage = usages[role]
+    val outputText = live?.outputTail.orEmpty()
+    val scrollState = rememberScrollState()
+    val isRunning = live?.status == LiveTaskStatus.RUNNING
+
+    // Keep the live output pinned to the bottom while it streams.
+    LaunchedEffect(outputText.length) {
+        if (scrollState.maxValue > 0) scrollState.scrollTo(scrollState.maxValue)
+    }
+
+    val roleArtifacts = remember(sessionState.artifacts, role) {
+        sessionState.artifacts.filter { it.authorRole == role }.takeLast(5)
+    }
+    val statusLabel = when (live?.status) {
+        LiveTaskStatus.RUNNING -> "Running now"
+        LiveTaskStatus.COMPLETED -> "Last task completed"
+        LiveTaskStatus.FAILED -> "Last task failed"
+        null -> "Idle"
+    }
+    val durationMs = live?.let {
+        if (it.status == LiveTaskStatus.RUNNING) System.currentTimeMillis() - it.startedAtMs else it.durationMs
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 18.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = when (role) {
+                            TeamRole.MANAGER -> Icons.Default.Groups
+                            TeamRole.ARCHITECT -> Icons.Default.AccountTree
+                            TeamRole.SECURITY_REVIEWER -> Icons.Default.Security
+                            else -> Icons.Default.Engineering
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = role.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (isRunning) PulsingDot()
+                }
+                Text(
+                    text = statusLabel,
+                    fontSize = 11.sp,
+                    color = if (isRunning) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+        if (live != null) {
+            Text(
+                text = if (isRunning) "Current task" else "Last task",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = live.taskTitle,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (live.taskDescription.isNotBlank()) {
+                Text(
+                    text = live.taskDescription,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Live output",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
+            if (outputText.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = outputText,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(scrollState)
+                            .padding(10.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = if (isRunning) "Waiting for the first output..." else "No text output was produced.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                AgentStat("Tokens", live.tokensUsed?.toString() ?: usage?.tokensUsed?.toString() ?: "-")
+                AgentStat("Duration", durationMs?.let { formatAgentDuration(it) } ?: "-")
+                AgentStat("Tasks done", usage?.tasksCompleted?.toString() ?: "0")
+            }
+        } else {
+            Text(
+                text = "No task has run on this agent yet. Start a team run to see it work live here.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (roleArtifacts.isNotEmpty()) {
+            Text(
+                text = "Artifacts (${roleArtifacts.size})",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            roleArtifacts.forEach { artifact ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.Article,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = artifact.title,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = artifact.type.label,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentStat(label: String, value: String) {
+    Column {
+        Text(
+            text = value,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatAgentDuration(ms: Long): String {
+    val totalSeconds = ms / 1000
+    return when {
+        totalSeconds < 60 -> "${totalSeconds}s"
+        totalSeconds < 3600 -> "${totalSeconds / 60}m ${totalSeconds % 60}s"
+        else -> "${totalSeconds / 3600}h ${(totalSeconds % 3600) / 60}m"
     }
 }
 

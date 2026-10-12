@@ -271,6 +271,8 @@ data class TeamSessionState(
     val activeGoal: String = "",
     val isRunning: Boolean = false,
     val activeRole: TeamRole? = null,
+    /** Number of agents with a RUNNING live task right now (parallel execution). */
+    val activeTaskCount: Int = 0,
     val tasks: List<TeamTask> = emptyList(),
     val events: List<TeamCollaborationEvent> = emptyList(),
     val messages: List<TeamMessage> = emptyList(),

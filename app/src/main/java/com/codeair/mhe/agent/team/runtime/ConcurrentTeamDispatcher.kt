@@ -53,6 +53,13 @@ class ConcurrentTeamDispatcher(
     private val projectDir: File? = null,
     private val goal: String = "",
     private val maxConcurrentAgents: Int = 3,
+    /**
+     * Adaptive resource-aware scheduler. When present, device pressure is
+     * re-evaluated before every stage and every 30s during the run; the stage
+     * semaphore is rebuilt from the live effective count. In-flight tasks are
+     * never killed by throttling.
+     */
+    private val concurrencyController: AdaptiveConcurrencyController? = null,
 ) {
     private val cancelled = AtomicBoolean(false)
     private val fileLocks = ConcurrentHashMap<String, Mutex>()
@@ -95,32 +102,42 @@ class ConcurrentTeamDispatcher(
             )
         }
 
-        val semaphore = Semaphore(maxConcurrentAgents.coerceAtLeast(1))
-
-        for (stage in stages) {
-            if (cancelled.get()) break
-            if (budgetTracker.isQuotaExceeded()) {
-                commBus.escalateToManager(
-                    fromRole = TeamRole.MANAGER,
-                    reason = "Token quota exceeded; halting dispatch before stage of ${stage.size} tasks.",
-                )
-                break
-            }
-            val stageOutcomes = stage
-                // NOTE: stage lists snapshot task state at computation time; re-check
-                // liveness against the scheduler so tasks unlocked by the previous
-                // stage are actually dispatched.
-                .filter { scheduler.getTask(it.id)?.status == TeamTaskStatus.READY }
-                .map { task ->
-                    async(Dispatchers.Default) {
-                        semaphore.withPermit { executeOne(task) }
-                    }
+        val controller = concurrencyController
+        controller?.startMonitoring()
+        try {
+            for (stage in stages) {
+                if (cancelled.get()) break
+                if (budgetTracker.isQuotaExceeded()) {
+                    commBus.escalateToManager(
+                        fromRole = TeamRole.MANAGER,
+                        reason = "Token quota exceeded; halting dispatch before stage of ${stage.size} tasks.",
+                    )
+                    break
                 }
-                .awaitAll()
-            stageOutcomes.forEach { (outcome, reviews) ->
-                outcomes += outcome
-                reviewRecords += reviews
+                // Adaptive scheduling: re-read device pressure before each stage
+                // and size this stage's parallelism from the live effective count.
+                controller?.evaluateNow()
+                val stageLimit = (controller?.currentMaxAgents() ?: maxConcurrentAgents).coerceAtLeast(1)
+                val semaphore = Semaphore(stageLimit)
+
+                val stageOutcomes = stage
+                    // NOTE: stage lists snapshot task state at computation time; re-check
+                    // liveness against the scheduler so tasks unlocked by the previous
+                    // stage are actually dispatched.
+                    .filter { scheduler.getTask(it.id)?.status == TeamTaskStatus.READY }
+                    .map { task ->
+                        async(Dispatchers.Default) {
+                            semaphore.withPermit { executeOne(task) }
+                        }
+                    }
+                    .awaitAll()
+                stageOutcomes.forEach { (outcome, reviews) ->
+                    outcomes += outcome
+                    reviewRecords += reviews
+                }
             }
+        } finally {
+            controller?.stopMonitoring()
         }
 
         TeamRunReport(

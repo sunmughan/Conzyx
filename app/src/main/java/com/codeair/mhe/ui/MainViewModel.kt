@@ -399,6 +399,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitHubClient = com.codeair.mhe.network.GitHubClient()
     val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val marketplaceInstallManager = com.codeair.mhe.marketplace.MarketplaceInstallManager(application)
+    val teamConcurrencyController = com.codeair.mhe.agent.team.runtime.AdaptiveConcurrencyController(application)
     val teamOrchestrator = com.codeair.mhe.agent.team.AgentTeamOrchestrator(
         teamExecutor = com.codeair.mhe.agent.team.runtime.RealTeamAgentExecutor(
             workspaceBaseDir = File(application.filesDir, "team-workspaces"),
@@ -428,6 +429,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             secretFor = { profile -> vault.get(profile.kind.name) },
         ),
         isDemoMode = false,
+        concurrencyController = teamConcurrencyController,
     )
     val cloudHybridCoordinator = com.codeair.mhe.cloud.CloudHybridCoordinator()
     val workspaceCollaborationManager = com.codeair.mhe.collab.WorkspaceCollaborationManager()
