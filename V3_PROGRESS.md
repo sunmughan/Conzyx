@@ -254,3 +254,40 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 **Deliberately deferred:**
 - Rewiring every existing call site (terminal, git engine, cloud runner, installer) to the adapters — the gateway + adapters are the choke point and fully tested; call-site migration is M6 work when the autonomous workflow starts producing writes.
 - Remote MCP transport/auth — M7 scope.
+
+## Milestone 6 — COMPLETE (2026-10-12)
+
+**Genuinely autonomous workflow** (Phase 5): plan → implement → build → test → fix (bounded) → retest → review → approve → commit. CI green (run 38253238901).
+
+### Task decomposition (honest, template-driven)
+- `workflow/WorkflowModels.kt` (new): `WorkflowGoal`/`WorkflowGoalKind` (ISSUE_FIX, FEATURE, REFACTOR, CUSTOM), `PlanStep`/`PlanStepKind` (ANALYZE, IMPLEMENT, WRITE_FILE, RUN_COMMAND, RUN_TESTS, GIT_COMMIT, GIT_PUSH), `StepRunStatus`, `StepRunResult`, `WorkflowPhase`, `WorkflowRunState`. `WorkflowPlan.topologicalOrder()` rejects unknown deps, self-deps and cycles with `IllegalArgumentException` — an unorderable plan never executes. `commitSteps()`/`workSteps()` split the plan at the review gate.
+- `workflow/TaskDecomposer.kt` (new): `TemplateTaskDecomposer` maps each goal kind to a fixed validated step sequence (test steps carry a repair budget via `maxAttempts`); CUSTOM goals carry a caller-supplied step list validated for blank titles, duplicate ids, unknown deps and cycles. Anything else is `DecompositionOutcome.Refused` with a reason — plans are never invented.
+
+### Execution through the M5 safety gateway
+- `workflow/StepExecutors.kt` (new): every side effect routes through the M5 adapters — file reads/writes via `FileSafetyAdapter`, shell via `ShellSafetyAdapter`, Git via `GitSafetyAdapter`. `ProcessCommandRunner` (real `sh -c` with timeout, real exit codes) and `ProcessGitRunner` (real `git` binary, shell-quoted args) are injectable for tests. `DefaultCommandResolver` maps the `build`/`test` aliases through `AutonomousLoopEngine.detectBuildTool`; anything else is a literal command. `ImplementStepExecutor` refuses SIMULATED agent results (M0 rule). Safety DENY/PROMPT propagate out of the executors — never converted, never auto-repaired.
+- `workflow/PlanExecutor.kt` (new): dependency-order execution; dependents of a failed step are SKIPPED; bounded auto-repair consults a `RepairAdvisor` (default `AutoFixRepairAdvisor` builds the prompt from real output via `AutonomousLoopEngine.buildAutoFixPrompt`) within `maxAttempts`; a safety DENY fails the step immediately with no repair; cancellation marks remaining steps SKIPPED without overwriting resumed successes. `executeSubset` resolves cross-phase dependencies (commit steps depending on work steps) against previous results — unsatisfied external deps fail honestly.
+
+### Checkpoint-before-write + resume
+- `workflow/CheckpointStore.kt` (new): `snapshot` copies pre-write files (absent files recorded as `.absent` markers); `rollback` restores copies and deletes run-created files; run state persists as JSON after every step (`saveRunState`/`loadRunState`, corrupt files load as null, never crash); `discard` drops a run's data.
+
+### Review-before-commit gate
+- `workflow/WorkflowReviewer.kt` (new): `CallbackWorkflowReviewer` for production wiring; `TestOnlyAutoApproveReviewer` explicitly labelled tests/demos only.
+- `workflow/WorkflowRunner.kt` (new): orchestrates PLANNING → EXECUTING → REVIEWING → COMMITTING → DONE. The commit phase runs only after an APPROVE verdict — REJECT/REQUEST_CHANGES (or a reviewer throwing) stops the run before any commit. Real `git status --porcelain` empty-diff guard (M0 rule, injectable `diffChecker`) refuses no-op commits. `rollbackOnFailure` unwinds checkpointed writes on any failure. State published via `StateFlow<WorkflowRunState?>`; `resume(runId)` continues from the first incomplete step without re-executing successes; unknown run ids fail honestly.
+
+### Tests (41 new)
+- `TaskDecomposerTest` (9): template shapes per kind, dependency order, CUSTOM validation, refusals (blank title, no steps, duplicate ids, unknown dep, cycle).
+- `CheckpointStoreTest` (8): snapshot/rollback round-trips, absent-file deletion, discard, state save/load round-trip incl. operation results, corrupt/missing state → null.
+- `PlanExecutorTest` (9): dependency order, dependent skipping, repair success within budget, exhausted budget, advisor-declined retry stops, missing executor, resume keeps successes, invalid plan, in-subset cycle.
+- `WorkflowRunnerTest` (8): full loop success with commit+push after approval, review rejection blocks commit and rolls back writes, empty-diff refusal, refused plan, SIMULATED agent refusal, failing work step rolls back, resume without re-running successes, unknown resume id.
+- `WorkflowSafetyGateTest` (6, the M6 acceptance gate): explicitly denied write never creates the file, traversal is a hard deny, critical shell command never reaches the runner, kill switch blocks the run, safety deny is never auto-repaired (advisor not consulted, single attempt).
+- `WorkflowTestFixtures.kt`: fake executors/runners with invocation recording, real-gateway `WorkflowTestHarness`.
+
+### CI fix rounds (3)
+1. `CheckpointStore`: missing closing paren on `o.put("result", JSONObject()...)` (syntax error).
+2. `PlanExecutorTest.executorFor`: trailing lambda bound to the last param (`advisor`) — reordered so `behavior` is last.
+3. **Two real bugs found by tests**: (a) the repair loop re-entered after a declined advice (missing break) — it retried regardless; (b) commit-phase subsets failed topological sort because their dependencies live in the work phase — external deps now resolve against previous results.
+
+**Deliberately deferred:**
+- Wiring the runner into UI view-models / `MainViewModel` coordinators — the engine is complete and tested; UI integration is product work, not milestone work.
+- Real agent executor backends for IMPLEMENT steps — the executor interface is ready; M10 wires real executors.
+- Remote MCP transport/auth — M7 scope (unchanged).
