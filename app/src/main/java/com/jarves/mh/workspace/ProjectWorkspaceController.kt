@@ -3,6 +3,7 @@ package com.jarves.mh.workspace
 import android.content.Context
 import com.jarves.mh.model.Project
 import java.io.File
+import java.nio.file.Files
 
 /**
  * Domain controller for project workspace detection, metadata inference,
@@ -11,15 +12,50 @@ import java.io.File
 class ProjectWorkspaceController(private val context: Context) {
 
     private val workspacesDir: File
-        get() = File(context.filesDir, "workspaces").apply { mkdirs() }
+        get() {
+            val directory = File(context.filesDir, "workspaces")
+            require(!Files.isSymbolicLink(directory.toPath())) { "Workspace storage cannot be a symbolic link" }
+            check(directory.mkdirs() || directory.isDirectory) { "Workspace storage is unavailable" }
+            return directory.canonicalFile
+        }
+
+    private fun projectDirectory(projectId: String): File {
+        require(
+            projectId.isNotBlank() &&
+                !projectId.contains('/') &&
+                !projectId.contains('\\\\') &&
+                projectId != "." &&
+                projectId != "..",
+        ) { "Invalid project ID" }
+        val root = workspacesDir
+        val directory = File(root, projectId)
+        require(!Files.isSymbolicLink(directory.toPath())) { "Project workspace cannot be a symbolic link" }
+        require(directory.canonicalFile.toPath().startsWith(root.toPath())) {
+            "Project workspace escapes app storage"
+        }
+        return directory
+    }
 
     fun projectWorkspaceRoot(project: Project): File {
-        val base = File(workspacesDir, project.id)
-        return if (project.rootPath.isNotBlank()) File(base, project.rootPath) else base
+        val base = projectDirectory(project.id).canonicalFile
+        if (project.rootPath.isBlank()) return base
+        val relative = project.rootPath
+        require(!relative.startsWith('/') && !relative.contains('\\\\')) { "Invalid project root path" }
+        val segments = relative.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Invalid project root path" }
+        var candidate = base
+        for (segment in segments) {
+            candidate = File(candidate, segment)
+            require(!Files.isSymbolicLink(candidate.toPath())) { "Project root cannot traverse a symbolic link" }
+        }
+        require(candidate.canonicalFile.toPath().startsWith(base.toPath())) {
+            "Project root escapes its workspace"
+        }
+        return candidate
     }
 
     fun detectNestedProjectRoot(projectId: String): String? {
-        val base = File(workspacesDir, projectId)
+        val base = projectDirectory(projectId)
         if (!base.isDirectory) return null
         val visible = base.listFiles().orEmpty().filterNot { file ->
             file.name == ".claude" || file.name == ".claude.json"
@@ -49,7 +85,11 @@ class ProjectWorkspaceController(private val context: Context) {
 
     fun deleteProjectWorkspace(projectId: String): Boolean {
         return runCatching {
-            val dir = File(workspacesDir, projectId)
+            val root = workspacesDir.canonicalFile
+            val dir = projectDirectory(projectId)
+            require(dir.canonicalFile.toPath().startsWith(root.toPath())) {
+                "Project workspace escapes app storage"
+            }
             if (dir.exists()) dir.deleteRecursively() else true
         }.getOrDefault(false)
     }
