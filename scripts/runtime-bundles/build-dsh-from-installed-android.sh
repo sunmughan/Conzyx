@@ -5,7 +5,7 @@ set -euo pipefail
 # Ubuntu runtime. Only the npm payload, launcher symlink, and version marker are
 # exported; provider settings, API keys, sessions, chats, and workspaces are not.
 ADB_SERIAL="${ADB_SERIAL:-}"
-PACKAGE="${POCKETDEV_PACKAGE:-com.jarves.mh}"
+PACKAGE="${POCKETDEV_PACKAGE:-com.codeair.mhe}"
 VERSION="${POCKETDEV_DSH_BUNDLE_VERSION:-2026.09.1}"
 DSH_VERSION="${POCKETDEV_DSH_VERSION:-0.1.2-rc.1}"
 ARCHIVE="pocketdev-dsh-arm64-${VERSION}.tar.zst"

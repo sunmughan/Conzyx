@@ -10,7 +10,7 @@ for variant in online offline; do
   test -f "$apk"
 
   adb logcat -c -b all
-  adb uninstall com.jarves.mh || true
+  adb uninstall com.codeair.mhe || true
   adb uninstall "$PACKAGE" || true
   adb install "$apk"
 

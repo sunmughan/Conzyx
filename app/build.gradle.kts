@@ -59,7 +59,7 @@ fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
-    namespace = "com.jarves.mh"
+    namespace = "com.codeair.mhe"
     compileSdk = 36
     // F-Droid's r26b recipe installs 26.1.10909125. Keep AGP from selecting
     // its newer default NDK; local developers may override this explicitly.

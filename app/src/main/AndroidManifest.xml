@@ -77,6 +77,6 @@
             android:exported="false" />
         <property
             android:name="package_compatibility"
-            android:value="package: name='com.jarves.mh'" />
+            android:value="package: name='com.codeair.mhe'" />
     </application>
 </manifest>

@@ -2,7 +2,7 @@
 
 ## Current architecture audit
 
-Mobile Harness is an Android application with applicationId `com.jarves.mh`.
+Mobile Harness is an Android application with applicationId `com.codeair.mhe`.
 
 - Kotlin + Jetpack Compose UI.
 - AndroidX lifecycle/ViewModel state ownership.
@@ -162,4 +162,4 @@ The `offline` flavor does not include the Firebase Messaging runtime or messagin
 
 Background FCM notification payloads may be displayed directly by the FCM SDK rather than invoking `onMessageReceived`. Remote backends that need Mobile Harness to control notification presentation should therefore use data messages and the documented route/title/body contract.
 
-The supplied Firebase configuration contains a matching `com.jarves.mh` Android client; the project configuration is scoped to that client rather than carrying unrelated sibling-app clients.
+The supplied Firebase configuration contains a matching `com.codeair.mhe` Android client; the project configuration is scoped to that client rather than carrying unrelated sibling-app clients.
