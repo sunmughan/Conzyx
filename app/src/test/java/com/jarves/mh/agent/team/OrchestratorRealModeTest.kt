@@ -32,10 +32,12 @@ class OrchestratorRealModeTest {
     )
 
     private fun fakeExecutor(): TeamAgentExecutor = TeamAgentExecutor { task, context ->
-        val marker = if (context.role == TeamRole.CODE_REVIEWER) "\nVERDICT: APPROVED" else ""
+        // Faithfully simulates PromptBasedTeamAgentExecutor: the VERDICT marker
+        // in reviewer output becomes the structured reviewVerdict.
+        val verdict = if (context.role == TeamRole.CODE_REVIEWER) ReviewVerdict.APPROVED else null
         TeamExecutionResult(
             result = OperationResult.success(verificationEvidence = "agent completed"),
-            outputText = "Real output for ${task.title}.$marker",
+            outputText = "Real output for ${task.title}." + (verdict?.let { "\nVERDICT: $it" } ?: ""),
             artifacts = listOf(
                 TeamArtifact(
                     title = "${context.role.title}: ${task.title}",
@@ -46,6 +48,7 @@ class OrchestratorRealModeTest {
                     isSimulated = false,
                 )
             ),
+            reviewVerdict = verdict,
         )
     }
 
@@ -117,8 +120,7 @@ class OrchestratorRealModeTest {
         )
         orchestrator.planProject("Build a notes app")
         val report = orchestrator.autoRunAllReal()
-        val outcomeDetail = report.outcomes.joinToString("; ") { "${it.task.title}=${it.status}" }
-        assertEquals("outcomes: [$outcomeDetail]", 10, report.succeeded)
+        assertEquals(10, report.succeeded)
         assertEquals(0, report.failed)
         assertTrue(report.isSuccess)
         // Real reviews were recorded for the reviewer roles.

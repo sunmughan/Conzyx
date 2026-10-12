@@ -107,10 +107,13 @@ class AgentTeamOrchestratorTest {
         // M10: non-demo mode is only legal with a real executor wired. The review
         // pipeline records genuine approvals through the gatekeeper.
         val executor = TeamAgentExecutor { task, context ->
-            val marker = if (context.role == TeamRole.CODE_REVIEWER) "\nVERDICT: APPROVED" else ""
+            // Faithfully simulates PromptBasedTeamAgentExecutor: the VERDICT marker
+            // in reviewer output becomes the structured reviewVerdict.
+            val verdict = if (context.role == TeamRole.CODE_REVIEWER) ReviewVerdict.APPROVED else null
             TeamExecutionResult(
                 result = OperationResult.success(verificationEvidence = "agent completed"),
-                outputText = "Real output for ${task.title}.$marker",
+                outputText = "Real output for ${task.title}." + (verdict?.let { "\nVERDICT: $it" } ?: ""),
+                reviewVerdict = verdict,
             )
         }
         val validator = TeamRoleValidator(
@@ -128,8 +131,7 @@ class AgentTeamOrchestratorTest {
         realModeOrchestrator.planProject("Build complete mobile app")
 
         val report = realModeOrchestrator.autoRunAllReal()
-        val outcomeDetail = report.outcomes.joinToString("; ") { "${it.task.title}=${it.status}" }
-        assertEquals("outcomes: [$outcomeDetail]", 10, report.succeeded)
+        assertEquals(10, report.succeeded)
 
         val sessionState = realModeOrchestrator.sessionState.value
         assertTrue(sessionState.tasks.all { it.status == TeamTaskStatus.COMPLETED })
