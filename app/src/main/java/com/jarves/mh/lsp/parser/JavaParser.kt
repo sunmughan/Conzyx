@@ -160,7 +160,7 @@ class JavaParser(
         // Record components: record Point(int x, int y)
         var parameters: List<String> = emptyList()
         if (keywordToken.text == "record" && checkSymbol("(")) {
-            parameters = parseJavaParameterList()
+            parameters = parseJavaParameterList(name)
         }
 
         // extends / implements
@@ -249,7 +249,7 @@ class JavaParser(
         val after = peek()
         if (after.type == TokenType.SYMBOL && after.text == "(") {
             // Method or constructor.
-            val parameters = parseJavaParameterList()
+            val parameters = parseJavaParameterList(nameTok.text)
             // throws clause
             if (checkText("throws")) {
                 advance()
@@ -342,7 +342,7 @@ class JavaParser(
         pendingDocComment = null
     }
 
-    private fun parseJavaParameterList(): List<String> {
+    private fun parseJavaParameterList(functionName: String? = null): List<String> {
         val inner = skipBalanced("(", ")")
         val params = mutableListOf<String>()
         var i = 0
@@ -389,7 +389,7 @@ class JavaParser(
                         kind = ParsedSymbolKind.PARAMETER,
                         line = nameToken.line,
                         character = nameToken.character,
-                        containerName = scopeStack.lastOrNull()?.name,
+                        containerName = functionName ?: scopeStack.lastOrNull()?.name,
                         depth = scopeStack.size + 1,
                         signature = nameToken.text,
                     )

@@ -265,7 +265,9 @@ class TypeScriptParser(
         val isAnonymous = nameToken.type != TokenType.IDENTIFIER
         if (!isAnonymous) advance()
         if (checkSymbol("<")) skipGenericParams()
-        val parameters = if (checkSymbol("(")) parseTsParameterList() else emptyList()
+        val parameters = if (checkSymbol("(")) {
+            parseTsParameterList(if (!isAnonymous) nameToken.text else null)
+        } else emptyList()
         // Return type annotation.
         if (matchSymbol(":")) skipTypeAnnotation()
         val symbol = if (!isAnonymous) {
@@ -338,7 +340,7 @@ class TypeScriptParser(
                 // Parse the parameter list structurally.
                 val savedPos = pos
                 if (checkText("async")) advance()
-                parameters = if (checkSymbol("(")) parseTsParameterList() else {
+                parameters = if (checkSymbol("(")) parseTsParameterList(nameToken.text) else {
                     // Single param without parens: x => ...
                     if (peek().type == TokenType.IDENTIFIER) listOf(advance().text) else emptyList()
                 }
@@ -508,7 +510,7 @@ class TypeScriptParser(
         }
     }
 
-    private fun parseTsParameterList(): List<String> {
+    private fun parseTsParameterList(functionName: String? = null): List<String> {
         val inner = skipBalanced("(", ")")
         val params = mutableListOf<String>()
         var i = 0
@@ -581,7 +583,7 @@ class TypeScriptParser(
                         kind = ParsedSymbolKind.PARAMETER,
                         line = nameToken.line,
                         character = nameToken.character,
-                        containerName = scopeStack.lastOrNull()?.name,
+                        containerName = functionName ?: scopeStack.lastOrNull()?.name,
                         depth = scopeStack.size + 1,
                         signature = nameToken.text,
                     )
@@ -762,7 +764,7 @@ class TypeScriptParser(
         advance() // name
         when (next.text) {
             "(" -> {
-                val parameters = parseTsParameterList()
+                val parameters = parseTsParameterList(nameToken.text)
                 if (matchSymbol(":")) skipTypeAnnotation()
                 val symbol = declare(
                     name = nameToken.text,
@@ -783,7 +785,7 @@ class TypeScriptParser(
                 // Generic method: name<T>(...)
                 skipGenericParams()
                 if (checkSymbol("(")) {
-                    val parameters = parseTsParameterList()
+                    val parameters = parseTsParameterList(nameToken.text)
                     if (matchSymbol(":")) skipTypeAnnotation()
                     val symbol = declare(
                         name = nameToken.text,

@@ -231,7 +231,7 @@ class PythonParser(
             return
         }
         advance()
-        val parameters = if (checkSymbol("(")) parsePyParameterList() else emptyList()
+        val parameters = if (checkSymbol("(")) parsePyParameterList(nameToken.text) else emptyList()
         // Return annotation: -> Type:
         if (checkSymbol("-") && peek(1).type == TokenType.SYMBOL && peek(1).text == ">") {
             advance()
@@ -291,7 +291,7 @@ class PythonParser(
         }
     }
 
-    private fun parsePyParameterList(): List<String> {
+    private fun parsePyParameterList(functionName: String? = null): List<String> {
         val inner = skipBalanced("(", ")")
         val params = mutableListOf<String>()
         var i = 0
@@ -310,7 +310,7 @@ class PythonParser(
                                 kind = ParsedSymbolKind.PARAMETER,
                                 line = nameToken.line,
                                 character = nameToken.character,
-                                containerName = scopeStack.lastOrNull()?.name,
+                                containerName = functionName ?: scopeStack.lastOrNull()?.name,
                                 depth = scopeStack.size + 1,
                                 signature = nameToken.text,
                             )

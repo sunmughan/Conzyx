@@ -204,9 +204,11 @@ class KotlinParser(
      */
     private fun parseDeclarationOrSkip() {
         // Skip modifiers / annotations.
+        var sawCompanion = false
         while (!isAtEnd()) {
             val t = peek()
             if (t.type == TokenType.IDENTIFIER && t.text in KOTLIN_MODIFIERS) {
+                if (t.text == "companion") sawCompanion = true
                 advance()
                 pendingDocComment = null
                 continue
@@ -227,7 +229,7 @@ class KotlinParser(
             return
         }
         when (t.text) {
-            "class", "interface", "object", "enum", "annotation" -> parseClassLike()
+            "class", "interface", "object", "enum", "annotation" -> parseClassLike(isCompanion = sawCompanion)
             "fun" -> parseFunction()
             "val", "var", "const" -> parseProperty()
             "constructor" -> parseConstructor()
@@ -240,8 +242,9 @@ class KotlinParser(
         }
     }
 
-    private fun parseClassLike() {
-        val keyword = advance().text // class | interface | object | enum | annotation
+    private fun parseClassLike(isCompanion: Boolean = false) {
+        val keywordToken = advance()
+        val keyword = keywordToken.text // class | interface | object | enum | annotation
         // `enum class`, `annotation class`, `companion object`
         var kind = when (keyword) {
             "interface" -> ParsedSymbolKind.INTERFACE
@@ -257,7 +260,20 @@ class KotlinParser(
 
         val nameToken = peek()
         if (nameToken.type != TokenType.IDENTIFIER) {
-            // Anonymous object expression: skip its body if present.
+            // Anonymous object expression — unless it is `companion object`,
+            // whose members belong to the synthetic "companion" scope.
+            if (isCompanion && keyword == "object" && checkSymbol("{")) {
+                val companionSymbol = declare(
+                    name = "companion",
+                    kind = ParsedSymbolKind.OBJECT,
+                    token = keywordToken,
+                    signature = "companion object",
+                )
+                advance() // {
+                enterScope(companionSymbol)
+                parseBlockContents(ownsScope = true)
+                return
+            }
             if (checkSymbol("{")) {
                 advance()
                 parseBlockContents(ownsScope = false)
@@ -273,7 +289,7 @@ class KotlinParser(
         // Primary constructor parameters: class Foo(val x: Int)
         var parameters: List<String> = emptyList()
         if (checkSymbol("(")) {
-            parameters = parseParameterList()
+            parameters = parseParameterList(name)
         }
 
         // Supertypes: : Bar(), Baz
@@ -329,7 +345,7 @@ class KotlinParser(
         val nameToken = peek()
         if (nameToken.type != TokenType.IDENTIFIER) return
         advance()
-        val parameters = if (checkSymbol("(")) parseParameterList() else emptyList()
+        val parameters = if (checkSymbol("(")) parseParameterList(nameToken.text) else emptyList()
         // Return type: : Foo<Bar>
         var returnType: String? = null
         if (matchSymbol(":")) {
@@ -425,7 +441,7 @@ class KotlinParser(
     }
 
     /** Parses `(p1: T1, p2: T2)` into ["p1: T1", "p2: T2"], recording parameters. */
-    private fun parseParameterList(): List<String> {
+    private fun parseParameterList(functionName: String? = null): List<String> {
         val inner = skipBalanced("(", ")")
         val params = mutableListOf<String>()
         var i = 0
@@ -449,7 +465,7 @@ class KotlinParser(
                             kind = ParsedSymbolKind.PARAMETER,
                             line = nameToken.line,
                             character = nameToken.character,
-                            containerName = container,
+                            containerName = functionName ?: container,
                             depth = scopeStack.size + 1,
                             signature = nameToken.text,
                         )
