@@ -78,28 +78,28 @@ class PathSecurityAuditor {
             if (root != null) File(root, normalized) else File(normalized).absoluteFile
         }
 
-        // Absolute path outside the allowed root.
-        if (root != null && requestedFile.isAbsolute) {
-            val canonicalRequested = runCatching { requestedFile.canonicalFile }.getOrNull()
-                ?: requestedFile.absoluteFile
-            if (!isWithin(canonicalRequested, root)) {
-                return PathAuditResult.Rejected(
-                    "Absolute path escapes allowed root: '$requestedPath'",
-                    RejectionKind.ABSOLUTE_ESCAPE
-                )
-            }
-        }
-
-        // Symlink escape: resolve the real path (following links). For paths
-        // that do not exist yet, resolve the nearest existing ancestor and
-        // re-append the remainder, so a symlinked parent is still caught.
+        // Containment check against the allowed root.
+        // Lexical containment (no symlink resolution) tells us whether the
+        // request itself points outside; resolved containment (following
+        // symlinks, tolerating non-existent tails) tells us whether a symlink
+        // smuggles the target outside. Lexically-inside but resolved-outside
+        // is a symlink escape; lexically-outside is an absolute escape.
         if (root != null) {
+            val lexicalInside = isWithin(requestedFile.toPath().normalize().toFile(), root)
             val resolved = resolveRealPath(requestedFile)
-            if (resolved != null && !isWithin(resolved, root)) {
-                return PathAuditResult.Rejected(
-                    "Symlink escape: resolved path '${resolved.path}' is outside the allowed root",
-                    RejectionKind.SYMLINK_ESCAPE
-                )
+            val resolvedOutside = if (resolved != null) !isWithin(resolved, root) else !lexicalInside
+            if (resolvedOutside) {
+                return if (lexicalInside) {
+                    PathAuditResult.Rejected(
+                        "Symlink escape: resolved path '${resolved?.path}' is outside the allowed root",
+                        RejectionKind.SYMLINK_ESCAPE
+                    )
+                } else {
+                    PathAuditResult.Rejected(
+                        "Absolute path escapes allowed root: '$requestedPath'",
+                        RejectionKind.ABSOLUTE_ESCAPE
+                    )
+                }
             }
         }
 

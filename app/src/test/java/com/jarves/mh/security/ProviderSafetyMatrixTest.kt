@@ -25,27 +25,27 @@ class ProviderSafetyMatrixTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
 
-    private lateinit var policyDir: File
     private lateinit var workspaceRoot: File
-    private lateinit var mcpDir: File
 
     private val mcpServerId = "matrix-mcp-server"
 
     @Before
     fun setUp() {
-        policyDir = tempFolder.newFolder("security")
         workspaceRoot = tempFolder.newFolder("workspace")
-        mcpDir = tempFolder.newFolder("mcp")
         File(workspaceRoot, "src").mkdirs()
     }
 
     private fun buildGateway(setup: SafetyTestMatrix.MatrixSetup): SafetyGateway {
-        val engine = PermissionPolicyEngine(policyDir = policyDir)
+        // Hermetic per case: a fresh policy dir so grants/denies from one
+        // case can never leak into another via the persisted JSON.
+        val casePolicyDir = tempFolder.newFolder("security-case-${System.nanoTime()}")
+        val caseMcpDir = tempFolder.newFolder("mcp-case-${System.nanoTime()}")
+        val engine = PermissionPolicyEngine(policyDir = casePolicyDir)
         setup.globalDenies.forEach { engine.grantPermission(it, PermissionLevel.DENY) }
         setup.globalAlways.forEach { engine.grantPermission(it, PermissionLevel.ALWAYS) }
         if (setup.killSwitch) engine.engageEmergencyKillSwitch("matrix test")
 
-        val mcpManager = McpPermissionManager(mcpDir, engine)
+        val mcpManager = McpPermissionManager(caseMcpDir, engine)
         // Matrix MCP case expects DENY: deny the matrix server up front.
         mcpManager.setGlobalServerPolicy(mcpServerId, McpPermissionPolicy.DENY)
         val server = McpServerInfo(
