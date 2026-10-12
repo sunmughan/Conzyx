@@ -468,7 +468,7 @@ class AppFactoryLoopTest {
                 },
                 testRunner = FakeCommandRunner.succeeding(),
                 signingInjector = { true },
-                signatureVerifier = AppFactoryLoop.defaultVerifySignature,
+                signatureVerifier = AppFactoryLoop::defaultVerifySignature,
                 listingPreparer = dummyListing(),
             )
             // A random 32-byte file is not a valid AAB zip → VERIFY_SIGNATURE fails honestly.
