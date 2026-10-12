@@ -162,7 +162,7 @@ open class GitHubClient {
         )
     }
 
-    fun createIssueComment(token: String, repoFullName: String, issueNumber: Int, comment: String): GitHubIssueComment {
+    open fun createIssueComment(token: String, repoFullName: String, issueNumber: Int, comment: String): GitHubIssueComment {
         val payload = JSONObject().apply { put("body", comment) }
         val json = postJson("https://api.github.com/repos/$repoFullName/issues/$issueNumber/comments", token, payload) as JSONObject
         return GitHubIssueComment(
@@ -173,7 +173,7 @@ open class GitHubClient {
         )
     }
 
-    fun closeIssue(token: String, repoFullName: String, issueNumber: Int): Boolean {
+    open fun closeIssue(token: String, repoFullName: String, issueNumber: Int): Boolean {
         val payload = JSONObject().apply { put("state", "closed") }
         val res = patchJson("https://api.github.com/repos/$repoFullName/issues/$issueNumber", token, payload)
         return res is JSONObject
@@ -232,7 +232,7 @@ open class GitHubClient {
         )
     }
 
-    fun mergePullRequest(
+    open fun mergePullRequest(
         token: String,
         repoFullName: String,
         prNumber: Int,
@@ -286,7 +286,7 @@ open class GitHubClient {
         )
     }
 
-    fun listReviews(token: String, repoFullName: String, prNumber: Int): List<GitHubReview> {
+    open fun listReviews(token: String, repoFullName: String, prNumber: Int): List<GitHubReview> {
         val array = getJson("https://api.github.com/repos/$repoFullName/pulls/$prNumber/reviews", token) as? JSONArray ?: return emptyList()
         val list = mutableListOf<GitHubReview>()
         for (i in 0 until array.length()) {
@@ -339,7 +339,7 @@ open class GitHubClient {
         return list
     }
 
-    fun dispatchWorkflow(
+    open fun dispatchWorkflow(
         token: String,
         repoFullName: String,
         workflowId: String,
@@ -383,13 +383,14 @@ open class GitHubClient {
                 createdAt = item.optString("created_at", ""),
                 publishedAt = item.optString("published_at", ""),
                 htmlUrl = item.optString("html_url", ""),
-                assets = assets
+                assets = assets,
+                uploadUrl = item.optString("upload_url", "")
             )
         }
         return list
     }
 
-    fun createRelease(
+    open fun createRelease(
         token: String,
         repoFullName: String,
         tagName: String,
@@ -416,8 +417,270 @@ open class GitHubClient {
             createdAt = json.optString("created_at", ""),
             publishedAt = json.optString("published_at", ""),
             htmlUrl = json.getString("html_url"),
-            assets = emptyList()
+            assets = emptyList(),
+            uploadUrl = json.optString("upload_url", "")
         )
+    }
+
+    /**
+     * Milestone 9 — GitHub automation remainder.
+     *
+     * PR detail view for automation decisions (merge gating). `mergeable` is null
+     * while GitHub is still computing it; callers must treat null as unknown.
+     */
+    open fun getPullRequest(token: String, repoFullName: String, prNumber: Int): GitHubPullRequestDetail {
+        val json = getJson("https://api.github.com/repos/$repoFullName/pulls/$prNumber", token) as JSONObject
+        return GitHubPullRequestDetail(
+            number = json.getInt("number"),
+            title = json.getString("title"),
+            state = json.getString("state"),
+            user = json.optJSONObject("user")?.optString("login") ?: "user",
+            headBranch = json.optJSONObject("head")?.optString("ref") ?: "",
+            baseBranch = json.optJSONObject("base")?.optString("ref") ?: "",
+            headSha = json.optJSONObject("head")?.optString("sha") ?: "",
+            htmlUrl = json.optString("html_url", ""),
+            body = json.optString("body", ""),
+            draft = json.optBoolean("draft", false),
+            merged = json.optBoolean("merged", false),
+            mergeable = if (json.isNull("mergeable")) null else json.optBoolean("mergeable"),
+            mergeableState = json.optString("mergeable_state", "unknown"),
+        )
+    }
+
+    open fun updatePullRequest(
+        token: String,
+        repoFullName: String,
+        prNumber: Int,
+        title: String? = null,
+        body: String? = null,
+    ): GitHubPullRequest {
+        val payload = JSONObject().apply {
+            if (title != null) put("title", title)
+            if (body != null) put("body", body)
+        }
+        val json = patchJson("https://api.github.com/repos/$repoFullName/pulls/$prNumber", token, payload) as JSONObject
+        return GitHubPullRequest(
+            number = json.getInt("number"),
+            title = json.getString("title"),
+            state = json.getString("state"),
+            user = json.optJSONObject("user")?.optString("login") ?: "user",
+            headBranch = json.optJSONObject("head")?.optString("ref") ?: "",
+            baseBranch = json.optJSONObject("base")?.optString("ref") ?: "",
+            htmlUrl = json.optString("html_url", ""),
+            body = json.optString("body", ""),
+        )
+    }
+
+    open fun requestReviewers(token: String, repoFullName: String, prNumber: Int, reviewers: List<String>): Boolean {
+        if (reviewers.isEmpty()) return true
+        val payload = JSONObject().apply { put("reviewers", JSONArray(reviewers)) }
+        val res = postJson("https://api.github.com/repos/$repoFullName/pulls/$prNumber/requested_reviewers", token, payload)
+        return res is JSONObject
+    }
+
+    /** Combined commit status rollup for a ref (branch, tag, or SHA) — used for merge gating. */
+    open fun getCombinedStatus(token: String, repoFullName: String, ref: String): CombinedStatus {
+        val encoded = URLEncoder.encode(ref, "UTF-8")
+        val json = getJson("https://api.github.com/repos/$repoFullName/commits/$encoded/status", token) as JSONObject
+        return CombinedStatus(
+            state = json.optString("state", "pending"),
+            totalCount = json.optInt("total_count", 0),
+            commitSha = json.optString("sha", ""),
+        )
+    }
+
+    open fun addLabels(token: String, repoFullName: String, issueNumber: Int, labels: List<String>): List<GitHubLabel> {
+        if (labels.isEmpty()) return emptyList()
+        val payload = JSONObject().apply { put("labels", JSONArray(labels)) }
+        val array = postJson("https://api.github.com/repos/$repoFullName/issues/$issueNumber/labels", token, payload) as? JSONArray
+            ?: return emptyList()
+        return (0 until array.length()).map { i ->
+            val item = array.getJSONObject(i)
+            GitHubLabel(
+                name = item.getString("name"),
+                color = item.optString("color", ""),
+                description = item.optString("description", ""),
+            )
+        }
+    }
+
+    open fun removeLabel(token: String, repoFullName: String, issueNumber: Int, label: String): Boolean {
+        val encoded = URLEncoder.encode(label, "UTF-8")
+        return deleteRequest("https://api.github.com/repos/$repoFullName/issues/$issueNumber/labels/$encoded", token)
+    }
+
+    open fun assignIssue(token: String, repoFullName: String, issueNumber: Int, assignees: List<String>): Boolean {
+        if (assignees.isEmpty()) return true
+        val payload = JSONObject().apply { put("assignees", JSONArray(assignees)) }
+        val res = postJson("https://api.github.com/repos/$repoFullName/issues/$issueNumber/assignees", token, payload)
+        return res is JSONObject
+    }
+
+    open fun updateIssue(
+        token: String,
+        repoFullName: String,
+        issueNumber: Int,
+        title: String? = null,
+        body: String? = null,
+    ): Boolean {
+        val payload = JSONObject().apply {
+            if (title != null) put("title", title)
+            if (body != null) put("body", body)
+        }
+        val res = patchJson("https://api.github.com/repos/$repoFullName/issues/$issueNumber", token, payload)
+        return res is JSONObject
+    }
+
+    open fun listIssueComments(token: String, repoFullName: String, issueNumber: Int): List<GitHubIssueComment> {
+        val array = getJson(
+            "https://api.github.com/repos/$repoFullName/issues/$issueNumber/comments?per_page=100",
+            token,
+        ) as? JSONArray ?: return emptyList()
+        return (0 until array.length()).map { i ->
+            val item = array.getJSONObject(i)
+            GitHubIssueComment(
+                id = item.getLong("id"),
+                body = item.getString("body"),
+                user = item.optJSONObject("user")?.optString("login") ?: "user",
+                createdAt = item.optString("created_at", ""),
+            )
+        }
+    }
+
+    /** Creates a git ref (e.g. `refs/tags/v1.2.3`) pointing at a commit SHA. Returns the ref name. */
+    open fun createGitRef(token: String, repoFullName: String, ref: String, sha: String): String {
+        val payload = JSONObject().apply {
+            put("ref", ref)
+            put("sha", sha)
+        }
+        val json = postJson("https://api.github.com/repos/$repoFullName/git/refs", token, payload) as JSONObject
+        return json.optString("ref", ref)
+    }
+
+    open fun generateReleaseNotes(
+        token: String,
+        repoFullName: String,
+        tagName: String,
+        previousTagName: String? = null,
+        targetCommitish: String? = null,
+    ): String {
+        val payload = JSONObject().apply {
+            put("tag_name", tagName)
+            if (!previousTagName.isNullOrBlank()) put("previous_tag_name", previousTagName)
+            if (!targetCommitish.isNullOrBlank()) put("target_commitish", targetCommitish)
+        }
+        val json = postJson("https://api.github.com/repos/$repoFullName/releases/generate-notes", token, payload) as JSONObject
+        return json.optString("body", "")
+    }
+
+    /**
+     * Uploads a release asset. `uploadUrlTemplate` is the release's `upload_url`
+     * (e.g. `https://uploads.github.com/.../assets{?name,label}`). Content is passed
+     * as bytes so tests can fake this without touching disk.
+     */
+    open fun uploadReleaseAsset(
+        uploadUrlTemplate: String,
+        fileName: String,
+        content: ByteArray,
+        contentType: String,
+        token: String,
+    ): GitHubReleaseAsset {
+        val base = uploadUrlTemplate.substringBefore("{")
+        val endpoint = "$base?name=${URLEncoder.encode(fileName, "UTF-8")}"
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 30_000
+            readTimeout = 120_000
+            doOutput = true
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("Content-Type", contentType)
+            if (token.isNotBlank()) setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+            setRequestProperty("User-Agent", "PocketDev-Android")
+            setFixedLengthStreamingMode(content.size)
+        }
+        connection.outputStream.use { it.write(content) }
+        val json = readResponse(connection) as JSONObject
+        return GitHubReleaseAsset(
+            id = json.getLong("id"),
+            name = json.getString("name"),
+            sizeBytes = json.optLong("size", content.size.toLong()),
+            downloadUrl = json.optString("browser_download_url", ""),
+            contentType = json.optString("content_type", contentType),
+        )
+    }
+
+    open fun deleteRelease(token: String, repoFullName: String, releaseId: Long): Boolean {
+        return deleteRequest("https://api.github.com/repos/$repoFullName/releases/$releaseId", token)
+    }
+
+    open fun getWorkflowRun(token: String, repoFullName: String, runId: Long): GitHubWorkflowRun {
+        val json = getJson("https://api.github.com/repos/$repoFullName/actions/runs/$runId", token) as JSONObject
+        return GitHubWorkflowRun(
+            id = json.getLong("id"),
+            name = json.optString("name", "CI Run"),
+            status = json.getString("status"),
+            conclusion = json.optString("conclusion").takeIf { it.isNotBlank() },
+            htmlUrl = json.getString("html_url"),
+            headBranch = json.optString("head_branch", ""),
+            event = json.optString("event", ""),
+            createdAt = json.optString("created_at", ""),
+            runNumber = json.optInt("run_number", 0),
+        )
+    }
+
+    open fun listWorkflowRunsForWorkflow(token: String, repoFullName: String, workflowId: String): List<GitHubWorkflowRun> {
+        val json = getJson(
+            "https://api.github.com/repos/$repoFullName/actions/workflows/$workflowId/runs?per_page=20",
+            token,
+        ) as? JSONObject ?: return emptyList()
+        val array = json.optJSONArray("workflow_runs") ?: return emptyList()
+        return (0 until array.length()).map { i ->
+            val item = array.getJSONObject(i)
+            GitHubWorkflowRun(
+                id = item.getLong("id"),
+                name = item.optString("name", "CI Run"),
+                status = item.getString("status"),
+                conclusion = item.optString("conclusion").takeIf { it.isNotBlank() },
+                htmlUrl = item.getString("html_url"),
+                headBranch = item.optString("head_branch", ""),
+                event = item.optString("event", ""),
+                createdAt = item.optString("created_at", ""),
+                runNumber = item.optInt("run_number", 0),
+            )
+        }
+    }
+
+    open fun cancelWorkflowRun(token: String, repoFullName: String, runId: Long): Boolean {
+        val res = postJson("https://api.github.com/repos/$repoFullName/actions/runs/$runId/cancel", token, JSONObject())
+        return res != null
+    }
+
+    open fun rerunWorkflow(token: String, repoFullName: String, runId: Long): Boolean {
+        val res = postJson("https://api.github.com/repos/$repoFullName/actions/runs/$runId/rerun", token, JSONObject())
+        return res != null
+    }
+
+    private fun deleteRequest(endpoint: String, token: String): Boolean {
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "DELETE"
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            if (token.isNotBlank()) setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+            setRequestProperty("User-Agent", "PocketDev-Android")
+        }
+        val status = connection.responseCode
+        // Drain the stream so the connection can be reused; 204 carries no body.
+        try {
+            (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }
+        } catch (_: Exception) { /* best effort */ }
+        if (status !in 200..299) {
+            error("GitHub returned HTTP $status")
+        }
+        return true
     }
 
     private fun postForm(endpoint: String, values: Map<String, String>): JSONObject {
