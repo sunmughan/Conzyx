@@ -353,7 +353,7 @@ jobs:
       # Release publication marker for the verified build.
 
       - name: Publish release assets
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2' || github.ref == 'refs/heads/v3'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
