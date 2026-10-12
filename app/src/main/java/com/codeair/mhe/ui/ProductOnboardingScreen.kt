@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -69,7 +70,6 @@ data class OnboardingTourSlide(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
-    val phaseTag: String,
     val highlights: List<String>,
     val badges: List<String>,
     val quote: String,
@@ -88,7 +88,6 @@ fun ProductOnboardingScreen(
             title = "Desktop-Grade Mobile IDE",
             subtitle = "Full Linux userspace powered by PRoot on Android",
             icon = Icons.Default.Terminal,
-            phaseTag = "CORE ARCHITECTURE",
             highlights = listOf(
                 "Real Ubuntu 20.04 ARM64 userspace inside PRoot — zero root required",
                 "Full terminal with bash, zsh, coreutils, Node.js, Python, Git, and Clang",
@@ -102,7 +101,6 @@ fun ProductOnboardingScreen(
             title = "Multi-Agent Engineering Team",
             subtitle = "10 Specialized autonomous agents collaborating in real-time",
             icon = Icons.Default.Groups,
-            phaseTag = "PHASES 1-3 & 10-11",
             highlights = listOf(
                 "10 Specialized roles: Manager, Architect, Frontend, Backend, QA, DevOps, Security, DBA, Docs, UX",
                 "Hierarchical orchestration: Manager breaks down goals into milestones and task DAGs",
@@ -116,7 +114,6 @@ fun ProductOnboardingScreen(
             title = "Autonomous Issue-to-PR Engine",
             subtitle = "From GitHub Issue triage to tested pull request automatically",
             icon = Icons.Default.RocketLaunch,
-            phaseTag = "PHASES 4-7",
             highlights = listOf(
                 "Native GitHub integration with gh CLI, OAuth token auth, and repo context indexing",
                 "Autonomous triage: analyzes issues, reproduces errors, checks out feature branches",
@@ -130,7 +127,6 @@ fun ProductOnboardingScreen(
             title = "Cloud + Phone Hybrid Engine",
             subtitle = "Adaptive workload offloading with thermal & battery intelligence",
             icon = Icons.Default.CloudQueue,
-            phaseTag = "PHASE 12",
             highlights = listOf(
                 "Smart decision matrix: factors in battery level, thermal throttle, network, and RAM",
                 "Lightweight code editing & fast unit tests remain snappy on the local device",
@@ -144,7 +140,6 @@ fun ProductOnboardingScreen(
             title = "Visual DevTools & DOM Inspector",
             subtitle = "Embedded browser runtime with live DOM manipulation and inspection",
             icon = Icons.Default.Language,
-            phaseTag = "PHASE 8",
             highlights = listOf(
                 "Embedded Chromium browser with responsive viewport presets (Mobile, Tablet, Desktop)",
                 "Interactive DOM element picker, computed CSS inspector, and live console logs",
@@ -152,13 +147,12 @@ fun ProductOnboardingScreen(
                 "Direct screenshot & DOM snippet attachment into the agent prompt context",
             ),
             badges = listOf("Live DOM", "CSS Inspector", "Localhost Proxy", "Console Logs"),
-            quote = "Inspect, test, and debug frontend web apps without leaving the PocketDev IDE.",
+            quote = "Inspect, test, and debug frontend web apps without leaving the IDE.",
         ),
         OnboardingTourSlide(
             title = "Android App Factory v2.0",
             subtitle = "Production app scaffolding, native compilation, and Play Store prep",
             icon = Icons.Default.Build,
-            phaseTag = "PHASE 9",
             highlights = listOf(
                 "AI Blueprint Engine: decomposes prompts into production UI layouts and navigation models",
                 "Multi-framework generators: Jetpack Compose, Flutter, React Native, and HTML5 WebApps",
@@ -172,7 +166,6 @@ fun ProductOnboardingScreen(
             title = "Marketplace & Team Collaboration",
             subtitle = "1-click developer registry & real-time workspace collaboration",
             icon = Icons.Default.Storefront,
-            phaseTag = "PHASES 13-14",
             highlights = listOf(
                 "AI Developer Marketplace: 1-click install for Agents, MCP Servers, Skills, and Templates",
                 "Custom package registry: publish and share tools directly with your team",
@@ -194,6 +187,7 @@ fun ProductOnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -203,28 +197,11 @@ fun ProductOnboardingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                    ) {
-                        Text(
-                            text = "v3.0.0",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Text(
-                        text = "PocketDev Tour",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                Text(
+                    text = "Mobile Harness Extended Tour",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
 
                 TextButton(onClick = onComplete) {
                     Text("Skip", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -248,21 +225,6 @@ fun ProductOnboardingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Spacer(Modifier.height(8.dp))
-
-                    // Phase Tag Pill
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    ) {
-                        Text(
-                            text = slide.phaseTag,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 1.sp,
-                        )
-                    }
 
                     // Icon Hero
                     Surface(

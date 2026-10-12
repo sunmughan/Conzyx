@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -152,7 +154,7 @@ import com.codeair.mhe.auth.ui.EditDisplayNameDialog
 
 private enum class SettingsSection { ACCOUNT, APPEARANCE, GOOGLE_ACCOUNTS, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL, PERMISSIONS }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     state: AppUiState,
@@ -508,8 +510,8 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
+                                        FlowRow(
+                                            verticalArrangement = Arrangement.Center,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         ) {
                                             Text(stack.label, fontWeight = FontWeight.SemiBold)
@@ -524,6 +526,7 @@ fun SettingsScreen(
                                                         fontWeight = FontWeight.Medium,
                                                         color = MaterialTheme.colorScheme.primary,
                                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        maxLines = 1,
                                                     )
                                                 }
                                             }
