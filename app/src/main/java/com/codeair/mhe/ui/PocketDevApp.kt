@@ -1650,13 +1650,13 @@ private fun AgentChoiceRow(
                 if (agent == AgentKind.DEEPSEEK_HARNESS) {
                     Spacer(Modifier.width(7.dp))
                     Surface(
-                        color = PocketOrange.copy(alpha = 0.14f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                         shape = RoundedCornerShape(50),
                     ) {
                         Text(
                             "Recommended",
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                            color = PocketOrange,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -2507,6 +2507,7 @@ private fun RootScreenHost(
                     onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
                     onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
                     onDispatchTeamTask = { prompt -> viewModel.sendPrompt(prompt) },
+                    teamOrchestrator = viewModel.teamOrchestrator,
                 )
                 RootScreen.SKILLS -> SkillsScreen(
                     installed = state.skills,

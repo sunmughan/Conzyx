@@ -154,14 +154,14 @@ fun EmailVerificationDialog(
         icon = {
             Surface(
                 shape = CircleShape,
-                color = PocketOrange.copy(alpha = 0.15f),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(54.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Email,
                         contentDescription = null,
-                        tint = PocketOrange,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(28.dp),
                     )
                 }
