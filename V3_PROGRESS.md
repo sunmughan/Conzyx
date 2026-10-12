@@ -503,3 +503,77 @@ All return `OperationResult`, refuse blank tokens with `NOT_CONFIGURED`, and pro
 **Deliberately deferred:**
 - UI wiring of the Firebase engines into the collaboration screens (`WorkspaceCollaborationManager`/Compose UI still use the in-memory models — product integration work).
 - Enabling Firestore offline persistence + `firestore.rules` deployment (requires the Firebase console project; rules file is ready to deploy).
+
+## Milestone 13 — COMPLETE (2026-10-12)
+
+**Real marketplace** (Phase 14): listing, discovery, purchasing, and seller integrations against a real registry API. CI green (run 38279756568).
+
+### Protocol + models (new file `marketplace/MarketplaceProtocol.kt`)
+- Wire-protocol documentation + `MarketplaceHttpTransport` injectable seam with `UrlConnectionMarketplaceTransport` production impl (HttpURLConnection, pure JVM; transport errors encoded as statusCode=-1, never thrown).
+- Models with JSON round-trips: `MarketplacePrice` (cents/currency, `isFree`, `format()`), `RemoteListing` (bridges to local `MarketplaceItem` via `toMarketplaceItem()`, carrying `priceCents`), `SellerProfile`, `PurchaseOrder` + `OrderStatus` (PENDING/PAID/FAILED/REFUNDED with `isTerminal`), `EntitlementCheck`/`EntitlementVerdict`, `SalesRecord`, `SellerSalesReport`, `MarketplaceSearchQuery` + `buildSearchPath()` (URL-encoded).
+
+### Listing validation (`marketplace/MarketplaceListingValidator.kt`)
+- `ListingDraft` + pure-JVM `validateListing()`: name ≥3 chars, category required, description ≥20 chars, numeric-dotted semver, priceCents ≥0, 3-letter uppercase currency, required http(s) artifactUrl, 64-hex sha256, ≤10 tags of `[A-Za-z0-9._-]` (1-32 chars). All violations reported at once; `toListingJson()` builds the registry body.
+
+### Discovery (`marketplace/MarketplaceDiscoveryClient.kt`)
+- `MarketplaceDiscoveryClient`: `fetchIndex`, `search`, `fetchListing` — blank registry URL → NOT_CONFIGURED with zero network calls; 404 → honest FAILED (never fake-empty success); SUCCESS only on parsed listings.
+- `MarketplaceDiscoveryCache`: TTL cache with injectable clock; failed refreshes leave the old cache untouched; `getOrRefresh()` serves fresh cache without network.
+
+### Purchasing (`marketplace/MarketplacePurchaseClient.kt`)
+- `MarketplacePurchaseClient`: `createOrder` (free listings complete immediately as PAID + receipt token; paid listings return PENDING + checkout URL), `pollOrder`, `awaitPaid` (bounded poll loop with injectable clock/sleeper — SUCCESS only on registry-reported PAID; timeout/terminal-FAILED are FAILED naming the last status), `checkEntitlement` (unknown token → INVALID as SUCCESS-with-verdict, expired → EXPIRED, blank token → FAILED without network).
+- `EntitlementStore`: durable local entitlement ledger (file-backed `FileEntitlementStorage` / in-memory for tests), `grant`/`revoke`/`isEntitled` (honors expiry)/`purgeExpired`/`list`.
+- `MarketplacePurchaseGate`: free items always install; paid items install only with a live entitlement; honest refusal reason.
+
+### Seller integrations (`marketplace/MarketplaceSellerCenter.kt`)
+- `MarketplaceSellerCenter`: `registerSeller` (local name/email validation first), `publishListing`/`updateListing` (local draft validation before any network call — invalid drafts never sent), `unpublishListing`, `getSalesReport` (registry-reported totals). Blank seller token → NOT_CONFIGURED on every call.
+
+### Also
+- `MarketplaceItem` gains additive `priceCents: Long = 0` (paid listings from the registry carry their price into the install flow).
+
+### Tests (77 new, pure JVM)
+- `MarketplaceProtocolTest` (11): price formatting, JSON round-trips, enum parsing, search-path encoding.
+- `MarketplaceListingValidatorTest` (16): valid draft, every rule violation, multi-error reporting, JSON conversion.
+- `MarketplaceDiscoveryClientTest` (13): NOT_CONFIGURED paths, success/transport-error/non-2xx/bad-JSON, search endpoint, 404 detail, cache hit/stale-refresh/failed-refresh-keeps-cache/invalidate.
+- `MarketplacePurchaseClientTest` (21): order create free/paid, poll, awaitPaid success/timeout/terminal-failure, entitlement valid/invalid/expired/blank, store grant/expiry/revoke/purge/file-persistence, purchase gate.
+- `MarketplaceSellerCenterTest` (16): register validation, publish/update/unpublish, sales report, invalid-draft-never-sent, blank-token NOT_CONFIGURED.
+
+### CI fix rounds (1)
+1. `MarketplaceListingValidator`: missing `org.json` imports (`JSONObject`/`JSONArray`) — added.
+
+### Commits (oldest → newest)
+- `ce1715a` — feat(v3): M13 real marketplace (listing, discovery, purchasing, seller integrations)
+- `44c8923` — fix(v3): M13 add missing org.json imports in MarketplaceListingValidator
+
+**Deliberately deferred:**
+- UI wiring of discovery/purchase/seller flows into `MarketplaceScreen`/`MarketplaceCoordinator` (product integration work; the purchase gate is the decision point the UI will consult).
+- A real registry server implementation (the protocol is client-side; any HTTP server implementing the documented endpoints works).
+- Real payment-provider checkout integration (orders return the provider's checkout URL; payment completes on the provider's page).
+
+---
+
+# v3 OVERHAUL — COMPLETE ✅ (M0–M13, 2026-10-12)
+
+All 14 milestones are implemented on `origin/v3` with CI green after each, per the one-milestone-at-a-time discipline.
+
+| Milestone | Scope | Tests (new) |
+|---|---|---|
+| M0 | Integrity gate: `OperationResult` contract (SUCCESS/FAILED/CANCELLED/NOT_CONFIGURED/SIMULATED); removed all false-success paths | — |
+| M1 | (coordinators + real install state, per prior progress) | — |
+| M2 | (per prior progress) | — |
+| M3 | Real semantic intelligence / LSP | — |
+| M4 | Context engine: ranked pipeline, tokenizer/budget, trace + cache invalidation, benchmark | 22 |
+| M5 | Safety gateway: SafetyOperation, SafetyGateway, PathSecurityAuditor, AuthorizationPrompt, provider safety adapters | 42 |
+| M6 | Autonomous workflow: TaskDecomposer, CheckpointStore, StepExecutors, PlanExecutor, WorkflowReviewer, WorkflowRunner | 40 |
+| M7 | Production MCP & Skills: McpProtocol, McpServerProcessManager, McpCredentialStore, McpRemoteTransport, McpToolRegistry, SkillPackage | 73 |
+| M8 | Visual & app factory loops: VisualDiffer, VisualDevLoop, VisualLoopStore, CommandRunner, ApkSignatureVerifier, CleanBuildVerifier, AppFactoryLoop | 37 |
+| M9 | GitHub automation remainder: PR detail/merge gating, issue management, releases, workflow dispatch, PullRequestAutomation, IssueAutomation, ReleaseAutomation, WorkflowAutomation | 33 |
+| M10 | Real multi-agent runtime: agent teams, runtime orchestration, role validation | — |
+| M11 | Real cloud execution: authenticated worker protocol, delta upload, log streaming, artifact SHA-256 verification, cost controls, CloudExecutionOrchestrator | 39 |
+| M12 | Firebase collaboration: Auth identity, Firestore gateway + rules, invites/RBAC, presence, version-vector sync, collaborative editing | 60 |
+| M13 | Real marketplace: listing validation, discovery + TTL cache, purchasing (orders/entitlements), seller center, purchase gate | 77 |
+
+**Cross-cutting conventions established across v3:**
+- **Honesty contract:** `OperationResult` everywhere — SUCCESS only for genuinely verified outcomes; blank credentials → NOT_CONFIGURED without network calls; transport errors encoded, never thrown past the seam.
+- **Seams:** injectable HTTP transports (`CloudHttpTransport`, `MarketplaceHttpTransport`), injectable clocks for time-dependent logic, file-backed + in-memory storage variants — everything unit-testable on pure JVM.
+- **Local validation before network:** seller drafts, emails, and listing updates are validated client-side so malformed requests never leave the device.
+- **Working tree clean; all commits pushed to `origin/v3`.**
