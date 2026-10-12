@@ -16,10 +16,19 @@ import org.junit.Test
 class EditorRegressionFixturesTest {
 
     private fun fixture(name: String): String {
-        val stream = javaClass.classLoader
-            ?.getResourceAsStream("editor-fixtures/$name")
+        // Preferred: classpath resource (works when src/test/resources is on the unit-test classpath).
+        javaClass.classLoader?.getResourceAsStream("editor-fixtures/$name")?.let {
+            return it.bufferedReader().readText()
+        }
+        // Fallback: repository-relative path (robust against Gradle source-set quirks;
+        // unit tests run with the module dir as working directory).
+        val candidates = listOf(
+            File("src/test/resources/editor-fixtures/$name"),
+            File("app/src/test/resources/editor-fixtures/$name"),
+        )
+        val file = candidates.firstOrNull { it.isFile }
             ?: error("Missing test fixture: editor-fixtures/$name")
-        return stream.bufferedReader().readText()
+        return file.readText()
     }
 
     @Test
