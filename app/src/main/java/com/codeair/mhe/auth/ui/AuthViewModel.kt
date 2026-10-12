@@ -22,6 +22,7 @@ import androidx.lifecycle.ViewModelProvider
 data class AuthUiState(
     val isLoading: Boolean = false,
     val isGoogleLoading: Boolean = false,
+    val isGitHubLoading: Boolean = false,
     val errorMessage: String? = null,
     val successMessage: String? = null,
     val isSignUpMode: Boolean = false,
@@ -161,6 +162,23 @@ class AuthViewModel @JvmOverloads constructor(
 
     fun setGoogleLoading(loading: Boolean) {
         _uiState.update { it.copy(isGoogleLoading = loading) }
+    }
+
+    fun signInWithGitHub(activity: android.app.Activity) {
+        _uiState.update { it.copy(isGitHubLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            repository.signInWithGitHub(activity)
+                .onSuccess {
+                    _uiState.update { it.copy(isGitHubLoading = false, errorMessage = null) }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGitHubLoading = false, errorMessage = error.message ?: "GitHub sign-in failed") }
+                }
+        }
+    }
+
+    fun setGitHubLoading(loading: Boolean) {
+        _uiState.update { it.copy(isGitHubLoading = loading) }
     }
 
     fun sendPasswordReset(email: String) {

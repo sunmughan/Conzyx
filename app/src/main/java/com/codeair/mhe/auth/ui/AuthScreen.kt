@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +62,7 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,6 +72,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.codeair.mhe.R
 import com.codeair.mhe.auth.GoogleSignInCancelledException
 import com.codeair.mhe.auth.GoogleSignInProvider
 import com.codeair.mhe.ui.theme.PocketOrange
@@ -349,41 +352,69 @@ fun AuthScreen(
                             HorizontalDivider(modifier = Modifier.weight(1f))
                         }
 
-                        // Google Sign-In Button (available in online build)
+                        // Social Sign-In icon buttons: Google + GitHub (available in online build)
                         if (GoogleSignInProvider.handler.isAvailable) {
-                            OutlinedButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        viewModel.setGoogleLoading(true)
-                                        val result = GoogleSignInProvider.handler.requestGoogleIdToken(context)
-                                        result.onSuccess { token ->
-                                            viewModel.signInWithGoogleToken(token)
-                                        }.onFailure { throwable ->
-                                            viewModel.setGoogleLoading(false)
-                                            if (throwable !is GoogleSignInCancelledException) {
-                                                viewModel.setErrorMessage(throwable.message ?: "Google sign-in failed")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Google icon button
+                                OutlinedButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            viewModel.setGoogleLoading(true)
+                                            val result = GoogleSignInProvider.handler.requestGoogleIdToken(context)
+                                            result.onSuccess { token ->
+                                                viewModel.signInWithGoogleToken(token)
+                                            }.onFailure { throwable ->
+                                                viewModel.setGoogleLoading(false)
+                                                if (throwable !is GoogleSignInCancelledException) {
+                                                    viewModel.setErrorMessage(throwable.message ?: "Google sign-in failed")
+                                                }
                                             }
                                         }
-                                    }
-                                },
-                                enabled = !uiState.isGoogleLoading && !uiState.isLoading,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                            ) {
-                                if (uiState.isGoogleLoading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    },
+                                    enabled = !uiState.isGoogleLoading && !uiState.isGitHubLoading && !uiState.isLoading,
+                                    shape = CircleShape,
+                                    modifier = Modifier.size(52.dp),
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    if (uiState.isGoogleLoading) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    } else {
                                         Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = PocketOrange,
+                                            painter = painterResource(id = R.drawable.ic_google_g),
+                                            contentDescription = "Sign in with Google",
+                                            modifier = Modifier.size(24.dp),
+                                            tint = Color.Unspecified,
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Continue with Google", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    }
+                                }
+                                // GitHub icon button
+                                OutlinedButton(
+                                    onClick = {
+                                        val activity = context as? Activity
+                                        if (activity != null) {
+                                            viewModel.signInWithGitHub(activity)
+                                        } else {
+                                            viewModel.setErrorMessage("GitHub sign-in needs an activity context")
+                                        }
+                                    },
+                                    enabled = !uiState.isGoogleLoading && !uiState.isGitHubLoading && !uiState.isLoading,
+                                    shape = CircleShape,
+                                    modifier = Modifier.size(52.dp),
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    if (uiState.isGitHubLoading) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_github),
+                                            contentDescription = "Sign in with GitHub",
+                                            modifier = Modifier.size(24.dp),
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                        )
                                     }
                                 }
                             }

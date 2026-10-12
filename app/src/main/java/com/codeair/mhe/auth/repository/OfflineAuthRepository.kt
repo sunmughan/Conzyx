@@ -37,6 +37,10 @@ class OfflineAuthRepository : AuthRepository {
         return Result.success(localUser)
     }
 
+    override suspend fun signInWithGitHub(activity: android.app.Activity): Result<AppUser> {
+        return Result.failure(Exception("GitHub sign-in is not available in offline mode"))
+    }
+
     override suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
         return Result.success(Unit)
     }

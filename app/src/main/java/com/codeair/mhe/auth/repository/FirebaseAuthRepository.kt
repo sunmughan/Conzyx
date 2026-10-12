@@ -1,5 +1,6 @@
 package com.codeair.mhe.auth.repository
 
+import android.app.Activity
 import android.content.Context
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.EmailAuthProvider
@@ -12,6 +13,7 @@ import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.OAuthProvider
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.codeair.mhe.AppCrashLogger
 import com.codeair.mhe.auth.model.AppUser
@@ -90,6 +92,23 @@ class FirebaseAuthRepository(
             val result = auth.signInWithCredential(credential).await()
             val user = result.user ?: error("Google sign in succeeded but user was null")
             mapFirebaseUser(user)
+        }.recoverCatching { throwable ->
+            throw Exception(mapFirebaseError(throwable))
+        }
+    }
+
+    override suspend fun signInWithGitHub(activity: Activity): Result<AppUser> {
+        return runCatching {
+            val provider = OAuthProvider.newBuilder("github.com")
+                .addCustomParameter("allow_signup", "true")
+                .setScopes(listOf("user:email"))
+                .build()
+            // Must run on Main: starts the OAuth activity for result.
+            val result = withContext(Dispatchers.Main) {
+                auth.startActivityForSignInWithProvider(activity, provider).await()
+            }
+            val user = result.user ?: error("GitHub sign in succeeded but user was null")
+            withContext(Dispatchers.IO) { mapFirebaseUser(user) }
         }.recoverCatching { throwable ->
             throw Exception(mapFirebaseError(throwable))
         }

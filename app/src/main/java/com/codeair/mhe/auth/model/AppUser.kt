@@ -3,6 +3,7 @@ package com.codeair.mhe.auth.model
 enum class AuthProviderType(val title: String) {
     EMAIL("Email & Password"),
     GOOGLE("Google Account"),
+    GITHUB("GitHub Account"),
     GUEST("Guest / Offline"),
     OTHER("Other Provider");
 
@@ -10,6 +11,7 @@ enum class AuthProviderType(val title: String) {
         fun fromFirebaseProviderId(providerId: String?): AuthProviderType {
             return when (providerId) {
                 "google.com" -> GOOGLE
+                "github.com" -> GITHUB
                 "password" -> EMAIL
                 else -> OTHER
             }

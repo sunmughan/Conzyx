@@ -1,5 +1,6 @@
 package com.codeair.mhe.auth.repository
 
+import android.app.Activity
 import com.codeair.mhe.auth.model.AppUser
 import com.codeair.mhe.auth.model.AuthState
 import kotlinx.coroutines.flow.StateFlow
@@ -11,6 +12,7 @@ interface AuthRepository {
     suspend fun signInWithEmail(email: String, password: String): Result<AppUser>
     suspend fun signUpWithEmail(name: String, email: String, password: String): Result<AppUser>
     suspend fun signInWithGoogle(idToken: String): Result<AppUser>
+    suspend fun signInWithGitHub(activity: Activity): Result<AppUser>
     suspend fun sendPasswordResetEmail(email: String): Result<Unit>
     suspend fun sendEmailVerification(): Result<Unit>
     suspend fun reloadUser(): Result<AppUser?>
