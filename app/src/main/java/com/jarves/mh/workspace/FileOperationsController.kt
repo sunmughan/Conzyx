@@ -103,17 +103,7 @@ class FileOperationsController {
             throw FileOpError.OperationFailed("Failed to create parent folder for destination")
         }
 
-        val renamed = source.renameTo(destination)
-        if (!renamed) {
-            // Fall back to copy and delete if across mount points
-            if (source.isDirectory) {
-                source.copyRecursively(destination, overwrite = false)
-                source.deleteRecursively()
-            } else {
-                source.copyTo(destination, overwrite = false)
-                source.delete()
-            }
-        }
+        moveWithSafeFallback(source, destination)
         destination
     }
 
@@ -191,17 +181,34 @@ class FileOperationsController {
             throw FileOpError.TargetAlreadyExists("An item named ${source.name} already exists in ${targetDir.name}")
         }
 
-        val moved = source.renameTo(destination)
-        if (!moved) {
-            if (source.isDirectory) {
-                source.copyRecursively(destination, overwrite = false)
-                source.deleteRecursively()
-            } else {
-                source.copyTo(destination, overwrite = false)
-                source.delete()
+        moveWithSafeFallback(source, destination)
+        destination
+    }
+
+    /**
+     * Cross-filesystem fallback that never deletes the source until the complete copy
+     * has been published. Partial destination trees are removed when copying fails.
+     */
+    private fun moveWithSafeFallback(source: File, destination: File) {
+        if (source.renameTo(destination)) return
+        if (source.isDirectory) {
+            val copied = runCatching {
+                source.copyRecursively(destination, overwrite = false) { _, _ ->
+                    kotlin.io.OnErrorAction.TERMINATE
+                }
+            }.getOrDefault(false)
+            if (!copied) {
+                runCatching { destination.deleteRecursively() }
+                throw FileOpError.OperationFailed("Could not safely copy ${source.path} to ${destination.path}")
+            }
+        } else {
+            if (!SafeFileOps.atomicCopy(source, destination)) {
+                throw FileOpError.OperationFailed("Could not safely copy ${source.path} to ${destination.path}")
             }
         }
-        destination
+        check(source.deleteRecursively()) {
+            "Copied ${source.path}, but could not remove the original; both copies were retained"
+        }
     }
 
     /**
