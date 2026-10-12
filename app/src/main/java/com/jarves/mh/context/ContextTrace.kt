@@ -79,7 +79,7 @@ data class ContextTrace(val entries: List<TraceEntry>) {
             appendLine("- INCLUDED $path (score ${es.sumOf { it.scoreContribution }})")
             es.forEach { appendLine("    [${it.signal}] +${it.scoreContribution}: ${it.detail}") }
         }
-        for ((path, es) in excluded.toList().sortedBy { it.key }) {
+        for ((path, es) in excluded.toList().sortedBy { it.first }) {
             appendLine("- excluded $path: ${es.first().detail}")
         }
     }.trimEnd()
