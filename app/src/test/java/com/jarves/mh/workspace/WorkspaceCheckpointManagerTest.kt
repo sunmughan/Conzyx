@@ -156,6 +156,24 @@ class WorkspaceCheckpointManagerTest {
     }
 
     @Test
+    fun `workspace restore overwrites stale existing files from backup`() {
+        val filesDir = tempFolder.newFolder("restore-overwrite-files")
+        val externalDir = tempFolder.newFolder("restore-overwrite-external")
+        val project = File(filesDir, "workspaces/project-restore")
+        val file = File(project, "src/config.json").apply {
+            parentFile?.mkdirs()
+            writeText("""{"version":1}""")
+        }
+        val manager = WorkspaceCheckpointManager(filesDir)
+
+        assertEquals(1, manager.backupAllWorkspaces(externalDir))
+        file.writeText("""{"version":2}""")
+
+        assertEquals(1, manager.restoreAllWorkspaces(externalDir))
+        assertEquals("""{"version":1}""", file.readText())
+    }
+
+    @Test
     fun `checkpoint storage rejects a symlinked root`() {
         val filesDir = tempFolder.newFolder("symlink-checkpoint-storage")
         val outside = tempFolder.newFolder("symlink-checkpoint-outside")
