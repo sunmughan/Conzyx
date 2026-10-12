@@ -215,8 +215,8 @@ class ParserBackedProviderTest {
         """.trimIndent()
         index.indexFile("Greeter.java", content)
         val provider = ParserBackedIntelligenceProvider.kotlinProvider(index)
-        // `greet` call on line 7.
-        val defs = provider.definitions("Greeter.java", content, 7, 7)
+        // `greet` call on line 7 (`        g.greet("bob");` — greet at chars 10-14).
+        val defs = provider.definitions("Greeter.java", content, 7, 12)
         assertEquals(1, defs.size)
         assertEquals("greet", defs[0].symbolName)
         assertEquals(2, defs[0].line)
