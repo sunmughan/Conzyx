@@ -21,7 +21,7 @@ class OnlineGoogleSignInHandler : GoogleSignInHandler {
             val serverClientId = if (resId != 0) {
                 context.getString(resId)
             } else {
-                "1002286704211-lbuun3ktfpg16j7puv6ndc78pdlp3fcm.apps.googleusercontent.com"
+                "249079131159-kjeg6nr3unpfnbt3gn9pm28vv97cdb83.apps.googleusercontent.com"
             }
 
             val credentialManager = CredentialManager.create(context)
