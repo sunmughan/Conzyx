@@ -48,6 +48,7 @@ import com.codeair.mhe.network.ModelDiscoveryResult
 import com.codeair.mhe.network.ProviderApiClient
 import com.codeair.mhe.network.GitHubRepository
 import com.codeair.mhe.runtime.ClaudeRuntimeBridge
+import com.codeair.mhe.runtime.CloudCodeRuntimeBridge
 import com.codeair.mhe.runtime.DshRuntimeBridge
 import com.codeair.mhe.runtime.AgentRegistry
 import com.codeair.mhe.runtime.AgentUpdateInfo
@@ -352,7 +353,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
         },
     )
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime)
+    private val cloudCodeRuntime = CloudCodeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, cloudCodeRuntime)
     private fun activeRuntime(): com.codeair.mhe.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
