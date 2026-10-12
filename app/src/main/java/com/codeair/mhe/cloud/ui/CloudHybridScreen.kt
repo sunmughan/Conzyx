@@ -204,12 +204,15 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
     val state by coordinator.state.collectAsState()
     val metrics = state.deviceMetrics
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    // Sticky bottom primary action bar: Build APK stays reachable while scrolling.
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 76.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         // Device Health Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -339,20 +342,6 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            coordinator.submitExecutionJob(
-                                title = "Assemble Release APK",
-                                workloadType = WorkloadType.HEAVY_GRADLE_BUILD
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                    ) {
-                        Text("Build APK", fontSize = 11.sp)
-                    }
-
                     OutlinedButton(
                         onClick = {
                             coordinator.submitExecutionJob(
@@ -381,6 +370,26 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                         Text("GPU LLM", fontSize = 11.sp)
                     }
                 }
+            }
+        }
+        }
+        // Sticky bottom primary action
+        Surface(
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 3.dp,
+        ) {
+            Button(
+                onClick = {
+                    coordinator.submitExecutionJob(
+                        title = "Assemble Release APK",
+                        workloadType = WorkloadType.HEAVY_GRADLE_BUILD
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("Build APK", fontWeight = FontWeight.SemiBold)
             }
         }
     }

@@ -291,48 +291,41 @@ fun YouTubeVideoDialog(
 
                 Spacer(Modifier.height(18.dp))
 
-                // Action Buttons
-                Row(
+                // Bottom-anchored primary action: full-width 52dp AI Analyze.
+                // Cancel is a subtle secondary text action above it.
+                TextButton(
+                    onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Text("Cancel")
-                    }
-
-                    Button(
-                        onClick = {
-                            if (videoInfo != null) {
-                                onAnalyze(videoInfo, inquiryInput.takeIf { it.isNotBlank() }, selectedPreset)
-                                onDismiss()
-                            }
-                        },
-                        enabled = true,
-                        modifier = Modifier.weight(1.5f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = YouTubeBrandRed,
-                            contentColor = Color.White,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "AI Analyze",
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Button(
+                    onClick = {
+                        if (videoInfo != null) {
+                            onAnalyze(videoInfo, inquiryInput.takeIf { it.isNotBlank() }, selectedPreset)
+                            onDismiss()
+                        }
+                    },
+                    enabled = true,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = YouTubeBrandRed,
+                        contentColor = Color.White,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "AI Analyze",
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }
