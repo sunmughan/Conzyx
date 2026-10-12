@@ -13,7 +13,11 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -561,26 +565,42 @@ class RuntimeInstaller(private val context: Context) {
             "deepseek" -> listOf("usr/local/lib/dsh")
             else -> error("Unsupported environment agent: " + id)
         }
-        destination.parentFile?.mkdirs()
-        val part = File(destination.parentFile, destination.name + ".part")
-        part.delete()
-        ZipOutputStream(FileOutputStream(part)).use { zip ->
-            zip.putNextEntry(ZipEntry(".version"))
-            zip.write(version.toByteArray())
-            zip.closeEntry()
-            entries.forEach { relative ->
-                val source = File(rootfs, relative)
-                check(source.exists()) { "Installed " + id + " runtime is missing: " + relative }
-                source.walkTopDown().filter { it.isFile }.forEach { file ->
-                    val name = file.relativeTo(rootfs).path.replace(File.separatorChar, '/')
-                    zip.putNextEntry(ZipEntry(name))
-                    FileInputStream(file).use { it.copyTo(zip) }
-                    zip.closeEntry()
+        val parent = destination.absoluteFile.parentFile
+            ?: error("Rollback backup destination has no parent directory")
+        check(parent.mkdirs() || parent.isDirectory) { "Could not create rollback backup directory" }
+        // Use a unique sibling staging file so interrupted/overlapping backup attempts
+        // cannot truncate each other or the last known-good backup.
+        val part = File(parent, destination.name + ".part_" + UUID.randomUUID())
+        try {
+            ZipOutputStream(FileOutputStream(part).buffered()).use { zip ->
+                zip.putNextEntry(ZipEntry(".version"))
+                zip.write(version.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+                entries.forEach { relative ->
+                    val source = File(rootfs, relative)
+                    check(source.exists()) { "Installed " + id + " runtime is missing: " + relative }
+                    source.walkTopDown().filter { it.isFile }.forEach { file ->
+                        val name = file.relativeTo(rootfs).path.replace(File.separatorChar, '/')
+                        zip.putNextEntry(ZipEntry(name))
+                        FileInputStream(file).use { it.copyTo(zip) }
+                        zip.closeEntry()
+                    }
                 }
             }
+            RandomAccessFile(part, "rw").use { it.fd.sync() }
+            try {
+                Files.move(
+                    part.toPath(),
+                    destination.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            runCatching { Files.deleteIfExists(part.toPath()) }
         }
-        destination.delete()
-        check(part.renameTo(destination)) { "Could not save " + id + " rollback backup" }
     }
 
     suspend fun rollbackEnvironmentAgent(
