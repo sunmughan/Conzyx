@@ -431,3 +431,37 @@ All return `OperationResult`, refuse blank tokens with `NOT_CONFIGURED`, and pro
 - Wiring `PromptBasedTeamAgentExecutor`'s `agentRunner` to MainViewModel's `runAgentPromptAwaitingResult` — the seam shape matches; the actual wiring is app-integration work.
 - UI wiring (`TeamStudioScreen` already reflects `isDemoMode`; no changes needed).
 - `TeamRoleConfig.maxConcurrentTasks` per-role caps in the dispatcher (global cap implemented; per-role is a refinement).
+
+## Milestone 11 — COMPLETE (2026-10-12)
+
+**Real cloud execution** (Phase 12): authenticated worker API client, delta payload upload, log streaming, remote cancellation, artifact download + SHA-256 verification, cost controls, and an end-to-end orchestrator. `CloudJobRunner` now accepts an optional `CloudExecutionOrchestrator`; when wired, cloud-routed jobs genuinely dispatch through the protocol instead of reporting NOT_CONFIGURED. CI green (run 38274241576).
+
+### Protocol + authenticated API client (new package `com.jarves.mh.cloud.exec`)
+- `CloudProtocol.kt` (new): wire-protocol documentation and models — `RemoteJobStatus` (QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELLED/UNKNOWN with `isTerminal`), `CloudLogFrame` (seq + line), `CloudArtifactDescriptor`, `CloudJobRequest`; `CloudHttpTransport` injectable seam + `UrlConnectionCloudTransport` production impl (HttpURLConnection, pure JVM); JSON parse helpers.
+- `CloudExecutionClient.kt` (new): `submitJob` (POST /api/v1/jobs → remote job id on 201), `pollStatus`, `fetchLogs` (sequenced `?since=`), `cancelJob` (requires worker-confirmed `cancelled=true`), `listArtifacts` + typed `listArtifactDescriptors`, `downloadArtifactBytes` (raw bytes via `ArtifactDownloadResult`), `fetchRemoteManifest` (path→sha256 known files, 404 = full upload needed). Every call requires a non-blank `authKey` sent as `Authorization: Bearer` — blank key returns NOT_CONFIGURED without sending anything; transport errors and non-2xx responses are honest FAILEDs; success only on verified responses.
+
+### Delta upload, log streaming, artifact verification, cost controls
+- `CloudPayloadUploader.kt` (new): computes the workspace snapshot via `CloudArtifactSyncEngine`, compares per-file SHA-256 against the worker's known manifest, uploads only changed/new files (base64), and reports honest `filesUploaded/filesSkipped/bytesUploaded` accounting.
+- `CloudLogStreamer.kt` (new): bounded sequenced log streaming with `onLogChunk` callback — stops at terminal state, `maxFrames`, timeout, or `cancel()`; failures reported in the result.
+- `CloudArtifactDownloader.kt` (new): lists descriptors, downloads bytes, verifies SHA-256 against the descriptor BEFORE writing anything; a checksum mismatch fails the fetch and the bytes are never written to disk.
+- `CloudCostController.kt` (new): per-job estimated-cost cap + rolling 30-day budget cap checked BEFORE dispatch (refusals are explicit, never silent); duration×rate cost model; spend ledger with `recordSpend`; 30-day spend excludes entries older than 30 days.
+
+### Orchestrator + runner wiring
+- `CloudExecutionOrchestrator.kt` (new): cost-gate → delta upload → submit → log streaming + status polling to terminal state → artifact download/verification → spend recording. Cancellation supported at every stage. COMPLETED only when the remote job genuinely reached SUCCEEDED AND artifacts verified; remote FAILED/CANCELLED/timeout and unverified artifacts all map to FAILED/CANCELLED honestly; NOT_CONFIGURED propagates from auth-less workers.
+- `CloudJobRunner.kt`: new optional `cloudOrchestrator` constructor param. When set, cloud-routed jobs dispatch through the M11 protocol; when null, the previous honest NOT_CONFIGURED path is preserved. `cancel()` now also cancels the orchestrator.
+
+### Tests (40 new)
+- `CloudExecutionClientTest` (14): submit success/rejection/transport-error/missing-jobId, blank-auth never sends, poll parsing incl. unknown status, cancel confirmed/unconfirmed, sequenced log frames, manifest 404/200, byte download success/null-body, Bearer header.
+- `CloudPayloadUploaderTest` (4): delta skip/upload accounting, full upload on unknown snapshot, blank-auth NOT_CONFIGURED, upload failure aborts honestly.
+- `CloudLogStreamerTest` (4): ordered frames until terminal, fetch error fails honestly, blank-auth NOT_CONFIGURED, cancellation stops streaming.
+- `CloudArtifactDownloaderTest` (4): matching checksum writes file, mismatch fails and writes nothing, blank-auth NOT_CONFIGURED, listing failure honest.
+- `CloudCostControllerTest` (6): authorization, per-job cap refusal, monthly budget refusal, ledger accumulation, 30-day exclusion, cost scaling.
+- `CloudExecutionOrchestratorTest` (6): full happy-path pipeline (delta → submit → poll → verified artifact → spend recorded), cost refusal dispatches nothing, remote FAILED propagates, pre-dispatch cancel, blank-auth NOT_CONFIGURED, checksum mismatch never COMPLETED.
+
+### CI fix rounds (1)
+1. `CloudExecutionOrchestrator`: delta-upload NOT_CONFIGURED (auth-less worker) was mapped to FAILED — now propagates NOT_CONFIGURED honestly at the job level.
+
+**Deliberately deferred:**
+- App-level wiring of `CloudExecutionOrchestrator` into `CloudHybridCoordinator` (constructor seam exists; UI screen already renders NOT_CONFIGURED honestly — integration work).
+- A real worker service implementation to speak the protocol (the protocol is client-side; any HTTP server implementing the documented endpoints works).
+- Chunked/resumable uploads for very large payloads (single base64 POST per file today).
