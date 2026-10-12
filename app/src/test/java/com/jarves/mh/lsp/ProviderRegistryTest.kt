@@ -1,6 +1,5 @@
 package com.jarves.mh.lsp
 
-import com.jarves.mh.lsp.parser.ParserProjectIndex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

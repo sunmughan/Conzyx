@@ -1,7 +1,6 @@
 package com.jarves.mh.lsp
 
 import com.jarves.mh.editor.HeuristicIntelligenceProvider
-import com.jarves.mh.lsp.parser.ParserProjectIndex
 
 /**
  * Milestone 3 — selects the best intelligence provider for a language.

@@ -195,3 +195,4 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 **Deliberately deferred:**
 - Compiler-accurate type resolution — requires real language servers; providers honestly label as "not compiler-accurate".
 - Bundled language servers — binaries are platform-specific and large; `LspManager` uses installed servers when present.
+- Member-access type inference (`c.add` → resolving `c`'s type to find `add`): definitions work for direct names, imports and top-level symbols; receiver-type resolution is future work.

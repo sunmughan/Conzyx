@@ -538,8 +538,17 @@ class KotlinParser(
                         // Lambda / block as expression tail: collect balanced.
                         advance()
                         collected.add(t)
-                        val block = collectBlockTokens()
-                        collected.addAll(block)
+                        var braceDepth = 1
+                        while (!isAtEnd() && braceDepth > 0) {
+                            val b = advance()
+                            collected.add(b)
+                            if (b.type == TokenType.SYMBOL) {
+                                when (b.text) {
+                                    "{" -> braceDepth++
+                                    "}" -> braceDepth--
+                                }
+                            }
+                        }
                         return collected
                     }
                     "}" -> return collected

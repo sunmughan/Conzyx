@@ -1,6 +1,5 @@
 package com.jarves.mh.lsp
 
-import com.jarves.mh.lsp.parser.ParserProjectIndex
 import com.jarves.mh.lsp.parser.SourceParser
 
 /**
