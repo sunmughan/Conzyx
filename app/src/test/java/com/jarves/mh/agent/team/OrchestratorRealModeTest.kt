@@ -117,7 +117,8 @@ class OrchestratorRealModeTest {
         )
         orchestrator.planProject("Build a notes app")
         val report = orchestrator.autoRunAllReal()
-        assertEquals(10, report.succeeded)
+        val outcomeDetail = report.outcomes.joinToString("; ") { "${it.task.title}=${it.status}" }
+        assertEquals("outcomes: [$outcomeDetail]", 10, report.succeeded)
         assertEquals(0, report.failed)
         assertTrue(report.isSuccess)
         // Real reviews were recorded for the reviewer roles.

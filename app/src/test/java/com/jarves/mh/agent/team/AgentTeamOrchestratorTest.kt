@@ -128,7 +128,8 @@ class AgentTeamOrchestratorTest {
         realModeOrchestrator.planProject("Build complete mobile app")
 
         val report = realModeOrchestrator.autoRunAllReal()
-        assertEquals(10, report.succeeded)
+        val outcomeDetail = report.outcomes.joinToString("; ") { "${it.task.title}=${it.status}" }
+        assertEquals("outcomes: [$outcomeDetail]", 10, report.succeeded)
 
         val sessionState = realModeOrchestrator.sessionState.value
         assertTrue(sessionState.tasks.all { it.status == TeamTaskStatus.COMPLETED })
