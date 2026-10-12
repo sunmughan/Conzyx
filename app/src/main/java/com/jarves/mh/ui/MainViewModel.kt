@@ -61,8 +61,6 @@ import com.jarves.mh.runtime.RuntimeInstallEvent
 import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.runtime.RuntimeSetupController
 import com.jarves.mh.runtime.RuntimeSetupService
-import com.jarves.mh.runtime.RuntimeSetupSnapshot
-import com.jarves.mh.runtime.RuntimeSetupStatus
 import com.jarves.mh.runtime.readTailText
 import com.jarves.mh.runtime.truncateHeadAndTail
 import com.jarves.mh.runtime.supportsArm64Runtime
@@ -409,7 +407,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         },
         authToken = preferences.updateAuthToken,
     )
-    @Volatile private var setupCompletionHandled: Boolean = false
     @Volatile private var lastOpenedAntigravityAuthUrl: String? = null
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
     private var lastInterruptedRequest: RuntimeRetryRequest? = null
@@ -763,6 +760,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             editorCheckpoints = editorCheckpoints,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
         )
+    private val runtimeCoordinator =
+        com.jarves.mh.ui.coordinators.RuntimeCoordinator(
+            host = coordinatorHost,
+            installer = installer,
+            preferences = preferences,
+            vault = vault,
+            appUpdater = { appUpdater() },
+            pingApi = { pingApi() },
+            autoUpdateToolsAndSkills = { autoUpdateToolsAndSkills() },
+            openProject = { project -> openProject(project) },
+            selectAgent = { kind -> selectAgent(kind) },
+            refreshActiveApiKey = { kind -> refreshActiveApiKey(kind) },
+        )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
     val visualConsoleLogs: StateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>> = visualCoordinator.visualConsoleLogs
@@ -1066,419 +1076,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        viewModelScope.launch { RuntimeSetupController.snapshot.collect(::onSetupSnapshot) }
+        runtimeCoordinator.startSetupSnapshotCollection()
         viewModelScope.launch { claudeRuntime.events.collect(::onRuntimeEvent) }
-        viewModelScope.launch { bootstrap() }
+        runtimeCoordinator.startBootstrap()
     }
 
-    private suspend fun bootstrap() {
-        if (!supportsArm64Runtime(android.os.Build.SUPPORTED_ABIS, System.getProperty("os.arch"))) {
-            _state.update {
-                it.copy(
-                    startupStage = StartupStage.SETUP_REQUIRED,
-                    startupMessage = "ARM64 device required",
-                    startupError = null,
-                    startupErrorIsOffline = false,
-                )
-            }
-            return
-        }
-        // Milestone 1: surface low-RAM / low-storage conditions early with an
-        // actionable message instead of failing mysteriously later. Non-blocking:
-        // the install flow reports its own errors; this is an early warning.
-        val resourceCheck = com.jarves.mh.core.resources.ResourceGate()
-            .checkDevice(com.jarves.mh.core.resources.AndroidResourceProbe(getApplication()))
-        if (!resourceCheck.isSuccess) {
-            _state.update { it.copy(toastMessage = resourceCheck.error) }
-        }        val setupSnapshot = RuntimeSetupController.snapshot.value
-        if (setupSnapshot.status == RuntimeSetupStatus.RUNNING) {
-            onSetupSnapshot(setupSnapshot)
-            resumeRuntimeSetupService()
-            return
-        }
-        val isWarmBoot = preferences.runtimeSetupComplete && preferences.onboardingComplete
-        val installed = withContext(Dispatchers.IO) {
-            // Upgrades from the old single-bundle layout keep every already-installed tool.
-            installer.migrateLegacyToolMarkers()
-            installer.isInstalled().also { ready ->
-                if (ready) installer.cleanupLegacyWorkspaceScaffolding()
-            }
-        }
-        _state.update { current ->
-            current.copy(
-                installedDevStacks = if (installed) installer.installedStacks() else current.installedDevStacks,
-                installedAgentVersions = if (installed) installer.installedAgentVersions() else emptyMap(),
-            )
-        }
-        when {
-            !installed && setupSnapshot.status == RuntimeSetupStatus.ERROR -> onSetupSnapshot(setupSnapshot)
-            !installed -> _state.update { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupProgress = 0f) }
-            !preferences.onboardingComplete -> {
-                preferences.runtimeSetupComplete = true
-                _state.update { it.copy(startupStage = StartupStage.MODEL_SETUP, startupProgress = 1f) }
-            }
-            else -> initializeRuntime(isWarmBoot = isWarmBoot)
-        }
-    }
+    // ---- Milestone 1: runtime domain moved to RuntimeCoordinator. ----
+    // (bootstrap is now started via runtimeCoordinator.startBootstrap() from init)
 
-    fun startRuntimeSetup() {
-        if (state.value.startupStage == StartupStage.INSTALLING) return
-        setupCompletionHandled = false
-        _state.update {
-            it.copy(
-                startupStage = StartupStage.INSTALLING,
-                startupProgress = 0.01f,
-                startupMessage = "Preparing your private coding workspace",
-                startupBytes = null,
-                startupLogs = listOf("\$ Preparing your private coding workspace"),
-                startupIndeterminate = false,
-                startupError = null,
-                startupErrorIsOffline = false,
-                showDetailedSetupProgress = true,
-            )
-        }
-        resumeRuntimeSetupService()
-    }
+    fun startRuntimeSetup() =
+        runtimeCoordinator.startRuntimeSetup()
 
-    fun retryStartup() {
-        if (installer.isInstalled()) viewModelScope.launch { initializeRuntime() } else {
-            _state.update { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupError = null) }
-            startRuntimeSetup()
-        }
-    }
+    fun retryStartup() =
+        runtimeCoordinator.retryStartup()
 
-    fun backToSetup() {
-        _state.update {
-            it.copy(
-                startupStage = StartupStage.SETUP_REQUIRED,
-                startupError = null,
-                startupErrorIsOffline = false,
-                startupMessage = "Select tools and start setup",
-                startupProgress = 0f,
-                showDetailedSetupProgress = false,
-            )
-        }
-    }
+    fun backToSetup() =
+        runtimeCoordinator.backToSetup()
 
-    private fun resumeRuntimeSetupService() {
-        val stacks = _state.value.selectedDevStacks.joinToString(",") { it.name }
-        ContextCompat.startForegroundService(
-            getApplication(),
-            Intent(getApplication(), RuntimeSetupService::class.java)
-                .setAction(RuntimeSetupService.ACTION_START)
-                .putExtra(RuntimeSetupService.EXTRA_STACKS, stacks)
-                .putExtra(RuntimeSetupService.EXTRA_AGENT, _state.value.agentKind.name),
-        )
-    }
 
-    private fun onSetupSnapshot(snapshot: RuntimeSetupSnapshot) {
-        when (snapshot.status) {
-            RuntimeSetupStatus.RUNNING -> _state.update {
-                it.copy(
-                    startupStage = StartupStage.INSTALLING,
-                    startupProgress = snapshot.progress,
-                    startupMessage = snapshot.message,
-                    startupBytes = snapshot.totalBytes?.let { total -> (snapshot.downloadedBytes ?: 0L) to total },
-                    startupLogs = snapshot.logs,
-                    startupIndeterminate = snapshot.indeterminate,
-                    startupError = null,
-                    startupErrorIsOffline = false,
-                )
-            }
-            RuntimeSetupStatus.COMPLETE -> {
-                if (setupCompletionHandled) return
-                setupCompletionHandled = true
-                preferences.runtimeSetupComplete = true
-                viewModelScope.launch {
-                    val installedStacks = withContext(Dispatchers.IO) { installer.installedStacks() }
-                    _state.update { it.copy(installedDevStacks = installedStacks) }
-                    if (preferences.onboardingComplete) {
-                        initializeRuntime()
-                    } else {
-                        _state.update {
-                            it.copy(
-                                startupStage = StartupStage.MODEL_SETUP,
-                                startupProgress = 1f,
-                                startupBytes = null,
-                                startupIndeterminate = false,
-                            )
-                        }
-                    }
-                }
-            }
-            RuntimeSetupStatus.ERROR -> _state.update {
-                it.copy(
-                    startupStage = StartupStage.ERROR,
-                    startupMessage = snapshot.message,
-                    startupProgress = snapshot.progress,
-                    startupLogs = snapshot.logs,
-                    startupIndeterminate = false,
-                    startupError = snapshot.errorMessage,
-                    startupErrorIsOffline = snapshot.offline,
-                )
-            }
-            RuntimeSetupStatus.CANCELLED -> _state.update {
-                it.copy(
-                    startupStage = StartupStage.SETUP_REQUIRED,
-                    startupMessage = "Setup paused",
-                    startupProgress = snapshot.progress,
-                    startupLogs = snapshot.logs,
-                    startupIndeterminate = false,
-                )
-            }
-            RuntimeSetupStatus.IDLE -> Unit
-        }
-    }
 
-    private suspend fun initializeRuntime(isWarmBoot: Boolean = false) {
-        val startedAt = SystemClock.elapsedRealtime()
-        if (!isWarmBoot) {
-            _state.update {
-                it.copy(
-                    startupStage = StartupStage.INITIALIZING,
-                    startupProgress = 0.05f,
-                    startupMessage = "Opening your private workspace",
-                    startupBytes = null,
-                    startupLogs = listOf("\$ Opening your private workspace"),
-                    startupIndeterminate = false,
-                    startupError = null,
-                    startupErrorIsOffline = false,
-                )
-            }
-        }
-        val result = runCatching {
-            withContext(Dispatchers.IO) {
-                installer.initializeExisting { progress ->
-                    if (!isWarmBoot) {
-                        _state.update { current ->
-                            current.copy(
-                                startupProgress = 0.05f + progress.fraction * 0.95f,
-                                startupMessage = progress.message,
-                                startupBytes = null,
-                                startupLogs = mergeStartupLog(current.startupLogs, progress),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (result.isSuccess) {
-            // The real version probe can finish in a fraction of a second on fast phones.
-            // Keep the successful loading state visible long enough to be understandable during initial setup.
-            if (!isWarmBoot) {
-                val remaining = MINIMUM_INITIALIZATION_SCREEN_MS - (SystemClock.elapsedRealtime() - startedAt)
-                if (remaining > 0) delay(remaining)
-            }
-            _state.update {
-                it.copy(
-                    startupStage = StartupStage.READY,
-                    startupProgress = 1f,
-                    installedDevStacks = installer.installedStacks(),
-                    installedAgentVersions = installer.installedAgentVersions(),
-                )
-            }
-            pingApi()
-            checkForAppUpdate()
-            autoUpdateToolsAndSkills()
-            if (!isWarmBoot || _state.value.activeProject == null) {
-                preferences.lastActiveProjectId?.let { lastId ->
-                    _state.value.projects.firstOrNull { it.id == lastId }?.let { lastProject ->
-                        openProject(lastProject)
-                    }
-                }
-            }
-        } else {
-            showStartupError(result.exceptionOrNull() ?: IllegalStateException("Claude Code initialization failed"))
-        }
-    }
 
-    fun checkForAppUpdate(force: Boolean = false) {
-        if (!force && System.currentTimeMillis() - preferences.lastAppUpdateCheckMillis < 24L * 60L * 60L * 1000L) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val update = runCatching { appUpdater().check() }.getOrNull()
-            preferences.lastAppUpdateCheckMillis = System.currentTimeMillis()
-            if (update != null) {
-                _state.update {
-                    it.copy(appUpdate = update, appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null)
-                }
-            } else if (force) {
-                _state.update {
-                    it.copy(toastMessage = "Mobile Harness is up to date (${BuildConfig.APP_VARIANT} · v${BuildConfig.VERSION_NAME})")
-                }
-            }
-        }
-    }
+    fun checkForAppUpdate(force: Boolean = false) =
+        runtimeCoordinator.checkForAppUpdate(force)
 
     /** Set or update the in-app update channel / manifest URL. */
-    fun setUpdateManifestUrl(url: String) {
-        preferences.updateManifestUrlOverride = url.trim()
-        preferences.lastAppUpdateCheckMillis = 0L
-        checkForAppUpdate(force = true)
-    }
+    fun setUpdateManifestUrl(url: String) =
+        runtimeCoordinator.setUpdateManifestUrl(url)
 
     /** Reset the in-app update manifest URL to the default release channel. */
-    fun clearUpdateManifestUrl() {
-        preferences.updateManifestUrlOverride = ""
-        preferences.lastAppUpdateCheckMillis = 0L
-        checkForAppUpdate(force = true)
-    }
+    fun clearUpdateManifestUrl() =
+        runtimeCoordinator.clearUpdateManifestUrl()
 
     /** Set or update the private GitHub Personal Access Token or Deploy Token. */
-    fun setUpdateAuthToken(token: String) {
-        preferences.updateAuthToken = token.trim()
-        preferences.lastAppUpdateCheckMillis = 0L
-        checkForAppUpdate(force = true)
-    }
+    fun setUpdateAuthToken(token: String) =
+        runtimeCoordinator.setUpdateAuthToken(token)
 
-    fun updateManifestUrl(): String = preferences.updateManifestUrlOverride
-    fun updateAuthToken(): String = preferences.updateAuthToken
+    fun updateManifestUrl(): String =
+        runtimeCoordinator.updateManifestUrl()
+    fun updateAuthToken(): String =
+        runtimeCoordinator.updateAuthToken()
 
     /** Debug builds only: persist a manifest URL override and re-check immediately. */
-    fun setDebugUpdateManifestUrl(url: String) {
-        if (!BuildConfig.DEBUG) return
-        preferences.debugUpdateManifestUrl = url.trim()
-        preferences.lastAppUpdateCheckMillis = 0L
-        checkForAppUpdate(force = true)
-    }
+    fun setDebugUpdateManifestUrl(url: String) =
+        runtimeCoordinator.setDebugUpdateManifestUrl(url)
 
     /** Debug builds only: clear the manifest URL override and re-check the default channel. */
-    fun clearDebugUpdateManifestUrl() {
-        if (!BuildConfig.DEBUG) return
-        preferences.debugUpdateManifestUrl = ""
-        preferences.lastAppUpdateCheckMillis = 0L
-        checkForAppUpdate(force = true)
-    }
+    fun clearDebugUpdateManifestUrl() =
+        runtimeCoordinator.clearDebugUpdateManifestUrl()
 
     /** Debug builds only: the currently-active manifest URL override (empty = default). */
-    fun debugUpdateManifestUrl(): String = if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else ""
+    fun debugUpdateManifestUrl(): String =
+        runtimeCoordinator.debugUpdateManifestUrl()
 
-    fun installAppUpdate() {
-        val info = _state.value.appUpdate ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getApplication<Application>().packageManager.canRequestPackageInstalls()) {
-            _state.update { it.copy(appUpdateStatus = AppUpdateStatus.PERMISSION_REQUIRED) }
-            return
-        }
-        if (_state.value.appUpdateStatus == AppUpdateStatus.DOWNLOADING) return
-        _state.update {
-            it.copy(appUpdateStatus = AppUpdateStatus.DOWNLOADING, appUpdateDownloadedBytes = 0L, appUpdateTotalBytes = info.sizeBytes, appUpdateError = null)
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                appUpdater().download(info) { downloaded, total ->
-                    _state.update { current -> current.copy(appUpdateDownloadedBytes = downloaded, appUpdateTotalBytes = total) }
-                }
-            }.onSuccess { apk ->
-                _state.update { it.copy(appUpdateStatus = AppUpdateStatus.INSTALLING) }
-                runCatching { AndroidAppInstaller.install(getApplication(), apk) }.onFailure { error ->
-                    _state.update { it.copy(appUpdateStatus = AppUpdateStatus.ERROR, appUpdateError = error.message ?: "Could not start the Android installer") }
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(appUpdateStatus = AppUpdateStatus.ERROR, appUpdateError = error.message ?: "Update download failed") }
-            }
-        }
-    }
+    fun installAppUpdate() =
+        runtimeCoordinator.installAppUpdate()
 
-    fun dismissAppUpdateError() {
-        _state.update { it.copy(appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null) }
-    }
+    fun dismissAppUpdateError() =
+        runtimeCoordinator.dismissAppUpdateError()
 
-    private fun mergeStartupLog(
-        existing: List<String>,
-        progress: RuntimeInstallProgress,
-    ): List<String> {
-        val prefix = "\$ ${progress.message}"
-        val bytes = progress.totalBytes?.let { total ->
-            val downloaded = progress.downloadedBytes ?: 0L
-            " — %.1f / %.1f MB".format(downloaded / 1_048_576.0, total / 1_048_576.0)
-        }.orEmpty()
-        val nextLine = prefix + bytes
-        val updated = if (existing.lastOrNull()?.startsWith(prefix) == true) {
-            existing.dropLast(1) + nextLine
-        } else {
-            existing + nextLine
-        }
-        return updated.takeLast(80)
-    }
 
-    private fun showStartupError(error: Throwable) {
-        val isOffline = generateSequence(error as Throwable?) { it.cause }
-            .any { cause ->
-                cause is UnknownHostException ||
-                    cause.message.orEmpty().contains("unable to resolve host", ignoreCase = true) ||
-                    cause.message.orEmpty().contains("no address associated with hostname", ignoreCase = true)
-            }
-        val message = if (isOffline) {
-            "Connect to Wi-Fi or mobile data, then try again. Internet is required to finish the first-time setup."
-        } else {
-            error.message?.take(300) ?: "Something went wrong while preparing Mobile Harness. Please try again."
-        }
-        _state.update {
-            it.copy(
-                startupStage = StartupStage.ERROR,
-                startupError = message,
-                startupErrorIsOffline = isOffline,
-            )
-        }
-    }
 
-    fun finishOnboarding(profile: ProviderProfile, secret: String) {
-        vault.put(profile.kind.name, secret)
-        val saved = profile.copy(
-            hasSecret = secret.isNotBlank() || vault.contains(profile.kind.name),
-        )
-        preferences.saveProvider(saved, _state.value.agentKind)
-        preferences.onboardingComplete = true
-        _state.update { it.copy(onboardingComplete = true, provider = saved, startupStage = StartupStage.READY) }
-        refreshActiveApiKey(profile.kind)
-        pingApi()
-        autoUpdateToolsAndSkills()
-    }
+    fun finishOnboarding(profile: ProviderProfile, secret: String) =
+        runtimeCoordinator.finishOnboarding(profile, secret)
 
-    fun finishAntigravityOnboarding() {
-        check(_state.value.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN) {
-            "Sign in to Antigravity first"
-        }
-        preferences.onboardingComplete = true
-        _state.update { it.copy(onboardingComplete = true, startupStage = StartupStage.READY) }
-        autoUpdateToolsAndSkills()
-    }
+    fun finishAntigravityOnboarding() =
+        runtimeCoordinator.finishAntigravityOnboarding()
 
     /** Lets first-run users escape a provider/login failure without losing saved credentials. */
-    fun chooseOnboardingAgent(kind: AgentKind) {
-        selectAgent(kind)
-        _state.update {
-            it.copy(
-                startupStage = if (installer.isAgentInstalled(kind)) {
-                    StartupStage.MODEL_SETUP
-                } else {
-                    StartupStage.SETUP_REQUIRED
-                },
-                startupError = null,
-                startupErrorIsOffline = false,
-            )
-        }
-    }
+    fun chooseOnboardingAgent(kind: AgentKind) =
+        runtimeCoordinator.chooseOnboardingAgent(kind)
 
-    fun updateProvider(profile: ProviderProfile, secret: String) = finishOnboarding(profile, secret)
+    fun updateProvider(profile: ProviderProfile, secret: String) =
+        runtimeCoordinator.updateProvider(profile, secret)
 
-    fun finishBackgroundSetup() {
-        preferences.backgroundSetupComplete = true
-        _state.update {
-            it.copy(
-                backgroundSetupComplete = true,
-                showAppTour = !preferences.appTourCompleted,
-            )
-        }
-    }
+    fun finishBackgroundSetup() =
+        runtimeCoordinator.finishBackgroundSetup()
 
-    fun finishAppTour() {
-        preferences.appTourCompleted = true
-        _state.update { it.copy(appTourCompleted = true, showAppTour = false) }
-    }
+    fun finishAppTour() =
+        runtimeCoordinator.finishAppTour()
 
-    fun replayAppTour() {
-        _state.update { it.copy(showAppTour = true) }
-    }
+    fun replayAppTour() =
+        runtimeCoordinator.replayAppTour()
 
     /** Called from the first-launch setup screen; persists the agent choice for setup and Settings. */
     fun refreshInstalledAgents() {
@@ -1794,227 +1472,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Called from the first-launch tool picker; persists the choice for setup and Settings. */
-    fun toggleDevStack(stack: DevStack) {
-        if (stack == DevStack.WEB) return
-        val updated = _state.value.selectedDevStacks.toMutableSet().apply {
-            if (!add(stack)) remove(stack)
-        }
-        preferences.selectedDevStacks = updated.map { it.name }.toSet()
-        _state.update { it.copy(selectedDevStacks = updated) }
-    }
+    fun toggleDevStack(stack: DevStack) =
+        runtimeCoordinator.toggleDevStack(stack)
 
     /** Installs one development stack on demand (Settings) with live progress. */
-    fun installDevStack(stack: DevStack) {
-        if (_state.value.devStackInstalling != null) return
-        _state.update {
-            it.copy(
-                devStackInstalling = stack,
-                devStackRemoving = false,
-                devStackMessage = "Preparing ${stack.label}…",
-                devStackProgress = 0f,
-                devStackBytes = null,
-                devStackBytesPerSecond = null,
-            )
-        }
-        viewModelScope.launch {
-            var sampleBytes = 0L
-            var sampleTime = android.os.SystemClock.elapsedRealtime()
-            var latestSpeed: Long? = null
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    installer.ensureStackInstalled(stack) { progress ->
-                        val transfer = progress.totalBytes?.let { total ->
-                            (progress.downloadedBytes ?: 0L) to total
-                        }
-                        if (transfer != null) {
-                            val now = android.os.SystemClock.elapsedRealtime()
-                            val elapsed = now - sampleTime
-                            val delta = transfer.first - sampleBytes
-                            if (delta < 0L) {
-                                sampleBytes = transfer.first
-                                sampleTime = now
-                                latestSpeed = null
-                            } else if (elapsed >= 500L) {
-                                latestSpeed = (delta * 1_000L / elapsed).coerceAtLeast(0L)
-                                sampleBytes = transfer.first
-                                sampleTime = now
-                            }
-                        } else {
-                            sampleBytes = 0L
-                            sampleTime = android.os.SystemClock.elapsedRealtime()
-                            latestSpeed = null
-                        }
-                        _state.update { current ->
-                            current.copy(
-                                devStackMessage = progress.message,
-                                devStackProgress = progress.fraction.coerceIn(0f, 1f),
-                                devStackBytes = transfer,
-                                devStackBytesPerSecond = latestSpeed,
-                            )
-                        }
-                    }
-                }
-            }
-            _state.update { current ->
-                current.copy(
-                    devStackInstalling = null,
-                    devStackRemoving = false,
-                    installedDevStacks = if (result.isSuccess) current.installedDevStacks + stack else current.installedDevStacks,
-                    devStackProgress = 0f,
-                    devStackBytes = null,
-                    devStackBytesPerSecond = null,
-                    devStackMessage = result.fold(
-                        onSuccess = { "${stack.label} tools are ready" },
-                        onFailure = { error -> error.message?.take(200) ?: "Could not install ${stack.label}" },
-                    ),
-                    toastMessage = result.fold(
-                        onSuccess = { "${stack.label} tools are ready" },
-                        onFailure = { error -> error.message?.take(200) ?: "Could not install ${stack.label}" },
-                    ),
-                )
-            }
-        }
-    }
+    fun installDevStack(stack: DevStack) =
+        runtimeCoordinator.installDevStack(stack)
 
     /** Updates an installed optional toolchain in place. */
-    fun updateDevStack(stack: DevStack) {
-        if (_state.value.devStackInstalling != null || stack == DevStack.WEB) return
-        if (stack !in _state.value.installedDevStacks) return
-        if (_state.value.isRunning || _state.value.projectTerminalRunning) {
-            _state.update { it.copy(toastMessage = "Stop running tasks and terminal commands before updating tools") }
-            return
-        }
-        _state.update {
-            it.copy(
-                devStackInstalling = stack,
-                devStackRemoving = false,
-                devStackMessage = "Updating ${stack.label}…",
-                devStackProgress = 0f,
-                devStackBytes = null,
-                devStackBytesPerSecond = null,
-            )
-        }
-        viewModelScope.launch {
-            var sampleBytes = 0L
-            var sampleTime = android.os.SystemClock.elapsedRealtime()
-            var latestSpeed: Long? = null
-            var wasAlreadyUpToDate = false
-            var finalProgressMessage: String? = null
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    installer.updateStack(stack) { progress ->
-                        if (progress.message.contains("up to date", ignoreCase = true)) {
-                            wasAlreadyUpToDate = true
-                        }
-                        finalProgressMessage = progress.message
-                        val transfer = progress.totalBytes?.let { total ->
-                            (progress.downloadedBytes ?: 0L) to total
-                        }
-                        if (transfer != null) {
-                            val now = android.os.SystemClock.elapsedRealtime()
-                            val elapsed = now - sampleTime
-                            val delta = transfer.first - sampleBytes
-                            if (delta < 0L) {
-                                sampleBytes = transfer.first
-                                sampleTime = now
-                                latestSpeed = null
-                            } else if (elapsed >= 500L) {
-                                latestSpeed = (delta * 1_000L / elapsed).coerceAtLeast(0L)
-                                sampleBytes = transfer.first
-                                sampleTime = now
-                            }
-                        }
-                        _state.update { current ->
-                            current.copy(
-                                devStackMessage = progress.message,
-                                devStackProgress = progress.fraction.coerceIn(0f, 1f),
-                                devStackBytes = transfer,
-                                devStackBytesPerSecond = latestSpeed,
-                            )
-                        }
-                    }
-                }
-            }
-            _state.update { current ->
-                val finalMsg = result.fold(
-                    onSuccess = {
-                        finalProgressMessage?.takeIf { it.isNotBlank() }
-                            ?: if (wasAlreadyUpToDate) "${stack.label} is already up to date" else "${stack.label} updated successfully"
-                    },
-                    onFailure = { error -> error.message?.take(200) ?: "Could not update ${stack.label}" },
-                )
-                current.copy(
-                    devStackInstalling = null,
-                    devStackRemoving = false,
-                    devStackProgress = 0f,
-                    devStackBytes = null,
-                    devStackBytesPerSecond = null,
-                    devStackMessage = finalMsg,
-                    toastMessage = result.fold(
-                        onSuccess = {
-                            if (wasAlreadyUpToDate) "${stack.label} is already up to date" else "${stack.label} updated"
-                        },
-                        onFailure = { "Could not update ${stack.label}" },
-                    ),
-                    installedDevStacks = installer.installedStacks(),
-                )
-            }
-        }
-    }
+    fun updateDevStack(stack: DevStack) =
+        runtimeCoordinator.updateDevStack(stack)
 
     /** Removes an optional toolchain after the Settings confirmation dialog. */
-    fun removeDevStack(stack: DevStack) {
-        if (_state.value.devStackInstalling != null || stack == DevStack.WEB) return
-        if (_state.value.isRunning || _state.value.projectTerminalRunning) {
-            _state.update { it.copy(toastMessage = "Stop running tasks and terminal commands before removing tools") }
-            return
-        }
-        _state.update {
-            it.copy(
-                devStackInstalling = stack,
-                devStackRemoving = true,
-                devStackMessage = "Removing ${stack.label}…",
-                devStackProgress = 0.1f,
-                devStackBytes = null,
-                devStackBytesPerSecond = null,
-            )
-        }
-        viewModelScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    installer.removeStack(stack) { progress ->
-                        _state.update { current ->
-                            current.copy(
-                                devStackMessage = progress.message,
-                                devStackProgress = progress.fraction.coerceIn(0f, 1f),
-                            )
-                        }
-                    }
-                }
-            }
-            if (result.isSuccess) {
-                val selected = _state.value.selectedDevStacks - stack
-                preferences.selectedDevStacks = selected.map { it.name }.toSet()
-            }
-            _state.update { current ->
-                current.copy(
-                    selectedDevStacks = if (result.isSuccess) current.selectedDevStacks - stack else current.selectedDevStacks,
-                    installedDevStacks = if (result.isSuccess) current.installedDevStacks - stack else current.installedDevStacks,
-                    devStackInstalling = null,
-                    devStackRemoving = false,
-                    devStackProgress = 0f,
-                    devStackMessage = result.fold(
-                        onSuccess = { "${stack.label} removed" },
-                        onFailure = { result.exceptionOrNull()?.message?.take(200) ?: "Could not remove ${stack.label}" },
-                    ),
-                    toastMessage = result.fold(
-                        onSuccess = { "${stack.label} removed" },
-                        onFailure = { "Could not remove ${stack.label}" },
-                    ),
-                )
-            }
-        }
-    }
+    fun removeDevStack(stack: DevStack) =
+        runtimeCoordinator.removeDevStack(stack)
 
     suspend fun discoverModels(profile: ProviderProfile, secret: String): ModelDiscoveryResult {
         val key = secret.ifBlank { vault.get(profile.kind.name).orEmpty() }
