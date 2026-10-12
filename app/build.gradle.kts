@@ -85,8 +85,8 @@ android {
         targetSdk = if (playBuild) 36 else 28
         // Keep literal defaults so F-Droid's static manifest parser can detect
         // the tagged release. Gradle properties may still override Play builds.
-        versionCode = 32
-        versionName = "3.0.0"
+        versionCode = 33
+        versionName = "3.0.1"
         providers.gradleProperty("appVersionCode").orNull?.toIntOrNull()?.let { versionCode = it }
         providers.gradleProperty("appVersionName").orNull?.let { versionName = it }
 
