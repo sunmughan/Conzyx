@@ -88,6 +88,9 @@ class CloudExecutionOrchestrator(
         if (uploader != null && workspaceDir != null) {
             val delta = uploader.uploadWorkspaceDelta(worker, workspaceDir)
             delta.result.logs.forEach(::log)
+            if (delta.result.status == OperationStatus.NOT_CONFIGURED) {
+                return finish(HybridJobState.NOT_CONFIGURED, delta.result.error, null, 0.0)
+            }
             if (delta.result.status != OperationStatus.SUCCESS) {
                 return finish(HybridJobState.FAILED, "Payload upload failed: ${delta.result.error}", null, 0.0)
             }
