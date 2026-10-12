@@ -62,8 +62,15 @@ class LspProtocolClient(
      * server responded with a result containing capabilities.
      */
     fun initialize(rootPath: String): Boolean {
+        // ProcessHandle is not in Android's compile SDK; resolve the pid
+        // purely by string-based reflection (no compile-time reference).
+        val pid: Long? = runCatching {
+            val handleClass = Class.forName("java.lang.ProcessHandle")
+            val current = handleClass.getMethod("current").invoke(null)
+            handleClass.getMethod("pid").invoke(current) as? Long
+        }.getOrNull()
         val params = JSONObject()
-            .put("processId", ProcessHandle.current().pid())
+            .put("processId", if (pid != null) pid else JSONObject.NULL)
             .put("rootUri", pathToUri(rootPath))
             .put(
                 "capabilities", JSONObject()

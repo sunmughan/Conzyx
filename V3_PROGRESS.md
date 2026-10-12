@@ -157,3 +157,41 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Scroll-position *reporting* from the Compose UI (model + restore path support it; cursor reporting is wired).
 - Device/emulator acceptance for keyboard/mouse/tablet/foldable/landscape — requires a real device; the keyboard map + palette provide the touch-free path.
 - Minimap — not present; not claimed.
+
+## Milestone 3 — IN PROGRESS (2026-10-12)
+
+**Real semantic intelligence** (Phase 3). Commits on `v3`.
+
+### Real structural parsers (not regex)
+- `lsp/parser/Tokenizer.kt` (new): language-aware tokenizer — strings (incl. triple-quoted, template literals), line/block comments, accurate line/character positions; optional COMMENT tokens for doc-comments; optional NEWLINE/INDENT/DEDENT for Python.
+- `lsp/parser/ParserModels.kt` (new): `ParsedSymbol` (kind, container, depth, signature, superTypes, docComment, parameters), `ParsedImport`, `ParseDiagnostic`, `ParsedFile`, `CallSite`.
+- `lsp/parser/BaseParser.kt` (new): shared token-stream navigation, balanced-delimiter skipping with genuine unclosed-delimiter diagnostics, scope-stack tracking, duplicate-definition detection, structural call-site collection.
+- `KotlinParser` (new): packages, imports (incl. `as` aliases, star), classes/interfaces/objects/enums with supertype lists, functions with parameter lists, properties, constructors, companion objects, doc comments.
+- `JavaParser` (new): packages, imports (incl. static), classes/interfaces/enums/records with extends/implements, constructors vs methods (structural `(` check), fields, annotations.
+- `TypeScriptParser` (new): named/default/namespace imports, classes with extends/implements, interfaces, type aliases, enums, functions, arrow functions, class members (incl. getters, generic methods), decorators, exports.
+- `PythonParser` (new): indentation-based scoping, classes with bases, functions/methods (async too), module/class assignments, from/import with aliases, decorators, docstrings.
+- `SourceParser` (new): dispatcher by language; never throws (honest error diagnostic on failure).
+
+### Symbol/dependency graph + incremental invalidation
+- `lsp/ParserProjectIndex.kt` (new): per-file parse cache; import resolution per language (Kotlin/Java package matching, TS relative paths, Python module paths); dependency graph (imports/dependents); `updateFile` re-parses only the changed file and returns transitive dependents; `removeFile` cleans edges; scope-aware cross-file `definitions` (lexical scopes → imports → project), `references` (definitions + call sites), scope-aware `completions`, `renameLocations`, real parser `diagnostics`.
+
+### Provider backed by real parsers
+- `lsp/ParserBackedIntelligenceProvider.kt` (new): implements `LanguageIntelligenceProvider`, `isFallback=false`, honest names ("Built-in parser (Kotlin/Java)" etc. — never claims compiler accuracy); per-language factories.
+- `LanguageIntelligenceProvider.renameLocations` (new, default null): parser providers return definition + reference locations; heuristic fallback keeps text-based rename.
+- `lsp/ProviderRegistry.kt` (new): real server > parser provider > labelled heuristic fallback; `describeTier` for UI labelling.
+
+### Actual LSP lifecycle
+- `lsp/LspProtocolClient.kt` (new): real JSON-RPC over stdio — Content-Length framing, `initialize` handshake, `initialized`, `didOpen`/`didChange`, `definition`/`references`/`completion`/`hover`, `publishDiagnostics` dispatch, id-matched requests with timeouts, clean shutdown.
+- `LspManager`: `startServer` now performs the initialize handshake (fails honestly when it does); protocol clients cached per language; queries route through real servers when running; server diagnostics cached; `getProtocolClient`/`getCachedDiagnostics` for the registry.
+- `lsp/LspServerBackedProvider.kt` (new): provider wrapper for running servers.
+
+### Tests (70+ new)
+- `TokenizerTest` (8), `KotlinParserTest` (11), `JavaParserTest` (8), `TypeScriptParserTest` (10), `PythonParserTest` (9): structure, scope, imports, diagnostics, string/comment immunity.
+- `ParserProjectIndexTest` (11): cross-file definition (Kotlin/TS/Python), references, dependency graph, incremental invalidation, rename.
+- `ParserBackedProviderTest` (13): M3 gate — definition/references/rename/diagnostics/completion per language family via the provider contract; labelling honesty.
+- `LspProtocolClientTest` (7): fake LSP server over piped stdio — handshake, definition, completion, diagnostics notifications, framing.
+- `ProviderRegistryTest` (7): selection priority.
+
+**Deliberately deferred:**
+- Compiler-accurate type resolution — requires real language servers; providers honestly label as "not compiler-accurate".
+- Bundled language servers — binaries are platform-specific and large; `LspManager` uses installed servers when present.
