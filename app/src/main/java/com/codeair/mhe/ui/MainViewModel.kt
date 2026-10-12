@@ -545,6 +545,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             refreshProjectFiles = { refreshProjectFiles() },
         )
+    // ---- Moved above init: refreshGitHubConnection() is launched from init via
+    // ---- Dispatchers.Main.immediate, which runs synchronously before later properties initialize.
+    private val gitHubAuthCoordinator =
+        com.codeair.mhe.ui.coordinators.github.GitHubAuthCoordinator(
+            host = coordinatorHost,
+            gitHubClient = gitHubClient,
+            installer = installer,
+            preferences = preferences,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            openProject = { project -> openProject(project) },
+        )
     init {
         AppCrashLogger.log("MainViewModel.init entered")
         // GitHub's official CLI owns its OAuth credential. Remove credentials from
@@ -739,15 +750,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences = preferences,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             refreshProjectFiles = { refreshProjectFiles() },
-            openProject = { project -> openProject(project) },
-        )
-    private val gitHubAuthCoordinator =
-        com.codeair.mhe.ui.coordinators.github.GitHubAuthCoordinator(
-            host = coordinatorHost,
-            gitHubClient = gitHubClient,
-            installer = installer,
-            preferences = preferences,
-            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             openProject = { project -> openProject(project) },
         )
     private val projectsCoordinator =
