@@ -123,6 +123,43 @@ class GlobalSearchEngineTest {
     }
 
     @Test
+    fun `direct replacement skips files over the configured size limit`() {
+        val target = File(workspaceDir, "large-direct-replace.txt")
+        target.writeText("needle" + "x".repeat(2 * 1024 * 1024))
+        val originalLength = target.length()
+
+        assertEquals(0, GlobalSearchEngine.replaceInFile(
+            file = target,
+            query = "needle",
+            replacement = "changed",
+            matchCase = true,
+        ))
+        assertEquals(originalLength, target.length())
+        assertTrue(target.readText().startsWith("needle"))
+    }
+
+    @Test
+    fun `replaceAll honors ignored directories and filename glob filters`() {
+        val ignored = File(workspaceDir, "build/generated.kt").apply {
+            parentFile?.mkdirs()
+            writeText("needle")
+        }
+        val included = File(workspaceDir, "src/Included.kt").apply { writeText("needle") }
+        val excluded = File(workspaceDir, "src/Excluded.java").apply { writeText("needle") }
+
+        assertEquals(1, GlobalSearchEngine.replaceAll(
+            workspaceDir = workspaceDir,
+            query = "needle",
+            replacement = "changed",
+            matchCase = true,
+            fileFilter = "*.kt",
+        ))
+        assertEquals("changed", included.readText())
+        assertEquals("needle", ignored.readText())
+        assertEquals("needle", excluded.readText())
+    }
+
+    @Test
     fun `search and replace never read or modify symlink targets outside workspace`() {
         val outside = tempFolder.newFolder("search-outside-workspace")
         val outsideFile = File(outside, "secret.txt").apply { writeText("secret-token") }
