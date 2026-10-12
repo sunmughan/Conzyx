@@ -291,10 +291,11 @@ class LspProtocolClientTest {
     fun `output framing uses content-length`() {
         val h = Harness()
         val rawOut = ByteArrayOutputStream()
-        val rawClient = LspProtocolClient(h.clientIn, rawOut, requestTimeoutMs = 3_000)
+        // Tee: bytes go to the fake server AND are captured for assertion.
+        val tee = TeeOutputStream(h.clientToServer, rawOut)
+        val rawClient = LspProtocolClient(h.clientIn, tee, requestTimeoutMs = 10_000)
         try {
-            // The server answers initialize; we inspect the bytes written.
-            rawClient.initialize("/workspace")
+            assertTrue(rawClient.initialize("/workspace"))
             val written = rawOut.toString(Charsets.US_ASCII.name())
             assertTrue(written.startsWith("Content-Length: "))
             assertTrue(written.contains("\r\n\r\n"))
@@ -310,6 +311,27 @@ class LspProtocolClientTest {
         } finally {
             rawClient.shutdown()
             h.close()
+        }
+    }
+
+    /** Writes every byte to two downstream streams. */
+    private class TeeOutputStream(
+        private val a: OutputStream,
+        private val b: OutputStream,
+    ) : OutputStream() {
+        override fun write(value: Int) {
+            a.write(value)
+            b.write(value)
+        }
+
+        override fun write(buf: ByteArray, off: Int, len: Int) {
+            a.write(buf, off, len)
+            b.write(buf, off, len)
+        }
+
+        override fun flush() {
+            a.flush()
+            b.flush()
         }
     }
 }
