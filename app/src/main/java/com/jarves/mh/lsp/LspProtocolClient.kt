@@ -141,6 +141,7 @@ class LspProtocolClient(
         character: Int,
         includeDeclaration: Boolean = true,
     ): List<LspLocation> {
+        if (!isInitialized) return emptyList()
         val params = documentPositionParams(filePath, line, character)
             .put("context", JSONObject().put("includeDeclaration", includeDeclaration))
         val result = sendRequest("textDocument/references", params)
@@ -153,6 +154,7 @@ class LspProtocolClient(
         line: Int,
         character: Int,
     ): List<LspCompletionItem> {
+        if (!isInitialized) return emptyList()
         val result = sendRequest(
             "textDocument/completion",
             documentPositionParams(filePath, line, character)
@@ -174,6 +176,7 @@ class LspProtocolClient(
     }
 
     fun hover(filePath: String, line: Int, character: Int): LspHover? {
+        if (!isInitialized) return null
         val result = sendRequest(
             "textDocument/hover",
             documentPositionParams(filePath, line, character)
