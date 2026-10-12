@@ -4,14 +4,26 @@ import com.jarves.mh.agent.team.model.ArtifactType
 import com.jarves.mh.agent.team.model.ReviewVerdict
 import com.jarves.mh.agent.team.model.TeamRole
 import com.jarves.mh.agent.team.model.TeamTaskStatus
+import com.jarves.mh.agent.team.runtime.SecurityScanResult
+import com.jarves.mh.agent.team.runtime.TeamAgentExecutor
+import com.jarves.mh.agent.team.runtime.TeamExecutionResult
+import com.jarves.mh.agent.team.runtime.TeamRoleValidator
+import com.jarves.mh.agent.team.runtime.TestSuiteResult
+import com.jarves.mh.core.result.OperationResult
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class AgentTeamOrchestratorTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     private lateinit var orchestrator: AgentTeamOrchestrator
 
@@ -89,20 +101,39 @@ class AgentTeamOrchestratorTest {
     }
 
     @Test
-    fun testNonDemoModeRecordsReviewsThroughGatekeeper() {
-        // Gatekeeper mechanics test: with demo mode explicitly off, the review
-        // pipeline records approvals. (Real agent executors are Milestone 10 work;
-        // this exercises the gatekeeper path, not real reviews.)
-        val realModeOrchestrator = AgentTeamOrchestrator(isDemoMode = false)
+    fun testNonDemoModeRecordsReviewsThroughGatekeeper() = runBlocking {
+        // M10: non-demo mode is only legal with a real executor wired. The review
+        // pipeline records genuine approvals through the gatekeeper.
+        val executor = TeamAgentExecutor { task, context ->
+            val marker = if (context.role == TeamRole.CODE_REVIEWER) "\nVERDICT: APPROVED" else ""
+            TeamExecutionResult(
+                result = OperationResult.success(verificationEvidence = "agent completed"),
+                outputText = "Real output for ${task.title}.$marker",
+            )
+        }
+        val validator = TeamRoleValidator(
+            testSuiteRunner = TestSuiteRunner {
+                TestSuiteResult(ran = true, passed = 5, failed = 0, skipped = 0, note = "exit=0")
+            },
+            securityScanner = SecurityScanner { SecurityScanResult(filesScanned = 10) },
+        )
+        val realModeOrchestrator = AgentTeamOrchestrator(
+            isDemoMode = false,
+            teamExecutor = executor,
+            teamValidator = validator,
+            projectDir = tempFolder.root,
+        )
         realModeOrchestrator.planProject("Build complete mobile app")
 
-        val completedCount = realModeOrchestrator.autoRunAll()
-        assertEquals(10, completedCount)
+        val report = realModeOrchestrator.autoRunAllReal()
+        assertEquals(10, report.succeeded)
 
         val sessionState = realModeOrchestrator.sessionState.value
         assertTrue(sessionState.tasks.all { it.status == TeamTaskStatus.COMPLETED })
         assertTrue(sessionState.reviews.any { it.reviewerRole == TeamRole.SECURITY_REVIEWER })
         assertTrue(sessionState.reviews.any { it.reviewerRole == TeamRole.CODE_REVIEWER })
+        // M10 integrity: real-mode reviews are genuine, never simulated.
+        assertTrue(sessionState.reviews.none { it.isSimulated })
     }
 
     @Test

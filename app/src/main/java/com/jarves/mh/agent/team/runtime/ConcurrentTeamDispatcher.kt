@@ -107,7 +107,10 @@ class ConcurrentTeamDispatcher(
                 break
             }
             val stageOutcomes = stage
-                .filter { it.status == TeamTaskStatus.READY }
+                // NOTE: stage lists snapshot task state at computation time; re-check
+                // liveness against the scheduler so tasks unlocked by the previous
+                // stage are actually dispatched.
+                .filter { scheduler.getTask(it.id)?.status == TeamTaskStatus.READY }
                 .map { task ->
                     async(Dispatchers.Default) {
                         semaphore.withPermit { executeOne(task) }

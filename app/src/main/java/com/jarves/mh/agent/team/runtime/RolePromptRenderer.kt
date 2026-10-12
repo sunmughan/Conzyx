@@ -73,7 +73,11 @@ object RolePromptRenderer {
             .map { it.trim() }
             .lastOrNull { it.startsWith(VERDICT_MARKER, ignoreCase = true) }
             ?: return null
-        val raw = line.substringAfter(VERDICT_MARKER).trim().uppercase()
+        // The marker match above is case-insensitive, so locate it the same way —
+        // a case-sensitive substringAfter would miss a lowercase "verdict:".
+        val markerIndex = line.indexOf(VERDICT_MARKER, ignoreCase = true)
+        if (markerIndex < 0) return null
+        val raw = line.substring(markerIndex + VERDICT_MARKER.length).trim().uppercase()
         return when {
             raw.startsWith("APPROVED") -> ReviewVerdict.APPROVED
             raw.startsWith("CHANGES_REQUESTED") -> ReviewVerdict.CHANGES_REQUESTED
