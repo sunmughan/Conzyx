@@ -62,7 +62,8 @@ class TeamTaskScheduler {
         output: String = "",
         feedback: String = "",
         tokensUsed: Long = 0L,
-        executionTimeMs: Long = 0L
+        executionTimeMs: Long = 0L,
+        isSimulated: Boolean = false
     ): TeamTask? {
         val current = tasksById[taskId] ?: return null
         val updated = current.copy(
@@ -70,7 +71,8 @@ class TeamTaskScheduler {
             output = output.ifBlank { current.output },
             reviewFeedback = feedback.ifBlank { current.reviewFeedback },
             tokensUsed = if (tokensUsed > 0L) current.tokensUsed + tokensUsed else current.tokensUsed,
-            executionTimeMs = if (executionTimeMs > 0L) current.executionTimeMs + executionTimeMs else current.executionTimeMs
+            executionTimeMs = if (executionTimeMs > 0L) current.executionTimeMs + executionTimeMs else current.executionTimeMs,
+            isSimulated = isSimulated || current.isSimulated
         )
         tasksById[taskId] = updated
 

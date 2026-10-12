@@ -71,14 +71,16 @@ class TeamReviewGatekeeper {
         taskId: String,
         reviewerRole: TeamRole,
         verdict: ReviewVerdict,
-        comments: String
+        comments: String,
+        isSimulated: Boolean = false
     ): ReviewRecord {
         val record = ReviewRecord(
             taskId = taskId,
             reviewerRole = reviewerRole,
             verdict = verdict,
             comments = comments,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            isSimulated = isSimulated
         )
         reviews.add(record)
         return record
@@ -99,9 +101,10 @@ class TeamReviewGatekeeper {
 
         val taskReviews = reviews.filter { it.taskId == task.id }
 
-        // Must have an APPROVED review from CODE_REVIEWER
+        // Must have a REAL (non-simulated) APPROVED review from CODE_REVIEWER.
+        // Simulated demo reviews never count as approval (Milestone 0 integrity gate).
         val hasCodeReviewApproval = taskReviews.any {
-            it.reviewerRole == TeamRole.CODE_REVIEWER && it.verdict == ReviewVerdict.APPROVED
+            it.reviewerRole == TeamRole.CODE_REVIEWER && it.verdict == ReviewVerdict.APPROVED && !it.isSimulated
         }
 
         if (!hasCodeReviewApproval) {
@@ -118,7 +121,7 @@ class TeamReviewGatekeeper {
 
         if (securityNeeded) {
             val hasSecurityApproval = taskReviews.any {
-                it.reviewerRole == TeamRole.SECURITY_REVIEWER && it.verdict == ReviewVerdict.APPROVED
+                it.reviewerRole == TeamRole.SECURITY_REVIEWER && it.verdict == ReviewVerdict.APPROVED && !it.isSimulated
             }
             if (!hasSecurityApproval) {
                 return false

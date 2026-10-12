@@ -130,7 +130,9 @@ data class TeamTask(
     val reviewFeedback: String = "",
     val tokensUsed: Long = 0L,
     val executionTimeMs: Long = 0L,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    /** True when this task was executed in demo/simulation mode: output is illustrative only. */
+    val isSimulated: Boolean = false
 )
 
 /**
@@ -200,7 +202,9 @@ data class TeamArtifact(
     val version: Int = 1,
     val tags: Set<String> = emptySet(),
     val timestamp: Long = System.currentTimeMillis(),
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
+    /** True when this artifact was manufactured by demo/simulation mode, not real execution. */
+    val isSimulated: Boolean = false
 )
 
 /**
@@ -222,7 +226,9 @@ data class ReviewRecord(
     val reviewerRole: TeamRole,
     val verdict: ReviewVerdict,
     val comments: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    /** True when this review was simulated. Simulated reviews NEVER count as real approval. */
+    val isSimulated: Boolean = false
 )
 
 /**
@@ -272,5 +278,7 @@ data class TeamSessionState(
     val budget: TeamBudget = TeamBudget(),
     val reviews: List<ReviewRecord> = emptyList(),
     val conflictWarnings: List<String> = emptyList(),
-    val executionLog: List<String> = emptyList()
+    val executionLog: List<String> = emptyList(),
+    /** True while the orchestrator runs in demo/simulation mode (Milestone 0). */
+    val isDemoMode: Boolean = true
 )

@@ -147,6 +147,14 @@ fun TeamStudioScreen(
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (sessionState.isDemoMode) {
+                                Text(
+                                    text = "DEMO MODE — simulated execution, not real agents",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB26A00)
+                                )
+                            }
                         }
                     }
                     IconButton(onClick = onClose) {

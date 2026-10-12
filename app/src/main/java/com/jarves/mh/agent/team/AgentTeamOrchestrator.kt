@@ -55,7 +55,14 @@ class AgentTeamOrchestrator(
     val scheduler: TeamTaskScheduler = TeamTaskScheduler(),
     val commBus: TeamCommunicationBus = TeamCommunicationBus(),
     val gatekeeper: TeamReviewGatekeeper = TeamReviewGatekeeper(),
-    val budgetTracker: TeamBudgetTracker = TeamBudgetTracker()
+    val budgetTracker: TeamBudgetTracker = TeamBudgetTracker(),
+    /**
+     * Demo mode (default true): tasks are SIMULATED, not executed by real agents.
+     * Simulated artifacts, reviews and approvals are explicitly labelled and can
+     * never count as real test/security approval. Set to false only when every
+     * role is wired to a real agent executor (Milestone 10).
+     */
+    val isDemoMode: Boolean = true
 ) {
 
     private val _sessionState = MutableStateFlow(TeamSessionState())
@@ -232,8 +239,27 @@ class AgentTeamOrchestrator(
         return tasks
     }
 
+    private fun demoPrefix(demo: Boolean): String = if (demo) "[SIMULATED DEMO] " else ""
+
+    private fun demoSuffix(demo: Boolean): String =
+        if (demo) " [This content was simulated in demo mode.]" else ""
+
+    private fun logDemoNote(task: TeamTask, note: String) {
+        commBus.sendMessage(
+            fromRole = TeamRole.MANAGER,
+            toRole = null,
+            type = TeamMessageType.STATUS_UPDATE,
+            content = "[SIMULATED DEMO] ${task.title}: $note",
+            taskId = task.id
+        )
+    }
+
     /**
-     * Executes or simulates the next ready task in the DAG.
+     * Executes (or, in demo mode, simulates) the next ready task in the DAG.
+     *
+     * In demo mode ([isDemoMode] = true, the default) no real agent executes:
+     * artifacts and reviews are labelled SIMULATED and simulated reviews are never
+     * submitted as approvals to the review gatekeeper.
      */
     fun runNextReadyTask(): TeamTask? {
         if (budgetTracker.isQuotaExceeded()) {
@@ -257,68 +283,103 @@ class AgentTeamOrchestrator(
         scheduler.updateTaskStatus(task.id, TeamTaskStatus.IN_PROGRESS)
         _sessionState.value = _sessionState.value.copy(activeRole = task.assignedRole)
 
-        // Simulate token consumption and execution
+        // Demo mode: NOTHING here executes a real agent. Every artifact, review and
+        // metric below is illustrative. Simulated results are explicitly labelled and
+        // can never count as real test or security approval (Milestone 0 integrity gate).
+        // Real per-role agent executors are Milestone 10 work.
+        val demo = isDemoMode
         val simulatedTokens = 2500L
         val simulatedDuration = 600L
-        budgetTracker.recordUsage(task.assignedRole, simulatedTokens, simulatedDuration)
+        if (demo) {
+            budgetTracker.recordUsage(task.assignedRole, simulatedTokens, simulatedDuration)
+        }
 
-        val outputMessage = "Executed ${task.title} by ${task.assignedRole.title}. Generated deliverables."
+        val outputMessage = if (demo) {
+            "[SIMULATED DEMO] ${task.title} by ${task.assignedRole.title}: illustrative output only, no real agent executed."
+        } else {
+            "Executed ${task.title} by ${task.assignedRole.title}. Generated deliverables."
+        }
 
         // If task produces artifacts, publish them to Blackboard
         when (task.assignedRole) {
             TeamRole.ARCHITECT -> {
                 blackboard.publishArtifact(
                     TeamArtifact(
-                        title = "API Contract & Data Spec",
+                        title = demoPrefix(demo) + "API Contract & Data Spec",
                         type = ArtifactType.API_CONTRACT,
                         authorRole = TeamRole.ARCHITECT,
-                        content = "REST & Event-driven API contract specifications for ${task.title}."
+                        content = "REST & Event-driven API contract specifications for ${task.title}." +
+                            demoSuffix(demo),
+                        isSimulated = demo
                     )
                 )
             }
             TeamRole.DATABASE_ENGINEER -> {
                 blackboard.publishArtifact(
                     TeamArtifact(
-                        title = "Database Schema & Migration",
+                        title = demoPrefix(demo) + "Database Schema & Migration",
                         type = ArtifactType.DB_SCHEMA,
                         authorRole = TeamRole.DATABASE_ENGINEER,
-                        content = "SQL DDL and Room entity definitions."
+                        content = "SQL DDL and Room entity definitions." + demoSuffix(demo),
+                        isSimulated = demo
                     )
                 )
             }
             TeamRole.TESTER -> {
                 blackboard.publishArtifact(
                     TeamArtifact(
-                        title = "QA Test Suite Execution Report",
+                        title = demoPrefix(demo) + "QA Test Suite Execution Report",
                         type = ArtifactType.TEST_REPORT,
                         authorRole = TeamRole.TESTER,
-                        content = "All 14 unit test assertions passed. 100% coverage on core feature paths."
+                        content = if (demo) {
+                            "SIMULATED: no tests were executed. This report is illustrative only " +
+                                "and must never be treated as passing tests."
+                        } else {
+                            "All 14 unit test assertions passed. 100% coverage on core feature paths."
+                        },
+                        isSimulated = demo
                     )
                 )
             }
             TeamRole.SECURITY_REVIEWER -> {
                 blackboard.publishArtifact(
                     TeamArtifact(
-                        title = "Security Vulnerability Audit",
+                        title = demoPrefix(demo) + "Security Vulnerability Audit",
                         type = ArtifactType.SECURITY_AUDIT,
                         authorRole = TeamRole.SECURITY_REVIEWER,
-                        content = "Zero CVEs or secrets detected. Sandboxed execution verified."
+                        content = if (demo) {
+                            "SIMULATED: no vulnerability scan ran. Zero-CVE claims here are illustrative " +
+                                "only and must never be treated as a real security audit."
+                        } else {
+                            "Zero CVEs or secrets detected. Sandboxed execution verified."
+                        },
+                        isSimulated = demo
                     )
                 )
-                gatekeeper.submitReview(
-                    taskId = task.id,
-                    reviewerRole = TeamRole.SECURITY_REVIEWER,
-                    verdict = ReviewVerdict.APPROVED,
-                    comments = "Security audit approved with zero critical findings."
-                )
+                if (demo) {
+                    // Demo reviews are NEVER submitted as approvals to the gatekeeper.
+                    logDemoNote(task, "Security review simulated: no real audit performed, no approval recorded.")
+                } else {
+                    gatekeeper.submitReview(
+                        taskId = task.id,
+                        reviewerRole = TeamRole.SECURITY_REVIEWER,
+                        verdict = ReviewVerdict.APPROVED,
+                        comments = "Security audit approved with zero critical findings."
+                    )
+                }
             }
             TeamRole.CODE_REVIEWER -> {
-                gatekeeper.submitReview(
-                    taskId = task.id,
-                    reviewerRole = TeamRole.CODE_REVIEWER,
-                    verdict = ReviewVerdict.APPROVED,
-                    comments = "Architecture verified, clean code standards met."
-                )
+                if (demo) {
+                    // Demo reviews are NEVER submitted as approvals to the gatekeeper.
+                    logDemoNote(task, "Code review simulated: no real review performed, no approval recorded.")
+                } else {
+                    gatekeeper.submitReview(
+                        taskId = task.id,
+                        reviewerRole = TeamRole.CODE_REVIEWER,
+                        verdict = ReviewVerdict.APPROVED,
+                        comments = "Architecture verified, clean code standards met."
+                    )
+                }
             }
             else -> {}
         }
@@ -336,8 +397,9 @@ class AgentTeamOrchestrator(
             taskId = task.id,
             status = TeamTaskStatus.COMPLETED,
             output = outputMessage,
-            tokensUsed = simulatedTokens,
-            executionTimeMs = simulatedDuration
+            tokensUsed = if (demo) simulatedTokens else 0L,
+            executionTimeMs = if (demo) simulatedDuration else 0L,
+            isSimulated = demo
         )
         budgetTracker.recordTaskCompleted(task.assignedRole)
 
@@ -433,7 +495,8 @@ class AgentTeamOrchestrator(
             budget = budget,
             reviews = reviews,
             conflictWarnings = conflictWarnings,
-            executionLog = allMessages.map { "[${it.fromRole.name}] ${it.content}" }
+            executionLog = allMessages.map { "[${it.fromRole.name}] ${it.content}" },
+            isDemoMode = isDemoMode
         )
     }
 }
