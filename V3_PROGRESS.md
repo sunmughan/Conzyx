@@ -394,3 +394,40 @@ All return `OperationResult`, refuse blank tokens with `NOT_CONFIGURED`, and pro
 **Deliberately deferred:**
 - Wiring the automation engines into `GitHubStudioScreen` / `MainViewModel` coordinators — engines are complete and tested; UI integration is product work, not milestone work.
 - Approval-before-commit hook in `GitHubWorkflowEngine` (M0-noted remainder) — the M5 `SafetyGateway` authorization-prompt layer now owns approval UX; wiring the workflow engine's commit stage through it is M6/M10 integration work.
+
+## Milestone 10 — COMPLETE (2026-10-12)
+
+**Real multi-agent runtime** (Phase 11): per-role agent executors, safe concurrent DAG dispatch, real test/security validation. `isDemoMode=false` is now legal — enforced by `requireRealExecution()`, which fails loudly when real mode is requested without a wired executor instead of silently simulating. CI green (run 38272034739).
+
+### Executor contract + production executor (new package `com.jarves.mh.agent.team.runtime`)
+- `TeamAgentExecutor.kt` (new): `TeamAgentExecutor` fun-interface (`execute(task, context): TeamExecutionResult`), `TeamExecutionContext` (projectDir, goal, role, roleConfig, agentKind, dependency outputs, blackboard summary, timeout), `TeamExecutionResult` (honest `OperationResult`, genuine artifacts, optional `reviewVerdict`, nullable tokens — never invented). `defaultArtifactTypeForRole()` maps roles to artifact types.
+- `RolePromptRenderer.kt` (new, pure JVM): renders role prompts (role identity + task + dependency outputs + blackboard digest); reviewer roles get an explicit `VERDICT:` marker instruction. `parseVerdict()` extracts APPROVED/CHANGES_REQUESTED/REJECTED from the last marker line (case-insensitive); no marker → null → no review recorded, never invented.
+- `PromptBasedTeamAgentExecutor.kt` (new): production executor — renders the prompt, sends it through the real agent pipeline via an injected `suspend (prompt) -> OperationResult` runner (same shape as MainViewModel's `runAgentPromptAwaitingResult`; the app wires the genuine pipeline, tests inject fakes). M0 integrity enforced: SIMULATED agent results are refused outright (→ FAILED); reviewer verdicts only from explicit markers; artifacts genuine (`isSimulated=false`); token usage reported only when known.
+
+### Safe concurrent DAG dispatch
+- `ConcurrentTeamDispatcher.kt` (new): `runAll()` executes dependency stages concurrently (bounded `Semaphore` by `maxConcurrentAgents`), `runReadyTask()` for single-stepping. Safety guarantees: per-file `Mutex` locks (same normalization as `detectFileConflicts`) so overlapping `affectedFiles` never run concurrently; budget quota checked before every stage; cyclic/unorderable graphs refused with an escalation instead of dispatching; failed tasks mark FAILED (dependents block via scheduler, never silently skipped); cancellation stops new launches between stages while in-flight agent runs finish rather than being killed. Each task publishes genuine artifacts, sends real status/handoff/escalation messages, and aggregates into `TeamRunReport` (`TeamRunReport.kt`: per-task outcomes, reviews, succeeded/failed/blocked counts, `isSuccess`).
+
+### Real test/security validation
+- `TeamRoleValidator.kt` (new): `TestSuiteRunner` seam + `GradleTestSuiteRunner` (real `./gradlew testDebugUnitTest` via the M8 `CommandRunner`, honest timeout/missing-wrapper handling, parses real failure lists); `SecurityScanner` seam + `HeuristicSecurityScanner` (walks real sources bounded, flags hardcoded secrets/keys/tokens, skips build dirs; reports files scanned, never claims zero-CVE). `validateTester`/`validateSecurity` return APPROVED/CHANGES_REQUESTED from genuine results and publish real TEST_REPORT/SECURITY_AUDIT artifacts (`isSimulated=false`); without a project dir they honestly report "could not be executed" instead of claiming a verdict.
+
+### Orchestrator wiring (`AgentTeamOrchestrator.kt`)
+- New constructor params: `teamExecutor`, `teamValidator` (defaults to real), `projectDir`, `maxConcurrentAgents`.
+- `requireRealExecution()` guard; `runNextReadyTask()` (sync demo API) now throws in real mode directing to the suspend API; new `suspend executeNextReadyTask()`, `suspend autoRunAllReal(): TeamRunReport`, `cancelRealRun()`.
+
+### Tests (46 new)
+- `RolePromptRendererTest` (11): prompt contents, reviewer marker instruction, verdict parsing incl. case-insensitivity and last-marker-wins.
+- `PromptBasedTeamAgentExecutorTest` (8): genuine artifacts, SIMULATED refusal, failure propagation, reviewer verdict mapping, tokens never invented.
+- `ConcurrentTeamDispatcherTest` (10): concurrent execution proof (latch rendezvous), conflicting-file serialization, dependency order, failure cascade, quota halt, genuine blackboard artifacts, cycle refusal, cancel, handoff messages.
+- `TeamRoleValidatorTest` (10): tester pass/fail, honest no-project-dir, security findings, clean scan, real heuristic scanner (finds hardcoded key, skips build dirs), Gradle runner parsing.
+- `OrchestratorRealModeTest` (7): guard enforcement, sync-API refusal in real mode, genuine single-task execution, full 10-task DAG with real reviews.
+
+### CI fix rounds (3)
+1. `ConcurrentTeamDispatcher`: stage lists snapshot stale task state — READY check now reads the live scheduler so tasks unlocked by the previous stage dispatch.
+2. `RolePromptRenderer.parseVerdict`: case-insensitive marker match paired with case-sensitive `substringAfter` dropped lowercase markers — marker now located case-insensitively.
+3. `AgentTeamOrchestratorTest.testNonDemoModeRecordsReviewsThroughGatekeeper`: rewritten for the M10 contract (real mode requires a wired executor; uses `autoRunAllReal` with fake executor + approving validator).
+4. Test fakes now set `reviewVerdict` like the production executor does (marker in output alone never produced a structured verdict).
+
+**Deliberately deferred:**
+- Wiring `PromptBasedTeamAgentExecutor`'s `agentRunner` to MainViewModel's `runAgentPromptAwaitingResult` — the seam shape matches; the actual wiring is app-integration work.
+- UI wiring (`TeamStudioScreen` already reflects `isDemoMode`; no changes needed).
+- `TeamRoleConfig.maxConcurrentTasks` per-role caps in the dispatcher (global cap implemented; per-role is a refinement).
