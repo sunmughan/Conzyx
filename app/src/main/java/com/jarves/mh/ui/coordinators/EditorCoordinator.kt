@@ -1,11 +1,19 @@
 package com.jarves.mh.ui.coordinators
 
+import com.jarves.mh.editor.EditorBufferManager
+import com.jarves.mh.editor.EditorSession
+import com.jarves.mh.editor.EditorSessionStore
+import com.jarves.mh.editor.EditorSplitState
+import com.jarves.mh.editor.EditorViewState
+import com.jarves.mh.editor.RenameEngine
 import com.jarves.mh.model.Project
 import com.jarves.mh.model.WorkspaceEntry
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -50,7 +58,22 @@ class EditorCoordinator(
         // private to MainViewModel and this file must not modify it.
         private const val MAX_EDITABLE_FILE_CHARS = 512_000
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
+        private const val SESSION_PERSIST_DEBOUNCE_MS = 1_500L
     }
+
+    /**
+     * Milestone 2 — in-memory dirty-buffer ownership and durable session
+     * persistence. Dirty buffers (unsaved edits) survive process death; only
+     * dirty buffers are written to the session file.
+     */
+    private val bufferManager = EditorBufferManager()
+    private val sessionStore: EditorSessionStore by lazy {
+        EditorSessionStore(File(host.appContext.filesDir, "editor-sessions"))
+    }
+    private var sessionPersistJob: Job? = null
+
+    /** Last rename transaction, for undo. Null when nothing to undo. */
+    private var lastRenameTransaction: com.jarves.mh.workspace.ReplaceTransaction? = null
 
     fun openFile(entry: WorkspaceEntry) {
         if (entry.isDirectory) return
@@ -62,6 +85,23 @@ class EditorCoordinator(
         val currentTabs = host.state().openEditorTabs
         val updatedTabs = if (path in currentTabs) currentTabs else currentTabs + path
         preferences.setOpenEditorTabs(project.id, updatedTabs)
+        scheduleSessionPersist(project.id, updatedTabs, path)
+        // Milestone 2: a dirty buffer restores unsaved work immediately —
+        // no disk read, no lost edits.
+        val dirtyBuffer = bufferManager.getBuffer(path)?.takeIf { it.isDirty }
+        if (dirtyBuffer != null) {
+            host.updateState {
+                it.copy(
+                    openEditorTabs = updatedTabs,
+                    openedFilePath = path,
+                    openedFileContent = dirtyBuffer.currentContent,
+                    fileContentLoading = false,
+                    editorViewStates = it.editorViewStates + (path to dirtyBuffer.viewState),
+                    editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet(),
+                )
+            }
+            return
+        }
         host.updateState {
             it.copy(
                 openEditorTabs = updatedTabs,
@@ -91,6 +131,14 @@ class EditorCoordinator(
         val currentTabs = host.state().openEditorTabs
         val updatedTabs = currentTabs.filter { it != path }
         preferences.setOpenEditorTabs(project.id, updatedTabs)
+        // Milestone 2: a dirty buffer survives tab close (it stays in the
+        // buffer manager and the session store); clean buffers are dropped.
+        val buffer = bufferManager.getBuffer(path)
+        if (buffer == null || !buffer.isDirty) {
+            bufferManager.closeBuffer(path)
+        }
+        val newActive = if (host.state().openedFilePath == path) updatedTabs.lastOrNull() else host.state().openedFilePath
+        scheduleSessionPersist(project.id, updatedTabs, newActive)
         if (host.state().openedFilePath == path) {
             val nextPath = updatedTabs.lastOrNull()
             if (nextPath != null) {
@@ -122,6 +170,14 @@ class EditorCoordinator(
         val project = host.state().activeProject ?: return
         val updatedTabs = listOf(keepPath)
         preferences.setOpenEditorTabs(project.id, updatedTabs)
+        // Milestone 2: drop clean buffers for closed tabs; keep dirty ones.
+        bufferManager.allPaths().forEach { path ->
+            if (path != keepPath) {
+                val buffer = bufferManager.getBuffer(path)
+                if (buffer == null || !buffer.isDirty) bufferManager.closeBuffer(path)
+            }
+        }
+        scheduleSessionPersist(project.id, updatedTabs, keepPath)
         if (host.state().openedFilePath != keepPath) {
             selectEditorTab(keepPath)
         }
@@ -132,6 +188,12 @@ class EditorCoordinator(
         val project = host.state().activeProject
         if (project != null) {
             preferences.setOpenEditorTabs(project.id, emptyList())
+            // Milestone 2: dirty buffers persist even with no tabs open.
+            bufferManager.allPaths().forEach { path ->
+                val buffer = bufferManager.getBuffer(path)
+                if (buffer == null || !buffer.isDirty) bufferManager.closeBuffer(path)
+            }
+            scheduleSessionPersist(project.id, emptyList(), null)
         }
         host.updateState {
             it.copy(
@@ -164,7 +226,24 @@ class EditorCoordinator(
                 }.getOrElse { "Could not read file: ${it.message}" }
             }
             if (host.state().openedFilePath == path) {
-                host.updateState { it.copy(openedFileContent = content, fileContentLoading = false) }
+                // Milestone 2: register the buffer so edits are tracked.
+                // A dirty buffer always wins over a fresh disk read.
+                val existing = bufferManager.getBuffer(path)
+                val buffer = if (existing?.isDirty == true) {
+                    existing
+                } else {
+                    bufferManager.syncFromDisk(path, content)
+                    bufferManager.getBuffer(path) ?: bufferManager.openBuffer(path, content)
+                }
+                val effectiveContent = buffer.currentContent
+                host.updateState {
+                    it.copy(
+                        openedFileContent = effectiveContent,
+                        fileContentLoading = false,
+                        editorViewStates = it.editorViewStates + (path to buffer.viewState),
+                        editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet(),
+                    )
+                }
             }
         }
     }
@@ -236,6 +315,12 @@ class EditorCoordinator(
         }
         return result.fold(
             onSuccess = {
+                // Milestone 2: the buffer is clean again; persist the session.
+                bufferManager.markSaved(path, content)
+                val projectId = project.id
+                val currentTabs = host.state().openEditorTabs
+                val activePath = host.state().openedFilePath
+                scheduleSessionPersist(projectId, currentTabs, activePath)
                 val workspace = workspaceRootFor(project)
                 val pendingPaths = editorCheckpoints.readChangedPaths(project.id)
                 val changes = editorCheckpoints.buildChangeDetails(project.id, workspace, pendingPaths)
@@ -244,6 +329,7 @@ class EditorCoordinator(
                         openedFileContent = content,
                         changes = changes,
                         toastMessage = "Saved " + path,
+                        editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet(),
                         workspaceFiles = state.workspaceFiles.map { entry ->
                             if (entry.path == path) entry.copy(
                                 sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
@@ -293,6 +379,176 @@ class EditorCoordinator(
             }
             .sortedWith(compareBy<WorkspaceEntry> { it.path.lowercase() }.thenByDescending { it.isDirectory })
             .toList()
+    }
+
+    // ------------------------------------------------------------------
+    // Milestone 2 — dirty-buffer tracking, session restore, rename.
+    // ------------------------------------------------------------------
+
+    /**
+     * Called by the UI when the buffer text changes. Marks the buffer dirty
+     * and debounces the session snapshot to disk.
+     */
+    fun onBufferContentChanged(path: String, content: String) {
+        val before = bufferManager.isDirty(path)
+        bufferManager.updateContent(path, content)
+        val after = bufferManager.isDirty(path)
+        if (before != after) {
+            host.updateState {
+                it.copy(editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet())
+            }
+        }
+        val project = host.state().activeProject ?: return
+        scheduleSessionPersist(project.id, host.state().openEditorTabs, host.state().openedFilePath)
+    }
+
+    /** Called by the UI when cursor/selection/scroll moves. */
+    fun onBufferViewStateChanged(path: String, viewState: EditorViewState) {
+        bufferManager.updateViewState(path, viewState)
+        val project = host.state().activeProject ?: return
+        scheduleSessionPersist(project.id, host.state().openEditorTabs, host.state().openedFilePath)
+    }
+
+    /** Called by the UI when the split-editor configuration changes. */
+    fun onSplitStateChanged(splitState: EditorSplitState) {
+        host.updateState { it.copy(editorSplitState = splitState) }
+        val project = host.state().activeProject ?: return
+        scheduleSessionPersist(project.id, host.state().openEditorTabs, host.state().openedFilePath, splitState)
+    }
+
+    /**
+     * Restores the persisted editor session for [project]: dirty buffers are
+     * pre-loaded into the buffer manager so unsaved work reappears, and the
+     * session is returned for the ViewModel to apply tabs/view state.
+     * The buffer manager is cleared first (project switch).
+     */
+    fun restoreEditorSession(project: Project): EditorSession? {
+        bufferManager.clear()
+        val session = sessionStore.loadSession(project.id) ?: return null
+        session.buffers.forEach { buffer ->
+            bufferManager.openBuffer(buffer.path, buffer.savedContent)
+            // Re-apply the persisted dirty state exactly.
+            bufferManager.updateContent(buffer.path, buffer.currentContent)
+            bufferManager.updateViewState(buffer.path, buffer.viewState)
+        }
+        host.updateState {
+            it.copy(
+                editorViewStates = session.buffers.associate { b -> b.path to b.viewState },
+                editorSplitState = session.splitState,
+                editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet(),
+            )
+        }
+        return session
+    }
+
+    /** Drops all in-memory buffers (project switch/close). */
+    fun clearBuffers() {
+        sessionPersistJob?.cancel()
+        bufferManager.clear()
+        host.updateState {
+            it.copy(
+                editorViewStates = emptyMap(),
+                editorSplitState = EditorSplitState(),
+                editorDirtyPaths = emptySet(),
+            )
+        }
+    }
+
+    /** Deletes the persisted session (project deletion). */
+    fun deleteEditorSession(projectId: String) {
+        sessionStore.clearSession(projectId)
+    }
+
+    private fun scheduleSessionPersist(
+        projectId: String,
+        tabs: List<String>,
+        activePath: String?,
+        splitState: EditorSplitState = host.state().editorSplitState,
+    ) {
+        sessionPersistJob?.cancel()
+        // Capture the buffers snapshot now; the debounced write uses it.
+        val dirtyBuffers = bufferManager.dirtyBuffers()
+        sessionPersistJob = host.scope.launch {
+            delay(SESSION_PERSIST_DEBOUNCE_MS)
+            val session = EditorSession(
+                projectId = projectId,
+                tabs = tabs,
+                activePath = activePath,
+                buffers = dirtyBuffers,
+                splitState = splitState,
+            )
+            withContext(Dispatchers.IO) { sessionStore.saveSession(session) }
+        }
+    }
+
+    /** Plans a rename; returns the preview for the UI to review. */
+    fun planRenameSymbol(
+        oldName: String,
+        newName: String,
+    ): com.jarves.mh.workspace.ReplacePreview? {
+        val project = host.state().activeProject ?: return null
+        return RenameEngine.planRename(workspaceRootFor(project), oldName, newName)
+    }
+
+    /**
+     * Applies a rename plan and refreshes the open buffer if it was affected.
+     * Returns a human-readable summary for the toast.
+     */
+    fun applyRenameSymbol(
+        preview: com.jarves.mh.workspace.ReplacePreview,
+        includeFiles: Set<String>? = null,
+    ): String {
+        val project = host.state().activeProject ?: return "No active project"
+        if (preview.note != null && preview.totalFiles == 0) return preview.note
+        val transaction = RenameEngine.applyRename(workspaceRootFor(project), preview, includeFiles)
+        lastRenameTransaction = transaction
+        // Refresh open buffers whose files changed on disk.
+        transaction.appliedFiles.forEach { path ->
+            val buffer = bufferManager.getBuffer(path)
+            if (buffer != null && !buffer.isDirty) {
+                val diskContent = runCatching {
+                    File(workspaceRootFor(project), path).readText()
+                }.getOrNull()
+                if (diskContent != null) {
+                    bufferManager.syncFromDisk(path, diskContent)
+                    if (host.state().openedFilePath == path) {
+                        host.updateState { it.copy(openedFileContent = diskContent) }
+                    }
+                }
+            }
+        }
+        host.updateState {
+            it.copy(editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet())
+        }
+        return "Renamed ${transaction.matchesReplaced} occurrence(s) in ${transaction.filesChanged} file(s)"
+    }
+
+    /** Undoes the last rename; returns true when something was restored. */
+    fun undoLastRename(): Boolean {
+        val transaction = lastRenameTransaction ?: return false
+        val project = host.state().activeProject ?: return false
+        val restored = RenameEngine.undoRename(workspaceRootFor(project), transaction)
+        if (restored > 0) {
+            lastRenameTransaction = null
+            transaction.appliedFiles.forEach { path ->
+                val buffer = bufferManager.getBuffer(path)
+                if (buffer != null && !buffer.isDirty) {
+                    val diskContent = runCatching {
+                        File(workspaceRootFor(project), path).readText()
+                    }.getOrNull()
+                    if (diskContent != null) {
+                        bufferManager.syncFromDisk(path, diskContent)
+                        if (host.state().openedFilePath == path) {
+                            host.updateState { it.copy(openedFileContent = diskContent) }
+                        }
+                    }
+                }
+            }
+            host.updateState { it.copy(toastMessage = "Rename undone ($restored file(s) restored)") }
+            return true
+        }
+        host.updateState { it.copy(toastMessage = "Nothing to undo") }
+        return false
     }
 }
 

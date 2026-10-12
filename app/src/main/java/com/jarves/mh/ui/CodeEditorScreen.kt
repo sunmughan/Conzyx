@@ -126,11 +126,48 @@ fun CodeEditorScreen(
     onSave: suspend (String) -> Boolean,
     workspaceDir: File? = null,
     onNavigateToFileLine: ((String, Int) -> Unit)? = null,
+    // Milestone 2 — persistent buffer wiring. All defaulted so existing call
+    // sites keep working.
+    initialViewState: com.jarves.mh.editor.EditorViewState? = null,
+    onContentChanged: (String) -> Unit = {},
+    onViewStateChanged: (com.jarves.mh.editor.EditorViewState) -> Unit = {},
+    // Milestone 2 — rename workflow (preview + undo) via the coordinator.
+    onPlanRename: (String, String) -> com.jarves.mh.workspace.ReplacePreview? = { _, _ -> null },
+    onApplyRename: (com.jarves.mh.workspace.ReplacePreview) -> String = { "" },
+    onUndoRename: () -> Boolean = { false },
 ) {
     val source = content.orEmpty()
     val readOnly = loading || source.contains("[File truncated — too large to display fully]")
-    var value by remember(filePath) { mutableStateOf(TextFieldValue(source)) }
+    // Milestone 2: restore the persisted cursor/selection on first composition.
+    var value by remember(filePath) {
+        val restored = initialViewState?.clampedTo(source.length)
+        val selection = if (restored != null && !readOnly) {
+            TextRange(restored.cursorOffset, restored.selectionEnd)
+        } else {
+            TextRange.Zero
+        }
+        mutableStateOf(TextFieldValue(source, selection))
+    }
     var savedText by remember(filePath) { mutableStateOf(source) }
+    // Milestone 2: report edits and cursor moves for dirty-buffer tracking and
+    // session persistence. Guarded so programmatic resets don't spam.
+    var lastReportedText by remember(filePath) { mutableStateOf(source) }
+    LaunchedEffect(value.text) {
+        if (value.text != lastReportedText && !readOnly) {
+            lastReportedText = value.text
+            onContentChanged(value.text)
+        }
+    }
+    LaunchedEffect(value.selection) {
+        if (!readOnly) {
+            onViewStateChanged(
+                com.jarves.mh.editor.EditorViewState(
+                    cursorOffset = value.selection.start,
+                    selectionEnd = value.selection.end,
+                ),
+            )
+        }
+    }
     var searchOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var menuOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var wordWrap by rememberSaveable(filePath) { mutableStateOf(true) }
@@ -174,6 +211,8 @@ fun CodeEditorScreen(
         savedText = source
         bracketPair = null
         selectionRangeAtSearch = null
+        // Milestone 2: a programmatic source reset is not a user edit.
+        lastReportedText = source
     }
 
     val dirty = value.text != savedText
@@ -582,37 +621,100 @@ fun CodeEditorScreen(
             },
         )
     if (renameDialogOpen && workspaceDir != null) {
+        // Milestone 2: preview-before-rename with undo. The engine is an
+        // explicitly text-based rename (see RenameEngine.PROVIDER_LABEL).
+        var renamePreview by remember(renameOldName) {
+            mutableStateOf<com.jarves.mh.workspace.ReplacePreview?>(null)
+        }
         AlertDialog(
             onDismissRequest = { renameDialogOpen = false },
             title = { Text("Rename symbol: $renameOldName") },
             text = {
-                OutlinedTextField(
-                    value = renameNewName,
-                    onValueChange = { renameNewName = it },
-                    singleLine = true,
-                    label = { Text("New symbol name") },
-                )
+                Column {
+                    OutlinedTextField(
+                        value = renameNewName,
+                        onValueChange = {
+                            renameNewName = it
+                            renamePreview = null
+                        },
+                        singleLine = true,
+                        label = { Text("New symbol name") },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = com.jarves.mh.editor.RenameEngine.PROVIDER_LABEL,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    renamePreview?.let { preview ->
+                        Spacer(Modifier.height(6.dp))
+                        if (preview.note != null && preview.totalFiles == 0) {
+                            Text(
+                                text = preview.note,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        } else {
+                            Text(
+                                text = "${preview.totalMatches} occurrence(s) in ${preview.totalFiles} file(s):",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            preview.filePlans.take(8).forEach { plan ->
+                                Text(
+                                    text = "• ${plan.filePath} (${plan.matchCount})",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (preview.filePlans.size > 8) {
+                                Text(
+                                    text = "…and ${preview.filePlans.size - 8} more file(s)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val oldSym = renameOldName
-                        val newSym = renameNewName
-                        renameDialogOpen = false
-                        scope.launch {
-                            SemanticCodeEngine.renameSymbolAcrossFiles(workspaceDir, oldSym, newSym)
-                            try {
-                                val f = File(filePath)
-                                if (f.exists()) {
-                                    val newContent = f.readText()
-                                    value = TextFieldValue(newContent)
-                                    savedText = newContent
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (renamePreview == null) {
+                        TextButton(
+                            onClick = {
+                                renamePreview = onPlanRename(renameOldName, renameNewName)
+                            },
+                            enabled = renameNewName.isNotBlank() && renameNewName != renameOldName,
+                        ) { Text("Preview") }
+                    } else {
+                        val preview = renamePreview
+                        TextButton(
+                            onClick = {
+                                val oldSym = renameOldName
+                                renameDialogOpen = false
+                                renamePreview = null
+                                scope.launch {
+                                    if (preview != null && preview.totalFiles > 0) {
+                                        val summary = onApplyRename(preview)
+                                        // Refresh the open buffer from disk.
+                                        try {
+                                            val f = File(filePath)
+                                            if (f.exists()) {
+                                                val newContent = f.readText()
+                                                value = TextFieldValue(newContent)
+                                                savedText = newContent
+                                                lastReportedText = newContent
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
                                 }
-                            } catch (_: Exception) {}
-                        }
-                    },
-                    enabled = renameNewName.isNotBlank() && renameNewName != renameOldName,
-                ) { Text("Rename everywhere") }
+                            },
+                            enabled = renamePreview?.totalFiles ?: 0 > 0,
+                        ) { Text("Rename") }
+                    }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { renameDialogOpen = false }) { Text("Cancel") }
@@ -949,6 +1051,13 @@ fun CodeEditorScreen(
                             onClick = {
                                 menuOpen = false
                                 triggerRenameSymbol()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Undo rename") },
+                            onClick = {
+                                menuOpen = false
+                                scope.launch { onUndoRename() }
                             },
                         )
                         DropdownMenuItem(

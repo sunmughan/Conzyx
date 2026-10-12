@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FindReplace
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -47,6 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarves.mh.workspace.GlobalSearchEngine
+import com.jarves.mh.workspace.ReplacePreview
+import com.jarves.mh.workspace.ReplaceTransaction
 import com.jarves.mh.workspace.SearchMatch
 import com.jarves.mh.workspace.SearchResult
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +80,10 @@ fun GlobalSearchDialog(
     var searchResult by remember { mutableStateOf<SearchResult?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    // Milestone 2 — replace preview + undo state.
+    var replacePreview by remember { mutableStateOf<ReplacePreview?>(null) }
+    var selectedPreviewFiles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var lastReplaceTransaction by remember { mutableStateOf<ReplaceTransaction?>(null) }
     val scope = rememberCoroutineScope()
 
     fun performSearch() {
@@ -86,6 +93,9 @@ fun GlobalSearchDialog(
         }
         isSearching = true
         statusMessage = null
+        // A new search invalidates any replace preview.
+        replacePreview = null
+        lastReplaceTransaction = null
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 GlobalSearchEngine.search(
@@ -99,6 +109,71 @@ fun GlobalSearchDialog(
             }
             searchResult = result
             isSearching = false
+        }
+    }
+
+    fun performReplacePreview() {
+        if (query.isBlank()) return
+        isSearching = true
+        statusMessage = null
+        lastReplaceTransaction = null
+        scope.launch {
+            val preview = withContext(Dispatchers.IO) {
+                GlobalSearchEngine.previewReplace(
+                    workspaceDir = workspaceDir,
+                    query = query,
+                    replacement = replacement,
+                    isRegex = isRegex,
+                    matchCase = matchCase,
+                    wholeWord = wholeWord,
+                    fileFilter = fileFilter.takeIf { it.isNotBlank() },
+                )
+            }
+            replacePreview = preview
+            selectedPreviewFiles = preview.filePlans.map { it.filePath }.toSet()
+            isSearching = false
+            if (preview.totalFiles == 0) {
+                statusMessage = "No matches to replace."
+            }
+        }
+    }
+
+    fun applyReplacePreview() {
+        val preview = replacePreview ?: return
+        isSearching = true
+        scope.launch {
+            val transaction = withContext(Dispatchers.IO) {
+                GlobalSearchEngine.applyReplacePlan(
+                    workspaceDir = workspaceDir,
+                    preview = preview,
+                    includeFiles = selectedPreviewFiles.ifEmpty { null },
+                )
+            }
+            lastReplaceTransaction = transaction
+            replacePreview = null
+            statusMessage = "Replaced ${transaction.matchesReplaced} occurrence(s) in ${transaction.filesChanged} file(s)."
+            isSearching = false
+            onFilesModified()
+            performSearch()
+        }
+    }
+
+    fun undoLastReplace() {
+        val transaction = lastReplaceTransaction ?: return
+        isSearching = true
+        scope.launch {
+            val restored = withContext(Dispatchers.IO) {
+                GlobalSearchEngine.revertReplace(workspaceDir, transaction)
+            }
+            lastReplaceTransaction = null
+            statusMessage = if (restored > 0) {
+                "Undo complete: $restored file(s) restored."
+            } else {
+                "Nothing to undo."
+            }
+            isSearching = false
+            onFilesModified()
+            performSearch()
         }
     }
 
@@ -156,33 +231,91 @@ fun GlobalSearchDialog(
                         leadingIcon = { Icon(Icons.Default.FindReplace, contentDescription = null) },
                         shape = RoundedCornerShape(12.dp),
                     )
+                    // Milestone 2: preview-before-replace + undo.
                     Button(
-                        onClick = {
-                            if (query.isNotBlank()) {
-                                isSearching = true
-                                scope.launch {
-                                    val count = withContext(Dispatchers.IO) {
-                                        GlobalSearchEngine.replaceAll(
-                                            workspaceDir = workspaceDir,
-                                            query = query,
-                                            replacement = replacement,
-                                            isRegex = isRegex,
-                                            matchCase = matchCase,
-                                            wholeWord = wholeWord,
-                                            fileFilter = fileFilter.takeIf { it.isNotBlank() },
-                                        )
-                                    }
-                                    statusMessage = "Replaced $count occurrences."
-                                    isSearching = false
-                                    onFilesModified()
-                                    performSearch()
-                                }
-                            }
-                        },
+                        onClick = { performReplacePreview() },
                         enabled = !isSearching && query.isNotBlank(),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Text("Replace All")
+                        Text("Preview")
+                    }
+                }
+
+                // Undo for the last applied replace.
+                if (lastReplaceTransaction != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val undoAvailable = lastReplaceTransaction?.preview?.undoAvailable == true
+                        TextButton(
+                            onClick = { undoLastReplace() },
+                            enabled = !isSearching && undoAvailable,
+                        ) {
+                            Text(if (undoAvailable) "Undo replace" else "Undo unavailable (large change)")
+                        }
+                    }
+                }
+
+                // Preview: affected files with per-file toggles.
+                replacePreview?.let { preview ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "${preview.totalMatches} occurrence(s) in ${preview.totalFiles} file(s). Uncheck files to skip them.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    preview.filePlans.forEach { plan ->
+                        val checked = plan.filePath in selectedPreviewFiles
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedPreviewFiles = if (checked) {
+                                        selectedPreviewFiles - plan.filePath
+                                    } else {
+                                        selectedPreviewFiles + plan.filePath
+                                    }
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { isChecked ->
+                                    selectedPreviewFiles = if (isChecked) {
+                                        selectedPreviewFiles + plan.filePath
+                                    } else {
+                                        selectedPreviewFiles - plan.filePath
+                                    }
+                                },
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = plan.filePath,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = "${plan.matchCount} match(es)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = { applyReplacePreview() },
+                        enabled = !isSearching && selectedPreviewFiles.isNotEmpty(),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Replace in ${selectedPreviewFiles.size} file(s)")
                     }
                 }
             }

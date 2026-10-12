@@ -205,6 +205,12 @@ data class AppUiState(
     val openedFileContent: String? = null,
     val openEditorTabs: List<String> = emptyList(),
     val fileContentLoading: Boolean = false,
+    // Milestone 2 — persistent editor buffers: restored cursor/scroll per file,
+    // split-editor state, and the set of tabs with unsaved changes.
+    val editorViewStates: Map<String, com.jarves.mh.editor.EditorViewState> = emptyMap(),
+    val editorSplitState: com.jarves.mh.editor.EditorSplitState =
+        com.jarves.mh.editor.EditorSplitState(),
+    val editorDirtyPaths: Set<String> = emptySet(),
     val messages: List<ChatMessage> = listOf(
         ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."),
     ),
@@ -1617,6 +1623,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences.lastActiveProjectId = project.id
         configureBridgeRoots(project.id, project.rootPath)
         val terminal = loadProjectTerminal(project)
+        // Milestone 2: restore the persisted editor session (dirty buffers,
+        // cursor/scroll, split state) before the UI reads tab state.
+        val editorSession = editorCoordinator.restoreEditorSession(project)
+        val savedTabs = preferences.getOpenEditorTabs(project.id)
+        val initialOpenedPath = savedTabs.firstOrNull()
         val suggestedRoot = if (project.rootPath.isBlank()) detectNestedProjectRoot(project) else null
         val chats = preferences.loadProjectChats(project.id).ifEmpty {
             listOf(ProjectChat(title = "Main chat")).also { preferences.saveProjectChats(project.id, it) }
@@ -1628,8 +1639,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
         val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
-        val savedTabs = preferences.getOpenEditorTabs(project.id)
-        val initialOpenedPath = savedTabs.firstOrNull()
         _state.update {
             it.copy(
                 activeProject = project,
@@ -1662,6 +1671,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 projectTerminalCommand = null,
                 projectTerminalDraft = null,
                 pendingTerminalCommand = null,
+                // Milestone 2: restore persisted terminal session tabs.
+                terminalSessions = terminal.sessions.ifEmpty {
+                    listOf(TerminalSessionTab(id = "term-1", title = "Terminal 1"))
+                },
+                activeTerminalSessionId = terminal.activeSessionId
+                    ?: terminal.sessions.firstOrNull()?.id ?: "term-1",
                 suggestedProjectRoot = suggestedRoot,
                 previewReady = false,
                 previewUrl = null,
@@ -2646,6 +2661,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeAllEditorTabs() =
         editorCoordinator.closeAllEditorTabs()
+
+    // Milestone 2 — dirty-buffer tracking and rename workflow delegates.
+    fun onEditorContentChanged(path: String, content: String) =
+        editorCoordinator.onBufferContentChanged(path, content)
+
+    fun onEditorViewStateChanged(path: String, viewState: com.jarves.mh.editor.EditorViewState) =
+        editorCoordinator.onBufferViewStateChanged(path, viewState)
+
+    fun onEditorSplitStateChanged(splitState: com.jarves.mh.editor.EditorSplitState) =
+        editorCoordinator.onSplitStateChanged(splitState)
+
+    fun planRenameSymbol(oldName: String, newName: String): com.jarves.mh.workspace.ReplacePreview? =
+        editorCoordinator.planRenameSymbol(oldName, newName)
+
+    fun applyRenameSymbol(
+        preview: com.jarves.mh.workspace.ReplacePreview,
+        includeFiles: Set<String>? = null,
+    ): String = editorCoordinator.applyRenameSymbol(preview, includeFiles)
+
+    fun undoLastRename(): Boolean = editorCoordinator.undoLastRename()
 
     fun closeFile() =
         editorCoordinator.closeFile()
