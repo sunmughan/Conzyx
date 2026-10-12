@@ -130,7 +130,10 @@ class McpRegistry(
             env = envOverrides,
             enabled = true,
             isBuiltIn = true,
-            projectId = projectId
+            projectId = projectId,
+            // Template-declared secrets resolve from McpCredentialStore at start time,
+            // never from the persisted registry JSON.
+            secretEnvNames = template.requiredEnv
         )
         return installServer(server)
     }
@@ -153,6 +156,53 @@ class McpRegistry(
         val removed = servers.remove(id) != null
         if (removed) persist()
         return removed
+    }
+
+    /**
+     * Versioned removal: drops the server from the registry AND purges its stored
+     * secrets so credentials do not linger after uninstall.
+     */
+    fun removeServerAndCredentials(id: String, credentialStore: McpCredentialStore): Boolean {
+        val server = servers[id] ?: return false
+        val names = (server.secretEnvNames + listOfNotNull(server.credentialName)).distinct()
+        credentialStore.removeServerCredentials(id, names)
+        return removeServer(id)
+    }
+
+    /**
+     * Versioned update: records a new installed version. Downgrades are refused
+     * unless [force] is true; the comparison is a best-effort numeric semver check.
+     */
+    fun updateServerVersion(id: String, newVersion: String, force: Boolean = false): Boolean {
+        val existing = servers[id] ?: return false
+        require(newVersion.isNotBlank()) { "Version cannot be blank" }
+        if (!force && compareVersions(newVersion, existing.version) < 0) {
+            return false
+        }
+        servers[id] = existing.copy(version = newVersion)
+        persist()
+        return true
+    }
+
+    companion object {
+        /**
+         * Best-effort numeric version comparison ("1.10.2" > "1.9.0").
+         * Non-numeric segments compare lexicographically. Returns negative when a < b.
+         */
+        fun compareVersions(a: String, b: String): Int {
+            val pa = a.split(".", "-")
+            val pb = b.split(".", "-")
+            val n = maxOf(pa.size, pb.size)
+            for (i in 0 until n) {
+                val sa = pa.getOrElse(i) { "0" }
+                val sb = pb.getOrElse(i) { "0" }
+                val na = sa.toIntOrNull()
+                val nb = sb.toIntOrNull()
+                val cmp = if (na != null && nb != null) na.compareTo(nb) else sa.compareTo(sb)
+                if (cmp != 0) return cmp
+            }
+            return 0
+        }
     }
 
     fun searchCatalog(query: String): List<McpCatalogTemplate> {
