@@ -465,3 +465,41 @@ All return `OperationResult`, refuse blank tokens with `NOT_CONFIGURED`, and pro
 - App-level wiring of `CloudExecutionOrchestrator` into `CloudHybridCoordinator` (constructor seam exists; UI screen already renders NOT_CONFIGURED honestly — integration work).
 - A real worker service implementation to speak the protocol (the protocol is client-side; any HTTP server implementing the documented endpoints works).
 - Chunked/resumable uploads for very large payloads (single base64 POST per file today).
+
+## Milestone 12 — COMPLETE (2026-10-12)
+
+**Firebase-backed collaboration** (Phase 13): Firebase Auth UID identity; Firestore document model + generated `firestore.rules`; invites/roles/revocation with RBAC; cross-device sync with version-vector conflict resolution; presence heartbeats; collaborative editing sessions; auth-required actions throughout. CI green (run 38277748125).
+
+### Firestore model + gateway seam (new package `com.jarves.mh.collab.firebase`)
+- `FirestoreModels.kt` (new): `WorkspaceDocument`, `WorkspaceMemberDocument` (doc id = Auth UID), `InviteDocument` (PENDING/ACCEPTED/REVOKED/EXPIRED), `PresenceDocument`; all round-trip through `toMap`/`fromMap` shared by the real SDK and test fakes; `FirestorePaths` centralizes the `workspaces/{ws}/members|invites|presence|sync` layout.
+- `FirestoreGateway.kt` (new): injectable seam (`getDocument`/`setDocument`/`updateDocument`/`deleteDocument`/`queryEqual`/`listCollection`/`listenDocument`); `FirebaseFirestoreGateway` production impl (open for fakes; `create()` fails fast with an honest message when FirebaseApp is not initialized); `firebase-firestore` added to app dependencies via the Firebase BOM.
+- `CollaborationIdentity.kt` (new): `FirebaseCollaborationIdentity` resolves the current Auth UID (injectable `uidProvider` seam for tests); `requireSignedIn()` guard returns NOT_CONFIGURED when nobody is signed in — mutating actions refuse honestly, never write anonymously.
+
+### Invites, roles, revocation
+- `CollaborationInviteManager.kt` (new): `createInvite` (inviter must hold `canInviteMembers`; code returned in `OperationResult.artifacts`), `acceptInvite` (checks PENDING + expiry, then self-joins as `members/{uid}`), `revokeInvite`, `changeRole` (OWNER-only; owner role immutable; no direct OWNER grants), `removeMember` (OWNER/MAINTAINER or self-leave; owner cannot be removed), `listInvites`/`listMembers`. All permission denials are explicit FAILEDs; transport failures (including membership lookups) are caught and reported honestly.
+
+### Presence + sync + collaborative editing
+- `PresenceTracker.kt` (new): `heartbeat`/`clearPresence` (UID-keyed, sign-in required), `listActive` filters heartbeats older than the injectable staleness threshold (default 2 min); injectable clock makes staleness deterministic in tests.
+- `SyncConflictResolver.kt` (new): pure-JVM per-field version-vector merge — domination wins, true concurrency falls back to deterministic last-writer-wins (timestamp, then smaller UID), merged clock is the element-wise max, winning tombstones delete the field. Idempotent.
+- `FirebaseSyncEngine.kt` (new): `pushState` (sign-in + membership + edit-permission gated; merges local against remote before writing; SUCCESS only on SDK-acknowledged write), `pullState` (throws honestly when signed out), `observeState` (real-time Flow via `listenDocument`), `deleteState` (OWNER/MAINTAINER only; missing document reported, not success).
+- `CollaborativeDocumentSession.kt` (new): pure-JVM editing session — local edits bump the device's vector counter, local deletes write tombstones, remote snapshots fold in through the resolver; emits the merged document on every change. Network-free by design; the screen wires `FirebaseSyncEngine` around it.
+
+### Security rules
+- `FirestoreSecurityRules.kt` (new): generates the ruleset — `signedIn()` anchor on every rule; member-gated reads; owner-only role changes (never to OWNER); invite-gated invite writes; presence writable only by own UID; sync edits for OWNER/MAINTAINER/CONTRIBUTOR, deletes for OWNER/MAINTAINER.
+- `firestore.rules` (new, repo root): the canonical ruleset, identical to the generator output.
+
+### Tests (60 new)
+- `FirestoreModelsTest` (6): map round-trips, unknown-role tolerance, path helpers.
+- `CollaborationInviteManagerTest` (16): create/accept/revoke happy paths, signed-out NOT_CONFIGURED, contributor/non-member refusals, OWNER-role grant refusal, expired/revoked invite refusals, maintainer revoke, owner role change, maintainer role-change refusal, owner demotion/removal refusals, self-leave, transport failure reported honestly.
+- `PresenceTrackerTest` (5): heartbeat write, signed-out refusal, staleness filtering, clear, recency ordering.
+- `SyncConflictResolverTest` (8): union, domination, concurrent LWW, UID tie-break, winning/losing tombstones, idempotence, map round-trip.
+- `FirebaseSyncEngineTest` (11): push success/merge, viewer/non-member/signed-out refusals, pull empty/throws, observe emits updates, maintainer delete, contributor delete refusal, missing-document honesty.
+- `CollaborativeDocumentSessionTest` (6): vector bump, remote merge, deterministic conflict resolution, tombstone propagation, flow emission, blank-field rejection.
+- `FirestoreSecurityRulesTest` (8): rules target, anonymous denial, workspace/member/invite/presence/sync match blocks, full role hierarchy.
+
+### CI fix rounds (1)
+1. `CollaborationInviteManagerTest > transport failure is reported honestly`: membership lookups in `createInvite`/`revokeInvite`/`changeRole`/`removeMember` threw outside the `runCatching` block — new `resolveCaller()` helper converts lookup failures into honest FAILED results. `PresenceTrackerTest > listActive returns only fresh heartbeats`: test clock arithmetic made both heartbeats stale — corrected the final clock value.
+
+**Deliberately deferred:**
+- UI wiring of the Firebase engines into the collaboration screens (`WorkspaceCollaborationManager`/Compose UI still use the in-memory models — product integration work).
+- Enabling Firestore offline persistence + `firestore.rules` deployment (requires the Firebase console project; rules file is ready to deploy).
