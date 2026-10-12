@@ -148,13 +148,12 @@ class KotlinParser(
         val parts = mutableListOf<String>()
         while (!isAtEnd()) {
             val t = peek()
-            if (t.type == TokenType.IDENTIFIER) {
-                parts.add(advance().text)
-            } else if (t.type == TokenType.SYMBOL && t.text == ".") {
-                advance()
-            } else {
-                break
-            }
+            if (t.type != TokenType.IDENTIFIER) break
+            parts.add(advance().text)
+            // A package name is a dotted identifier sequence; stop when the
+            // next token is not a dot (e.g. the `import` keyword).
+            if (!(peek().type == TokenType.SYMBOL && peek().text == ".")) break
+            advance() // .
         }
         if (parts.isNotEmpty()) packageName = parts.joinToString(".")
         pendingDocComment = null
@@ -164,27 +163,37 @@ class KotlinParser(
         val importToken = advance() // import
         val parts = mutableListOf<String>()
         var isStar = false
+        var alias: String? = null
         while (!isAtEnd()) {
             val t = peek()
-            when {
-                t.type == TokenType.IDENTIFIER -> parts.add(advance().text)
-                t.type == TokenType.SYMBOL && t.text == "." -> advance()
-                t.type == TokenType.SYMBOL && t.text == "*" -> {
+            // `import a.B as C`: capture the alias, then done.
+            if (t.type == TokenType.IDENTIFIER && t.text == "as") {
+                advance()
+                if (peek().type == TokenType.IDENTIFIER) {
+                    alias = advance().text
+                }
+                break
+            }
+            if (t.type != TokenType.IDENTIFIER) break
+            parts.add(advance().text)
+            // After an identifier: a dot continues the path (possibly to `*`);
+            // anything else ends the import.
+            val n = peek()
+            if (n.type == TokenType.SYMBOL && n.text == ".") {
+                advance() // .
+                if (peek().type == TokenType.SYMBOL && peek().text == "*") {
                     isStar = true
                     advance()
                 }
-                t.type == TokenType.IDENTIFIER && t.text == "as" -> {
-                    // `import a.B as C`: skip the alias.
-                    advance()
-                    if (peek().type == TokenType.IDENTIFIER) advance()
-                    break
-                }
-                else -> break
+                if (isStar) break
+                // Otherwise the next loop iteration expects an identifier.
+            } else {
+                break
             }
         }
         val raw = parts.joinToString(".")
         if (raw.isNotEmpty()) {
-            val simpleName = parts.lastOrNull() ?: raw
+            val simpleName = alias ?: parts.lastOrNull() ?: raw
             imports.add(
                 ParsedImport(
                     rawText = raw,

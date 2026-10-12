@@ -169,7 +169,7 @@ class JavaParser(
             advance() // extends | implements
             while (!isAtEnd()) {
                 val st = peek()
-                if (st.type == TokenType.IDENTIFIER) {
+                if (st.type == TokenType.IDENTIFIER && st.text !in setOf("extends", "implements")) {
                     superTypes.add(advance().text)
                     if (checkSymbol("<")) skipAngleBrackets()
                 } else if (st.type == TokenType.SYMBOL && st.text == ",") {
@@ -210,6 +210,7 @@ class JavaParser(
         val startPos = pos
         // Skip a leading type: identifiers with dots and generics and [].
         var nameToken: Token? = null
+        var nameIndex = -1
         var i = pos
         while (i < tokens.size) {
             val t = tokens[i]
@@ -218,6 +219,7 @@ class JavaParser(
                 val n = tokens.getOrNull(i + 1)
                 if (n != null && n.type == TokenType.SYMBOL && n.text in setOf("(", ";", "=", ",")) {
                     nameToken = t
+                    nameIndex = i
                     break
                 }
                 i++
@@ -237,6 +239,14 @@ class JavaParser(
                 }
             } else {
                 break
+            }
+        }
+        // A name preceded by `.` is a member access (e.g. `items.add(...)`),
+        // not a declaration — skip as a statement.
+        if (nameToken != null && nameIndex > 0) {
+            val prev = tokens.getOrNull(nameIndex - 1)
+            if (prev != null && prev.type == TokenType.SYMBOL && prev.text == ".") {
+                nameToken = null
             }
         }
         if (nameToken == null) {
