@@ -66,7 +66,47 @@ object SigningAndVersionManager {
             keyAlias = keyAlias,
             keyPassword = keyPassword,
             validityDays = 10000
-        )
+        ).also {
+            // Persisted so injectSigningConfig() and Gradle can reference it.
+            File(projectDir, "keystore.properties").writeText(
+                "storeFile=${keystoreFile.absolutePath}\n" +
+                    "storePassword=$storePassword\n" +
+                    "keyAlias=$keyAlias\n" +
+                    "keyPassword=$keyPassword\n"
+            )
+        }
+    }
+
+    /**
+     * Injects a `signingConfigs` block referencing `keystore.properties` into
+     * the app module's `build.gradle.kts`. Returns true only when the file
+     * was actually modified. Idempotent — a second call is a no-op returning true.
+     */
+    fun injectSigningConfig(gradleFile: File): Boolean {
+        require(gradleFile.isFile) { "Gradle file not found: ${gradleFile.absolutePath}" }
+        val original = gradleFile.readText()
+        if (original.contains("keystore.properties")) return true // already injected
+        val snippet = """
+            
+            // Injected by Mobile Harness App Factory — release signing via keystore.properties
+            val keystoreProps = java.util.Properties().apply {
+                val propsFile = rootProject.file("keystore.properties")
+                if (propsFile.isFile) propsFile.inputStream().use(::load)
+            }
+            android {
+                signingConfigs {
+                    create("release") {
+                        storeFile = rootProject.file(keystoreProps.getProperty("storeFile", "release.keystore"))
+                        storePassword = keystoreProps.getProperty("storePassword", "")
+                        keyAlias = keystoreProps.getProperty("keyAlias", "")
+                        keyPassword = keystoreProps.getProperty("keyPassword", "")
+                    }
+                }
+            }
+        """.trimIndent()
+        gradleFile.writeText(original + snippet)
+        return gradleFile.readText().contains("signingConfigs") &&
+            gradleFile.readText().contains("keystore.properties")
     }
 
     /**

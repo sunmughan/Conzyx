@@ -1,10 +1,13 @@
 package com.jarves.mh.git
 
+import com.jarves.mh.core.result.OperationResult
 import com.jarves.mh.git.workflow.GitHubWorkflowEngine
 import com.jarves.mh.git.workflow.WorkflowStage
 import com.jarves.mh.git.workflow.WorkflowStepStatus
 import com.jarves.mh.network.GitHubClient
+import com.jarves.mh.network.GitHubClient
 import com.jarves.mh.network.GitHubIssue
+import com.jarves.mh.network.GitHubPullRequest
 import com.jarves.mh.workspace.GitDomainController
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -15,7 +18,31 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+private class FakeGitHubClient : GitHubClient() {
+    override fun createPullRequest(
+token: String,
+        repoFullName: String,
+        title: String,
+        head: String,
+        base: String,
+        body: String,
+        draft: Boolean
+    ): GitHubPullRequest = GitHubPullRequest(
+        number = 7,
+        title = title,
+        state = "open",
+        user = "tester",
+        headBranch = head,
+        baseBranch = base,
+        htmlUrl = "https://github.com/$repoFullName/pull/7",
+        body = body
+    )
+}
+
 class GitHubWorkflowEngineTest {
+
+    private fun engine(gitController: GitDomainController) =
+        GitHubWorkflowEngine(gitController, FakeGitHubClient())
 
     private val tempDir = File(System.getProperty("java.io.tmpdir"), "workflow_test_repo").apply { mkdirs() }
 
@@ -26,7 +53,7 @@ class GitHubWorkflowEngineTest {
             executedCommands += args
             0 to "ok"
         }
-        val workflowEngine = GitHubWorkflowEngine(gitController)
+        val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(
             number = 42,
@@ -39,7 +66,7 @@ class GitHubWorkflowEngineTest {
         )
 
         var agentExecutedPrompt = ""
-        val success = workflowEngine.runAutonomousWorkflow(
+        val result = workflowEngine.runAutonomousWorkflow(
             issue = issue,
             token = "", // Offline test
             repoFullName = "example/repo",
@@ -47,12 +74,12 @@ class GitHubWorkflowEngineTest {
             baseBranch = "main",
             agentExecutor = { prompt ->
                 agentExecutedPrompt = prompt
-                true
+                OperationResult.success()
             },
-            buildAndTestValidator = { true to "All tests pass" }
+            buildAndTestValidator = { OperationResult.success(logs = listOf("All tests pass")) }
         )
 
-        assertTrue(success)
+        assertTrue(result.isSuccess)
         val state = workflowEngine.state.value
 
         assertEquals(WorkflowStage.COMPLETED, state.currentStage)
@@ -76,8 +103,8 @@ class GitHubWorkflowEngineTest {
         assertEquals(WorkflowStepStatus.SUCCESS, steps.find { it.stage == WorkflowStage.TESTING }?.status)
         assertEquals(WorkflowStepStatus.SKIPPED, steps.find { it.stage == WorkflowStage.FIXING }?.status)
         assertEquals(WorkflowStepStatus.SUCCESS, steps.find { it.stage == WorkflowStage.COMMITTING }?.status)
-        assertEquals(WorkflowStepStatus.SKIPPED, steps.find { it.stage == WorkflowStage.PUSHING }?.status)
-        assertEquals(WorkflowStepStatus.SKIPPED, steps.find { it.stage == WorkflowStage.CREATING_PR }?.status)
+        assertEquals(WorkflowStepStatus.SUCCESS, steps.find { it.stage == WorkflowStage.PUSHING }?.status)
+        assertEquals(WorkflowStepStatus.SUCCESS, steps.find { it.stage == WorkflowStage.CREATING_PR }?.status)
 
         // Verify git commands executed
         assertTrue(executedCommands.any { it.contains("checkout") && it.contains("fix/issue-42-crash-on-app-launch") })
@@ -88,7 +115,7 @@ class GitHubWorkflowEngineTest {
     @Test
     fun autonomousWorkflowSelfRepairCycle() = runBlocking {
         val gitController = GitDomainController { _, _, _ -> 0 to "ok" }
-        val workflowEngine = GitHubWorkflowEngine(gitController)
+        val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(
             number = 99,
@@ -102,41 +129,41 @@ class GitHubWorkflowEngineTest {
         var buildAttempt = 0
         var repairAgentCalled = false
 
-        val success = workflowEngine.runAutonomousWorkflow(
+        val result = workflowEngine.runAutonomousWorkflow(
             issue = issue,
             token = "",
             repoFullName = "example/repo",
             workingDir = tempDir,
             agentExecutor = { prompt ->
-                if (prompt.contains("Build failed with error")) {
+                if (prompt.contains("Build/test failed")) {
                     repairAgentCalled = true
                 }
-                true
+                OperationResult.success()
             },
             buildAndTestValidator = {
                 buildAttempt++
                 if (buildAttempt == 1) {
-                    false to "Syntax error: unresolved reference"
+                    OperationResult.failure("Syntax error: unresolved reference")
                 } else {
-                    true to "Build succeeded on retry"
+                    OperationResult.success(logs = listOf("Build succeeded on retry"))
                 }
             }
         )
 
-        assertTrue(success)
+        assertTrue(result.isSuccess)
         assertTrue(repairAgentCalled)
         val state = workflowEngine.state.value
 
         assertEquals(WorkflowStage.COMPLETED, state.currentStage)
         val fixingStep = state.steps.find { it.stage == WorkflowStage.FIXING }
         assertEquals(WorkflowStepStatus.SUCCESS, fixingStep?.status)
-        assertEquals("Repair successful", fixingStep?.detail)
+        assertTrue(fixingStep?.detail?.startsWith("Repair successful") == true)
     }
 
     @Test
     fun autonomousWorkflowFailsWhenAgentFails() = runBlocking {
         val gitController = GitDomainController { _, _, _ -> 0 to "ok" }
-        val workflowEngine = GitHubWorkflowEngine(gitController)
+        val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(
             number = 101,
@@ -147,27 +174,27 @@ class GitHubWorkflowEngineTest {
             htmlUrl = ""
         )
 
-        val success = workflowEngine.runAutonomousWorkflow(
+        val result = workflowEngine.runAutonomousWorkflow(
             issue = issue,
             token = "",
             repoFullName = "example/repo",
             workingDir = tempDir,
-            agentExecutor = { false } // Agent fails
+            agentExecutor = { OperationResult.failure("Agent failed") } // Agent fails
         )
 
-        assertFalse(success)
+        assertFalse(result.isSuccess)
         val state = workflowEngine.state.value
 
         assertEquals(WorkflowStage.FAILED, state.currentStage)
         assertFalse(state.isRunning)
         assertNotNull(state.errorMessage)
-        assertTrue(state.errorMessage!!.contains("Agent implementation interrupted or failed"))
+        assertTrue(state.errorMessage!!.contains("Agent implementation did not complete"))
     }
 
     @Test
     fun workflowResetClearsState() = runBlocking {
         val gitController = GitDomainController { _, _, _ -> 0 to "ok" }
-        val workflowEngine = GitHubWorkflowEngine(gitController)
+        val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(number = 1, title = "Bug", state = "open", user = "u", comments = 0, htmlUrl = "")
         workflowEngine.runAutonomousWorkflow(
@@ -175,7 +202,7 @@ class GitHubWorkflowEngineTest {
             token = "",
             repoFullName = "repo",
             workingDir = tempDir,
-            agentExecutor = { true }
+            agentExecutor = { OperationResult.success() }
         )
 
         assertEquals(WorkflowStage.COMPLETED, workflowEngine.state.value.currentStage)

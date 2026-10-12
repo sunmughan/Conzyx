@@ -120,6 +120,81 @@ object AppBuildOrchestrator {
     }
 
     /**
+     * Discovers the built artifact of [artifactType] under [projectDir]'s
+     * standard Gradle output layout. Returns null when nothing was produced.
+     */
+    fun discoverOutputFile(projectDir: File, artifactType: BuildArtifactType): File? =
+        findBuiltArtifact(projectDir, artifactType)
+
+    /**
+     * Computes real metadata (size + SHA-256) for a built artifact.
+     * Throws when [file] does not exist — never reports "unknown".
+     */
+    fun extractMetadata(file: File, artifactType: BuildArtifactType): ArtifactMetadata {
+        require(file.isFile) { "Artifact not found: ${file.absolutePath}" }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            var n: Int
+            while (input.read(buf).also { n = it } > 0) digest.update(buf, 0, n)
+        }
+        val sha256Hex = digest.digest().joinToString("") { "%02x".format(it) }
+        return ArtifactMetadata(
+            artifactType = artifactType,
+            sizeBytes = file.length(),
+            sha256Hex = sha256Hex
+        )
+    }
+
+    /**
+     * Generates a real GitHub Actions workflow (`android-build.yml`) that
+     * compiles [artifactType] for the scaffolded project in [projectDir].
+     * Returns the written workflow file.
+     */
+    fun generateGitHubActionsWorkflow(
+        projectDir: File,
+        blueprint: AppBlueprint,
+        artifactType: BuildArtifactType
+    ): File {
+        val gradleTask = when (artifactType) {
+            BuildArtifactType.APK_DEBUG -> "assembleDebug"
+            BuildArtifactType.APK_RELEASE -> "assembleRelease"
+            BuildArtifactType.AAB_BUNDLE -> "bundleRelease"
+        }
+        val workflowsDir = File(projectDir, ".github/workflows").apply { mkdirs() }
+        val workflowFile = File(workflowsDir, "android-build.yml")
+        workflowFile.writeText(
+            """
+            name: Android Build — ${blueprint.name}
+
+            on:
+              push:
+                branches: [ main ]
+              workflow_dispatch:
+
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - name: Set up JDK 17
+                    uses: actions/setup-java@v4
+                    with:
+                      distribution: 'temurin'
+                      java-version: '17'
+                  - name: Build ${artifactType.displayName}
+                    run: ./gradlew $gradleTask --stacktrace
+                  - name: Upload artifact
+                    uses: actions/upload-artifact@v4
+                    with:
+                      name: ${blueprint.name.lowercase().replace(Regex("[^a-z0-9]"), "-")}-${artifactType.extension}
+                      path: app/build/outputs/**/**/*.${artifactType.extension}
+            """.trimIndent()
+        )
+        return workflowFile
+    }
+
+    /**
      * Installs [apkFile] via the app's real installer ([AndroidAppInstaller]).
      * Throws on any failure — the caller reports the real error.
      */
@@ -128,3 +203,10 @@ object AppBuildOrchestrator {
         com.jarves.mh.runtime.AndroidAppInstaller.install(context, apkFile)
     }
 }
+
+/** Real, computed metadata for a built artifact — never "unknown". */
+data class ArtifactMetadata(
+    val artifactType: BuildArtifactType,
+    val sizeBytes: Long,
+    val sha256Hex: String
+)
