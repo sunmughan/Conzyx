@@ -109,13 +109,20 @@ class TerminalCoordinator(
                         return@runCatching "Linux environment is not ready yet." to 1
                     }
                     val runtime = installer.installedRuntime()
-                    val workspace = File(host.appContext.filesDir, "workspaces/terminal").apply { mkdirs() }
+                    // Sync with chat agent: when a project is active, run in its
+                    // workspace (same dir the AI chat works in). Otherwise fall
+                    // back to the shared throwaway terminal dir.
+                    val project = host.state().activeProject
+                    val workspace = project?.let { workspaceRootFor(it) }
+                        ?: File(host.appContext.filesDir, "workspaces/terminal").apply { mkdirs() }
+                    val guestPath = project?.let { "/workspace/${it.slug}" } ?: "/workspace"
                     val preparedCommand = prepareInteractiveShellCommand(command)
                     val proc = installer.process(
                         proot = runtime.proot,
                         rootfs = runtime.rootfs,
                         workspace = workspace,
                         environment = emptyMap(),
+                        guestWorkspacePath = guestPath,
                         guestCommand = listOf("/usr/bin/bash", "-c", preparedCommand),
                     )
                     terminalProcess = proc
