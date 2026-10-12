@@ -5,11 +5,13 @@ on:
     branches:
       - main
       - v2
+      - v3
       - feature/**
   pull_request:
     branches:
       - main
       - v2
+      - v3
   workflow_dispatch:
 
 permissions:
