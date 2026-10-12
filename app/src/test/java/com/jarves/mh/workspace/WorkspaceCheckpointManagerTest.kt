@@ -242,6 +242,30 @@ class WorkspaceCheckpointManagerTest {
     }
 
     @Test
+    fun `new checkpoint creation removes only abandoned staging directories older than one day`() {
+        val filesDir = tempFolder.newFolder("stale-staging-files")
+        val workspace = tempFolder.newFolder("stale-staging-workspace")
+        File(workspace, "safe.txt").writeText("safe")
+        val snapshots = File(filesDir, "checkpoints/project-stale/snapshots").apply { mkdirs() }
+        val stale = File(snapshots, ".ckpt_old.staging_abandoned").apply {
+            mkdirs()
+            File(this, "partial.txt").writeText("partial")
+            setLastModified(System.currentTimeMillis() - 48L * 60L * 60L * 1000L)
+        }
+        val recent = File(snapshots, ".ckpt_recent.staging_active").apply {
+            mkdirs()
+            File(this, "partial.txt").writeText("keep until stale")
+            setLastModified(System.currentTimeMillis())
+        }
+
+        val manager = WorkspaceCheckpointManager(filesDir)
+        assertNotNull(manager.createCheckpoint("project-stale", workspace, "new baseline"))
+
+        assertFalse(stale.exists())
+        assertTrue(recent.exists())
+    }
+
+    @Test
     fun `failed checkpoint creation leaves no partial snapshot behind`() {
         val filesDir = tempFolder.newFolder("failed-checkpoint-files")
         val manager = WorkspaceCheckpointManager(filesDir)
