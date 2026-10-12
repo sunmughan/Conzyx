@@ -71,6 +71,27 @@ class SafetyGateway(
             }
         }
 
+        // 2b. Dangerous command audit for command-carrying operations that are
+        // not SHELL_EXEC (the policy engine covers SHELL_EXEC itself). A
+        // critical payload must not bypass detection by switching provider,
+        // e.g. rm -rf / via remote execution.
+        val commandToAudit: String? = when (operation) {
+            is SafetyOperation.RemoteExec -> operation.command
+            else -> null
+        }
+        if (commandToAudit != null) {
+            val cmdEval = policyEngine.commandDetector.evaluate(commandToAudit)
+            if (cmdEval.severity == DangerSeverity.CRITICAL) {
+                val reason =
+                    "Blocked critical dangerous command: ${cmdEval.reason} (${cmdEval.matchedPattern})"
+                audit(
+                    operation, categoryOf(operation), AuditDecision.BLOCKED_DANGEROUS,
+                    reason, sessionId, projectId
+                )
+                return SafetyDecision(SafetyVerdict.DENY, reason, null, categoryOf(operation))
+            }
+        }
+
         // 3. MCP tool calls: MCP permission manager decides; DENY wins outright.
         if (operation is SafetyOperation.McpToolCall && mcpPermissionManager != null) {
             val server = mcpServerResolver?.invoke(operation.serverId)
