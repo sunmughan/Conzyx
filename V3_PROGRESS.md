@@ -196,3 +196,33 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Compiler-accurate type resolution — requires real language servers; providers honestly label as "not compiler-accurate".
 - Bundled language servers — binaries are platform-specific and large; `LspManager` uses installed servers when present.
 - Member-access type inference (`c.add` → resolving `c`'s type to find `add`): definitions work for direct names, imports and top-level symbols; receiver-type resolution is future work.
+
+## Milestone 4 — COMPLETE (2026-10-12)
+
+**Measurable context engine** (Phase 4). All four checklist items implemented.
+
+### Single ranked pipeline (symbol/dependency/Git/error/memory)
+- `context/RankedContextPipeline.kt` (new): one ranking pass combining explicit mentions, error/stack-trace targets, Git-modified files, symbol graph, dependency graph, filename/symbol/import matches. M3's real-parser edges are merged over heuristic edges via `context/ParserIndexAdapters.kt` (parser wins on conflicts, heuristic fills gaps for unindexed files).
+- `ContextRankingEngine.rankFiles` now accepts an optional `ContextTraceBuilder` and records per-signal score contributions without changing existing reason strings or scores.
+
+### Measurable model context budget
+- `context/ModelTokenizer.kt` (new): `ModelTokenizer` interface (`countTokens`, `isModelAccurate` honesty flag); deterministic `ApproximateTokenizer` (ceil(chars/4), labelled approximate); `TokenizerRegistry` for model-specific tokenizers when available.
+- `context/ContextBudget.kt` (new): priority-ordered `BudgetSection` enforcement — truncates lowest-priority sections first, never touches non-truncatable sections, returns a `BudgetReport` (tokens used vs max, kept/truncated/dropped sections) proving the budget was honored. Over-budget non-truncatable overflow is reported honestly (`withinBudget=false`), never silently exceeded.
+- `ContextEngine.buildContextWithTrace(...)` (new): runs the unified pipeline, assembles prioritized sections (overview, error, memory, files, code blocks), enforces the budget measurably, returns `ContextBuildResult(context, trace, budget, parserBacked)`.
+
+### Context trace + cache invalidation
+- `context/ContextTrace.kt` (new): `TraceSignal` enum (10 signals), per-file `TraceEntry` (signal, score contribution, included/excluded, reason), `renderText()` for the acceptance gate ("why was this file retrieved, why was that one excluded").
+- `ContextEngine` invalidation hooks: `invalidateOnFileEdit`, `invalidateOnBranchSwitch`, `invalidateOnDependencyChange`, `invalidateOnIndexRebuild` (file edits additionally covered by `ProjectIndex.ensureFresh` content fingerprint).
+
+### Memory lifecycle (roadmap task 5)
+- `ProjectMemoryStore`: `sourceRef` field on `ProjectMemoryItem` (persisted, backward-compatible), `updateMemory(...)` explicit edit control; `deleteMemory`/`clear` already existed.
+
+### Benchmark (acceptance gate)
+- `ContextRelevanceBenchmarkTest`: two sample repositories on disk (Kotlin auth app + Python scripts, incl. unrelated files); four benchmark tasks (bug fix with stack trace, feature with @mention, refactor rename, Python import fix). Asserts per task: measured budget never exceeded, must-retrieve files present (recall), unrelated files never outrank relevant ones (precision), trace shows signals and included files. Plus cache-invalidation and memory edit/sourceRef round-trip tests.
+
+### Tests (22 new)
+- `ContextBudgetTest` (7), `ContextTraceTest` (2), `RankedContextPipelineTest` (3), `ContextRelevanceBenchmarkTest` (6 + memory lifecycle).
+
+**Deliberately deferred:**
+- Model-exact tokenizers (tiktoken etc.) — interface + registry ready; approximate tokenizer honestly labelled until a model-specific one is bundled.
+- Semantic vector retrieval — ranking is over real symbol/dependency graphs, not embeddings; honestly scoped.
