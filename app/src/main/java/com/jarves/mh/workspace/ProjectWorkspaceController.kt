@@ -23,7 +23,7 @@ class ProjectWorkspaceController(private val context: Context) {
         require(
             projectId.isNotBlank() &&
                 !projectId.contains('/') &&
-                !projectId.contains('\\\\') &&
+                !projectId.contains('\\') &&
                 projectId != "." &&
                 projectId != "..",
         ) { "Invalid project ID" }
@@ -40,7 +40,7 @@ class ProjectWorkspaceController(private val context: Context) {
         val base = projectDirectory(project.id).canonicalFile
         if (project.rootPath.isBlank()) return base
         val relative = project.rootPath
-        require(!relative.startsWith('/') && !relative.contains('\\\\')) { "Invalid project root path" }
+        require(!relative.startsWith('/') && !relative.contains('\\')) { "Invalid project root path" }
         val segments = relative.split('/')
         require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Invalid project root path" }
         var candidate = base
