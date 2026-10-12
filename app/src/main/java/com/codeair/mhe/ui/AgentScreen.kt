@@ -856,6 +856,7 @@ fun AgentScreen(
                                     AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
                                     AgentKind.CLAUDE_CODE -> "Claude Code"
+                                    AgentKind.CLOUD_CODE -> "Cloud Code"
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
@@ -2262,13 +2263,30 @@ private fun AgentSelectionDot(selected: Boolean) {
 /** Provides popular default models for providers when discovery hasn't been run or is unavailable. */
 private fun defaultModelsForProvider(kind: ProviderKind): List<DiscoveredModel> = when (kind) {
     ProviderKind.DEEPSEEK -> listOf(
-        DiscoveredModel("deepseek-v4-flash", "DeepSeek-V4 Flash"),
+        DiscoveredModel("deepseek-chat", "DeepSeek V3.2 (chat)"),
+        DiscoveredModel("deepseek-reasoner", "DeepSeek R1 (reasoning)"),
+        DiscoveredModel("deepseek-v4-flash", "DeepSeek-V4 Flash (fast)"),
     )
     ProviderKind.OPENCODE_ZEN -> listOf(
         DiscoveredModel(ProviderKind.OPENCODE_ZEN.defaultModel, "OpenCode Zen default"),
     )
     ProviderKind.NVIDIA_NIM -> listOf(
-        DiscoveredModel(ProviderKind.NVIDIA_NIM.defaultModel, "Qwen 2.5 Coder 32B"),
+        DiscoveredModel("nvidia/llama-3.1-nemotron-70b-instruct", "Nemotron 70B Instruct (flagship)"),
+        DiscoveredModel("nvidia/llama-3.1-nemotron-ultra-253b-v1", "Nemotron Ultra 253B"),
+        DiscoveredModel("nvidia/llama-3.1-nemotron-nano-8b-v1", "Nemotron Nano 8B (fast)"),
+        DiscoveredModel("nvidia/nemotron-4-340b-instruct", "Nemotron-4 340B Instruct"),
+        DiscoveredModel("meta/llama-3.3-70b-instruct", "Llama 3.3 70B Instruct"),
+        DiscoveredModel("meta/llama-3.1-405b-instruct", "Llama 3.1 405B Instruct"),
+        DiscoveredModel("meta/llama-3.1-70b-instruct", "Llama 3.1 70B Instruct"),
+        DiscoveredModel("meta/llama-3.1-8b-instruct", "Llama 3.1 8B Instruct (fast)"),
+        DiscoveredModel("mistralai/mistral-large-2-instruct", "Mistral Large 2"),
+        DiscoveredModel("mistralai/mixtral-8x22b-instruct-v0.1", "Mixtral 8x22B"),
+        DiscoveredModel("qwen/qwen2.5-coder-32b-instruct", "Qwen 2.5 Coder 32B"),
+        DiscoveredModel("qwen/qwen3-235b-a22b", "Qwen3 235B MoE"),
+        DiscoveredModel("deepseek-ai/deepseek-r1", "DeepSeek R1 (reasoning)"),
+        DiscoveredModel("deepseek-ai/deepseek-v3.1", "DeepSeek V3.1"),
+        DiscoveredModel("google/gemma-3-27b-it", "Gemma 3 27B"),
+        DiscoveredModel("microsoft/phi-4", "Phi-4"),
     )
     ProviderKind.ANTHROPIC -> listOf(
         DiscoveredModel("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet (Hybrid)"),

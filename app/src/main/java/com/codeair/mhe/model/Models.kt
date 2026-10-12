@@ -34,10 +34,10 @@ enum class ProviderKind(
     ),
     NVIDIA_NIM(
         "NVIDIA NIM",
-        "OpenAI-compatible models hosted by NVIDIA",
+        "OpenAI-compatible models hosted by NVIDIA · free tier available",
         ProviderProtocol.OPENAI_CHAT,
         "https://integrate.api.nvidia.com/v1",
-        "qwen/qwen2.5-coder-32b-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
         fixedBaseUrl = true,
         fixedProtocol = true,
     ),
@@ -71,6 +71,12 @@ enum class AgentKind(
         "Antigravity CLI",
         "Google's official coding agent · Google account",
         "39.9 MB",
+    ),
+    CLOUD_CODE(
+        "cloud-code",
+        "Cloud Code",
+        "Cloud-based coding agent · multi-account with auto-failover",
+        "34.2 MB",
     ),
     ;
 
@@ -137,6 +143,7 @@ fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
+    AgentKind.CLOUD_CODE -> emptyList()
 }
 
 data class ProviderProfile(

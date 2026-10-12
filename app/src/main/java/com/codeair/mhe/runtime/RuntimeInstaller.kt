@@ -75,6 +75,7 @@ class RuntimeInstaller(private val context: Context) {
     private val devStacksFile = File(rootfs, ".pocket-dev-stacks.json")
     private val dshMarker = File(rootfs, ".pocket-dsh-version")
     private val agyMarker = File(rootfs, ".pocket-agy-version")
+    private val cloudCodeMarker = File(rootfs, ".pocket-cloudcode-version")
     private val githubCliMarker = File(rootfs, ".pocket-github-cli-version")
     private val dshAndroidCompatibilityMarker = File(rootfs, ".pocket-dsh-android-compat-version")
     private val macosMetadataRepairMarker = File(rootfs, ".pocket-macos-metadata-repair")
@@ -231,6 +232,7 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(proot, 0.985f, onProgress)
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
+            com.codeair.mhe.model.AgentKind.CLOUD_CODE -> ensureCloudCodeInstalled(proot, 0.985f, onProgress)
         }
         onProgress(RuntimeInstallProgress("Setup complete", 1f))
         return InstalledRuntime(proot, rootfs)
@@ -250,6 +252,7 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(runtime.proot, 0.05f, onProgress)
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(runtime.proot, 0.05f, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(runtime.proot, 0.05f, onProgress)
+            com.codeair.mhe.model.AgentKind.CLOUD_CODE -> ensureCloudCodeInstalled(runtime.proot, 0.05f, onProgress)
         }
         onProgress(RuntimeInstallProgress("${agent.title} is ready", 1f))
     }
@@ -268,6 +271,9 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY ->
                 guestExecutableFile(AGY_GUEST_PATH) != null &&
                     !agyMarker.readTextOrNull().isNullOrBlank()
+            com.codeair.mhe.model.AgentKind.CLOUD_CODE ->
+                guestExecutableFile(CLOUDCODE_GUEST_PATH) != null &&
+                    !cloudCodeMarker.readTextOrNull().isNullOrBlank()
         }
     }
 
@@ -372,6 +378,7 @@ class RuntimeInstaller(private val context: Context) {
                     com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> "claude"
                     com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> "deepseek"
                     com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> "antigravity"
+                    com.codeair.mhe.model.AgentKind.CLOUD_CODE -> "cloudcode"
                 },
                 version,
             )
@@ -638,6 +645,7 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> updateClaude(runtime, expectedVersion, onProgress)
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> updateDsh(runtime, expectedVersion, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> updateAgy(runtime, expectedVersion, onProgress)
+            com.codeair.mhe.model.AgentKind.CLOUD_CODE -> updateCloudCode(runtime, expectedVersion, onProgress)
         }
         onProgress(RuntimeInstallProgress("${agent.title} $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
     }
@@ -913,6 +921,36 @@ class RuntimeInstaller(private val context: Context) {
         require(isAgentInstalled(com.codeair.mhe.model.AgentKind.ANTIGRAVITY)) {
             "Antigravity CLI installation is incomplete"
         }
+    }
+
+    private suspend fun ensureCloudCodeInstalled(
+        proot: File,
+        fraction: Float,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        if (isAgentInstalled(com.codeair.mhe.model.AgentKind.CLOUD_CODE)) return
+        onProgress(RuntimeInstallProgress("Installing Cloud Code CLI $CLOUDCODE_VERSION", fraction))
+        // Cloud Code ships as a Node-based CLI; install via npm into the guest's local bin.
+        runGuest(proot, "npm install -g cloudcode-cli@$CLOUDCODE_VERSION --prefix /root/.local", 180_000L)
+        verifyGuest(proot, "$CLOUDCODE_GUEST_PATH --version", "Cloud Code CLI verification failed")
+        cloudCodeMarker.writeText(CLOUDCODE_VERSION)
+        require(isAgentInstalled(com.codeair.mhe.model.AgentKind.CLOUD_CODE)) {
+            "Cloud Code CLI installation is incomplete"
+        }
+    }
+
+    private suspend fun updateCloudCode(
+        runtime: InstalledRuntime,
+        expectedVersion: String,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        check(expectedVersion == CLOUDCODE_VERSION) {
+            "A newer Cloud Code release appeared. Check again before updating."
+        }
+        onProgress(RuntimeInstallProgress("Updating Cloud Code CLI $expectedVersion", 0.5f))
+        runGuest(runtime.proot, "npm install -g cloudcode-cli@$expectedVersion --prefix /root/.local", 180_000L)
+        verifyGuest(runtime.proot, "$CLOUDCODE_GUEST_PATH --version", "Cloud Code update verification failed")
+        cloudCodeMarker.writeText(expectedVersion)
     }
 
     private suspend fun ensureDshInstalled(
@@ -2926,6 +2964,8 @@ main().catch((err) => {
 
     companion object {
         const val AGY_GUEST_PATH = "/root/.local/bin/agy"
+        const val CLOUDCODE_GUEST_PATH = "/root/.local/bin/cloudcode"
+        const val CLOUDCODE_VERSION = "1.0.0"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
