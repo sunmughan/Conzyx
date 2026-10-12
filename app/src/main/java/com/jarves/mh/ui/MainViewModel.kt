@@ -724,6 +724,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             installer = installer,
             preferences = preferences,
         )
+    private val appFactoryCoordinator =
+        com.jarves.mh.ui.coordinators.AppFactoryCoordinator(
+            host = coordinatorHost,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            refreshProjectFiles = { refreshProjectFiles() },
+        )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
     val visualConsoleLogs: StateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>> = visualCoordinator.visualConsoleLogs
@@ -5829,203 +5835,43 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun attachVisualInspectionToAgent(url: String, note: String = "") =
         visualCoordinator.attachVisualInspectionToAgent(url, note)
+    // ---- Milestone 1: App Factory domain moved to AppFactoryCoordinator. ----
     fun generateAppFactoryBlueprint(
         prompt: String,
         framework: com.jarves.mh.factory.model.AppFramework = com.jarves.mh.factory.model.AppFramework.ANDROID_COMPOSE,
         buildMode: com.jarves.mh.factory.model.BuildMode = com.jarves.mh.factory.model.BuildMode.ON_DEVICE,
         archetype: com.jarves.mh.factory.blueprint.AppFactoryBlueprintEngine.Archetype? = null,
-    ) {
-        viewModelScope.launch {
-            _state.update { it.copy(appFactoryGeneratingBlueprint = true, appFactoryMessage = "Synthesizing software blueprint...") }
-            try {
-                val blueprint = com.jarves.mh.factory.blueprint.AppFactoryBlueprintEngine.createBlueprint(
-                    prompt = prompt,
-                    framework = framework,
-                    buildMode = buildMode,
-                    forcedArchetype = archetype,
-                )
-                _state.update {
-                    it.copy(
-                        appFactoryBlueprint = blueprint,
-                        appFactoryGeneratingBlueprint = false,
-                        appFactoryMessage = "Blueprint '${blueprint.name}' generated successfully."
-                    )
-                }
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(
-                        appFactoryGeneratingBlueprint = false,
-                        appFactoryMessage = "Blueprint generation failed: ${e.message}"
-                    )
-                }
-            }
-        }
-    }
+    ) = appFactoryCoordinator.generateAppFactoryBlueprint(prompt, framework, buildMode, archetype)
 
     fun scaffoldAppFactoryProject(
         targetDirectory: File? = null,
         blueprint: com.jarves.mh.factory.model.AppBlueprint? = _state.value.appFactoryBlueprint
-    ) {
-        val bp = blueprint ?: return
-        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp.name.lowercase().replace(" ", "_")}")
-
-        viewModelScope.launch {
-            _state.update { it.copy(appFactoryScaffolding = true, appFactoryMessage = "Scaffolding ${bp.framework.displayName} files...") }
-            try {
-                val files = mutableListOf<File>()
-                when (bp.framework) {
-                    com.jarves.mh.factory.model.AppFramework.ANDROID_COMPOSE -> {
-                        files += com.jarves.mh.factory.generators.AndroidComposeGenerator.generateProject(projectDir, bp)
-                    }
-                    com.jarves.mh.factory.model.AppFramework.FLUTTER -> {
-                        files += com.jarves.mh.factory.generators.FlutterAppGenerator.generateProject(projectDir, bp)
-                    }
-                    com.jarves.mh.factory.model.AppFramework.REACT_NATIVE -> {
-                        files += com.jarves.mh.factory.generators.ReactNativeAppGenerator.generateProject(projectDir, bp)
-                    }
-                    com.jarves.mh.factory.model.AppFramework.FULLSTACK_BACKEND -> {
-                        files += com.jarves.mh.factory.generators.BackendServiceGenerator.generateProject(projectDir, bp)
-                    }
-                }
-                files += com.jarves.mh.factory.generators.DatabaseSetupEngine.generateDatabaseBundle(projectDir, bp)
-                files += com.jarves.mh.factory.generators.ApiIntegrationGenerator.generateApiClientBundle(projectDir, bp)
-
-                _state.update {
-                    it.copy(
-                        appFactoryScaffolding = false,
-                        appFactoryScaffoldFiles = files,
-                        appFactoryMessage = "Scaffolded ${files.size} project files in ${projectDir.name}."
-                    )
-                }
-                refreshProjectFiles()
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(
-                        appFactoryScaffolding = false,
-                        appFactoryMessage = "Scaffolding failed: ${e.message}"
-                    )
-                }
-            }
-        }
-    }
+    ) = appFactoryCoordinator.scaffoldAppFactoryProject(targetDirectory, blueprint)
 
     fun buildAppFactoryApp(
         artifactType: com.jarves.mh.factory.model.BuildArtifactType = com.jarves.mh.factory.model.BuildArtifactType.APK_DEBUG,
         buildMode: com.jarves.mh.factory.model.BuildMode = com.jarves.mh.factory.model.BuildMode.ON_DEVICE,
         targetDirectory: File? = null
-    ) {
-        val bp = _state.value.appFactoryBlueprint ?: return
-        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp.name.lowercase().replace(" ", "_")}")
+    ) = appFactoryCoordinator.buildAppFactoryApp(artifactType, buildMode, targetDirectory)
 
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    appFactoryBuilding = true,
-                    appFactoryLogs = listOf("Starting build: ${artifactType.displayName} via ${buildMode.displayName}..."),
-                    appFactoryMessage = "Building ${artifactType.displayName}..."
-                )
-            }
-            try {
-                val result = com.jarves.mh.factory.build.AppBuildOrchestrator.runBuild(
-                    projectDir = projectDir,
-                    blueprint = bp,
-                    artifactType = artifactType,
-                    buildMode = buildMode
-                )
-                _state.update {
-                    it.copy(
-                        appFactoryBuilding = false,
-                        appFactoryBuildResult = result,
-                        appFactoryLogs = result.logs,
-                        appFactoryMessage = if (result.success) "Build completed successfully!" else "Build failed: ${result.errorMessage}"
-                    )
-                }
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(
-                        appFactoryBuilding = false,
-                        appFactoryMessage = "Build error: ${e.message}",
-                        appFactoryLogs = it.appFactoryLogs + "Error: ${e.message}"
-                    )
-                }
-            }
-        }
-    }
-
-    fun installBuiltApk(apkFile: File) {
-        try {
-            com.jarves.mh.factory.build.AppBuildOrchestrator.installApk(getApplication(), apkFile)
-            _state.update { it.copy(appFactoryMessage = "Launched package installer for ${apkFile.name}") }
-        } catch (e: Exception) {
-            _state.update { it.copy(appFactoryMessage = "Installation error: ${e.message}") }
-        }
-    }
+    fun installBuiltApk(apkFile: File) =
+        appFactoryCoordinator.installBuiltApk(apkFile)
 
     fun generateReleaseKeystore(
         targetDirectory: File? = null,
         alias: String = "releaseKey",
         pass: String = "pocketdev123"
-    ) {
-        val bp = _state.value.appFactoryBlueprint
-        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp?.name?.lowercase()?.replace(" ", "_") ?: "app"}")
-
-        try {
-            val config = com.jarves.mh.factory.build.SigningAndVersionManager.createKeystore(
-                projectDir = projectDir,
-                keyAlias = alias,
-                storePassword = pass,
-                keyPassword = pass
-            )
-            _state.update {
-                it.copy(
-                    appFactoryKeystoreConfig = config,
-                    appFactoryMessage = "2048-bit Keystore generated: ${config.keystoreFile.name}"
-                )
-            }
-        } catch (e: Exception) {
-            _state.update { it.copy(appFactoryMessage = "Keystore generation failed: ${e.message}") }
-        }
-    }
+    ) = appFactoryCoordinator.generateReleaseKeystore(targetDirectory, alias, pass)
 
     fun bumpAppVersion(
         targetDirectory: File? = null,
         bumpType: com.jarves.mh.factory.model.VersionBumpType = com.jarves.mh.factory.model.VersionBumpType.PATCH
-    ) {
-        val bp = _state.value.appFactoryBlueprint
-        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp?.name?.lowercase()?.replace(" ", "_") ?: "app"}")
-
-        val (newCode, newName) = com.jarves.mh.factory.build.SigningAndVersionManager.bumpVersion(projectDir, bumpType)
-        _state.update { state ->
-            val updatedBp = state.appFactoryBlueprint?.let {
-                it.copy(buildConfig = it.buildConfig.copy(versionCode = newCode, versionName = newName))
-            }
-            state.copy(
-                appFactoryBlueprint = updatedBp,
-                appFactoryMessage = "Bumped version to $newName (code $newCode)"
-            )
-        }
-    }
+    ) = appFactoryCoordinator.bumpAppVersion(targetDirectory, bumpType)
 
     fun preparePlayStoreListing(
         targetDirectory: File? = null,
         blueprint: com.jarves.mh.factory.model.AppBlueprint? = _state.value.appFactoryBlueprint
-    ) {
-        val bp = blueprint ?: return
-        val projectDir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: File(getApplication<Application>().filesDir, "projects/${bp.name.lowercase().replace(" ", "_")}")
-
-        try {
-            val bundle = com.jarves.mh.factory.build.PlayStorePreparationEngine.prepareListingBundle(projectDir, bp)
-            _state.update {
-                it.copy(
-                    appFactoryStoreBundle = bundle,
-                    appFactoryMessage = "Play Store listing metadata bundle exported to ${bundle.listingDir.name}"
-                )
-            }
-        } catch (e: Exception) {
-            _state.update { it.copy(appFactoryMessage = "Play Store preparation failed: ${e.message}") }
-        }
-    }
-
+    ) = appFactoryCoordinator.preparePlayStoreListing(targetDirectory, blueprint)
     fun refreshGitStudio(targetDirectory: File? = null) {
         val project = _state.value.activeProject
         val dir = targetDirectory ?: project?.let { projectWorkspaceRoot(it) } ?: return
