@@ -332,3 +332,35 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Wiring the tool registry / session manager into UI view-models / `MainViewModel` coordinators — the engine is complete and tested; UI integration is product work, not milestone work.
 - OAuth2 device-flow for remote MCP auth — scheme enum is extensible; BEARER/API_KEY/BASIC cover the current server landscape.
 - Skill marketplace distribution (signed packages, publisher trust) — M13 scope.
+
+## Milestone 8 — COMPLETE (2026-10-12)
+
+**Visual & App Factory loops** (Phases 8–9): the inspect→AI-edit→reload→screenshot-compare cycle and the scaffold-to-deploy pipeline. CI green (run 38261464355).
+
+### Visual dev loop (package `com.jarves.mh.visual`)
+- `visual/VisualDiffer.kt` (new): pure-JVM differ over raw ARGB pixel buffers (no Android framework — fully unit-testable). Per-channel tolerance, `DiffIgnoreRegion` exclusions, flood-fill merged `ChangedRegion` bounding boxes, threshold verdict. Throws honestly on dimension mismatch — never a silent 0%/100%.
+- `visual/VisualDevLoop.kt` (new): the bounded inspect→AI-edit→reload→screenshot-compare cycle. `ScreenshotProvider` / `EditApplier` seams (`fun interface`), `VisualDevLoopConfig` (viewport, maxIterations, threshold, tolerance, ignore regions). Each iteration diffs against the original baseline; verdicts PASS / RETRY / EXHAUSTED / EDIT_FAILED / CAPTURE_FAILED — failures stop the loop and are recorded, never reported as convergence. Run records are JSON-serializable.
+- `visual/VisualLoopStore.kt` (new): persists loop runs under `<project>/.mobile_harness/visual/loops/` (summaries + iteration records only; raw pixel buffers never hit disk). `save`/`list`/`load`.
+
+### App factory loop (packages `com.jarves.mh.factory.build`, `com.jarves.mh.factory.loop`)
+- `factory/build/CommandRunner.kt` (new): `CommandResult` (exit code, output, timeout flag) + `CommandRunner` seam + `ProcessBuilderCommandRunner` (daemon output-draining reader thread, real timeout kill).
+- `factory/build/ApkSignatureVerifier.kt` (new): **real** `apksigner verify --print-certs` invocation with injectable `ApksignerLocator` (ANDROIDD_HOME/build-tools → PATH). Parses signer SHA-256 digest + DN, collects WARNING lines. Reports `toolAvailable=false` honestly when no signer tooling exists — never claims "verified" without a real check. `validateAab` inspects AAB zip structure (`BundleConfig.pb` + `base/` entries).
+- `factory/build/CleanBuildVerifier.kt` (new): "generated apps compile + pass tests from clean state" — copies the project minus `build/`/`.gradle`/`.cxx` caches, runs real Gradle tasks (`clean`, `testDebugUnitTest`, `assembleDebug`) in the clean copy, stops at the first failed task with output-tail diagnosis.
+- `factory/loop/AppFactoryLoop.kt` (new): scaffold→deploy pipeline — SCAFFOLD → SIGN → BUILD → TEST → VERIFY_SIGNATURE → PREPARE_LISTING. Stops at the first failed stage; non-applicable stages (tests for non-Android frameworks, signing when not requested, disabled verification/listing) are recorded as *skipped*, never fake-success. Signing config injection happens *before* the release build. All engines are constructor-injectable seams defaulting to the real ones (generators by framework, `AppBuildOrchestrator`, `SigningAndVersionManager`, `PlayStorePreparationEngine`).
+
+### Tests (37 new)
+- `VisualDifferTest` (9): 0%/50%/100% diffs, dimension-mismatch throws, tolerance behavior, ignore regions, region merging (adjacent→1, distant→2), threshold boundary.
+- `VisualDevLoopTest` (7): convergence on fix, iteration exhaustion, edit-failure stop, capture-failure stop, diff history passed to edits, config validation.
+- `VisualLoopStoreTest` (3): save/list/load round-trip, empty history, missing file throws.
+- `ApkSignatureVerifierTest` (7): missing file throws, no-tooling honest report, signer SHA-256/DN parsing via a real executable fake-`apksigner` script, failed verification, AAB valid/missing-config/non-zip.
+- `CleanBuildVerifierTest` (4): missing wrapper honest failure, all-tasks success + invocation order, stop-at-first-failure with diagnosis, `copyClean` strips build outputs.
+- `AppFactoryLoopTest` (7): full 6-stage success, stop at build failure, signing requires keystoreConfig, TEST skipped for Flutter, verify-stage fails honestly without tooling, scaffold failure stops immediately, AAB uses structural validation.
+
+### CI fix rounds (2)
+1. `FactoryLoopTest`: `BuildResult` imported from `factory.build` — actually lives in `factory.model`. Fixed import.
+2. `FactoryLoopTest`: `AppFactoryLoop.defaultVerifySignature` referenced without `::` — parsed as a call. Fixed to callable reference `AppFactoryLoop::defaultVerifySignature`.
+
+**Deliberately deferred:**
+- Wiring `VisualDevLoop`/`AppFactoryLoop` into UI view-models / `MainViewModel` coordinators — engines are complete and tested; UI integration is product work, not milestone work.
+- WebView→PixelBuffer production adapter for `ScreenshotProvider` (needs the Android runtime) — seam is defined and tested with scripted providers.
+- `jarsigner` fallback path in `ApkSignatureVerifier` — enum reserves `JARSIGNER_FALLBACK`; apksigner covers the current landscape.
