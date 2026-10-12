@@ -334,7 +334,7 @@ Mobile-Harness-Extended/
 │   ├── build.gradle.kts          # App module: flavors, signing, Firebase, versions
 │   ├── google-services.json      # Firebase config (replace with your own)
 │   └── src/main/
-│       ├── java/com/jarves/mh/
+│       ├── java/com/codeair/mhe/
 │       │   ├── agent/            # Multi-agent team runtime, DAG dispatch, roles
 │       │   ├── auth/             # Firebase Auth identity, Google sign-in
 │       │   ├── cloud/            # Cloud hybrid execution client and orchestration
