@@ -450,8 +450,8 @@ All return `OperationResult`, refuse blank tokens with `NOT_CONFIGURED`, and pro
 - `CloudExecutionOrchestrator.kt` (new): cost-gate → delta upload → submit → log streaming + status polling to terminal state → artifact download/verification → spend recording. Cancellation supported at every stage. COMPLETED only when the remote job genuinely reached SUCCEEDED AND artifacts verified; remote FAILED/CANCELLED/timeout and unverified artifacts all map to FAILED/CANCELLED honestly; NOT_CONFIGURED propagates from auth-less workers.
 - `CloudJobRunner.kt`: new optional `cloudOrchestrator` constructor param. When set, cloud-routed jobs dispatch through the M11 protocol; when null, the previous honest NOT_CONFIGURED path is preserved. `cancel()` now also cancels the orchestrator.
 
-### Tests (40 new)
-- `CloudExecutionClientTest` (14): submit success/rejection/transport-error/missing-jobId, blank-auth never sends, poll parsing incl. unknown status, cancel confirmed/unconfirmed, sequenced log frames, manifest 404/200, byte download success/null-body, Bearer header.
+### Tests (39 new)
+- `CloudExecutionClientTest` (15): submit success/rejection/transport-error/missing-jobId, blank-auth never sends, poll parsing incl. unknown status, cancel confirmed/unconfirmed, sequenced log frames, manifest 404/200, byte download success/null-body, Bearer header.
 - `CloudPayloadUploaderTest` (4): delta skip/upload accounting, full upload on unknown snapshot, blank-auth NOT_CONFIGURED, upload failure aborts honestly.
 - `CloudLogStreamerTest` (4): ordered frames until terminal, fetch error fails honestly, blank-auth NOT_CONFIGURED, cancellation stops streaming.
 - `CloudArtifactDownloaderTest` (4): matching checksum writes file, mismatch fails and writes nothing, blank-auth NOT_CONFIGURED, listing failure honest.
