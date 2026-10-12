@@ -3,7 +3,6 @@ package com.jarves.mh.factory
 import com.jarves.mh.factory.blueprint.AppFactoryBlueprintEngine
 import com.jarves.mh.factory.build.ApkSignatureVerifier
 import com.jarves.mh.factory.build.ApksignerLocator
-import com.jarves.mh.factory.build.BuildResult
 import com.jarves.mh.factory.build.CleanBuildVerifier
 import com.jarves.mh.factory.build.CommandResult
 import com.jarves.mh.factory.build.CommandRunner
@@ -16,6 +15,7 @@ import com.jarves.mh.factory.model.AppBlueprint
 import com.jarves.mh.factory.model.AppFramework
 import com.jarves.mh.factory.model.BuildArtifactType
 import com.jarves.mh.factory.model.BuildMode
+import com.jarves.mh.factory.model.BuildResult
 import com.jarves.mh.factory.model.KeystoreConfig
 import com.jarves.mh.factory.model.StoreListingBundle
 import org.junit.Assert.*
