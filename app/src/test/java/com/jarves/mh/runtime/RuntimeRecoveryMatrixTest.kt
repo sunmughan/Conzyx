@@ -346,19 +346,21 @@ class RuntimeRecoveryMatrixTest {
     fun `staged writer promotes content on success control`() {
         val dir = tempFolder.newFolder("storage3")
         val target = File(dir, "data.json")
-        // TEMPORARY DIAGNOSTIC: pinpoint which step fails on CI.
-        val staging = File(dir, "data.json.staging_diag")
+        // TEMPORARY DIAGNOSTIC 2: replicate StagedWriter's exact path construction.
+        val staging = File(target.parentFile, "${target.name}.staging_${System.nanoTime()}")
+        val diag = buildString {
+            append("target=${target.absolutePath} ")
+            append("parentFile=${target.parentFile?.absolutePath} ")
+            append("staging=${staging.absolutePath} ")
+            append("dir=${dir.absolutePath} ")
+            append("parentEqualsDir=${target.parentFile == dir} ")
+        }
         val writeOk = runCatching { staging.writeText("""{"v":1}""") }.isSuccess
         val stagingExists = staging.exists()
-        val stagingLen = if (stagingExists) staging.length() else -1L
         val renameOk = if (stagingExists) staging.renameTo(target) else false
-        val targetExists = target.exists()
-        val targetContent = if (targetExists) target.readText() else "<missing>"
         assertTrue(
-            "DIAG writeOk=$writeOk stagingExists=$stagingExists stagingLen=$stagingLen " +
-                "renameOk=$renameOk targetExists=$targetExists targetContent=$targetContent " +
-                "dir=${dir.absolutePath} list=${dir.listFiles()?.map { it.name }}",
-            writeOk && stagingExists && renameOk && targetExists,
+            "DIAG2 $diag writeOk=$writeOk stagingExists=$stagingExists renameOk=$renameOk",
+            writeOk && stagingExists && renameOk,
         )
     }
 
