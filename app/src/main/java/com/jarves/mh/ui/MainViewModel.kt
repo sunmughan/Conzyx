@@ -423,8 +423,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var projectTerminalProjectId: String? = null
     @Volatile private var projectTerminalStopRequested: Boolean = false
     @Volatile private var setupCompletionHandled: Boolean = false
-    @Volatile private var githubAuthProcess: Process? = null
-    private var githubAuthJob: kotlinx.coroutines.Job? = null
     @Volatile private var lastOpenedAntigravityAuthUrl: String? = null
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
     private var lastInterruptedRequest: RuntimeRetryRequest? = null
@@ -729,6 +727,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             host = coordinatorHost,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             refreshProjectFiles = { refreshProjectFiles() },
+        )
+    private val gitCoordinator =
+        com.jarves.mh.ui.coordinators.GitCoordinator(
+            host = coordinatorHost,
+            gitDomainController = gitDomainController,
+            gitHubClient = gitHubClient,
+            installer = installer,
+            preferences = preferences,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            refreshProjectFiles = { refreshProjectFiles() },
+            openProject = { project -> openProject(project) },
+        )
+    private val gitHubAuthCoordinator =
+        com.jarves.mh.ui.coordinators.github.GitHubAuthCoordinator(
+            host = coordinatorHost,
+            gitHubClient = gitHubClient,
+            installer = installer,
+            preferences = preferences,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            openProject = { project -> openProject(project) },
         )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
@@ -3199,6 +3217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshProjectFiles()
     }
 
+    // ---- Milestone 1: repository clone moved to GitHubAuthCoordinator. ----
     private fun detectImportedProjectMetadata(root: File): Pair<String, String> {
         val names = root.walkTopDown().maxDepth(3).filter(File::isFile).map { it.name.lowercase() }.toSet()
         return when {
@@ -3213,414 +3232,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun clonePublicGitRepository(url: String) {
-        cloneGitRepository(url = url, repositoryName = null, branch = null, useGitHubCli = false)
-    }
+    fun clonePublicGitRepository(url: String) =
+        gitHubAuthCoordinator.clonePublicGitRepository(url)
 
-    fun cloneGitHubRepository(repository: GitHubRepository) {
-        if (_state.value.githubAuthStatus != GitHubAuthStatus.CONNECTED) {
-            _state.update { it.copy(githubAuthStatus = GitHubAuthStatus.DISCONNECTED, githubMessage = "Connect GitHub again") }
-            return
-        }
-        cloneGitRepository(repository.cloneUrl, repository.fullName, repository.defaultBranch, useGitHubCli = true)
-    }
+    fun cloneGitHubRepository(repository: GitHubRepository) =
+        gitHubAuthCoordinator.cloneGitHubRepository(repository)
+    // ---- Milestone 1: GitHub auth moved to GitHubAuthCoordinator. ----
+    fun startGitHubLogin() =
+        gitHubAuthCoordinator.startGitHubLogin()
 
-    private fun cloneGitRepository(url: String, repositoryName: String?, branch: String?, useGitHubCli: Boolean) {
-        if (_state.value.gitCloneRunning || _state.value.projectImporting || _state.value.isRunning || _state.value.projectTerminalRunning) return
-        val normalized = runCatching { validateGitUrl(url) }.getOrElse { error ->
-            _state.update { it.copy(toastMessage = error.message ?: "Enter a valid public HTTPS Git URL") }
-            return
-        }
-        _state.update { it.copy(gitCloneRunning = true, gitCloneMessage = "Connecting to Git repository…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val identity = generateQuickChatIdentity(_state.value.projects.mapTo(mutableSetOf()) { it.slug })
-                    val projectId = UUID.randomUUID().toString()
-                    val workspace = File(getApplication<Application>().filesDir, "workspaces/$projectId").apply { mkdirs() }
-                    val output = File(getApplication<Application>().cacheDir, "git-clone-${System.nanoTime()}.log")
-                    try {
-                        val environment = mutableMapOf(
-                            "GIT_TERMINAL_PROMPT" to "0",
-                            "GIT_LFS_SKIP_SMUDGE" to "1",
-                            "GH_PROMPT_DISABLED" to "1",
-                            "GH_NO_UPDATE_NOTIFIER" to "1",
-                        )
-                        val installed = installer.installedRuntime()
-                        val command = if (useGitHubCli && repositoryName != null) {
-                            buildList {
-                                addAll(listOf(RuntimeInstaller.GITHUB_CLI_GUEST_PATH, "repo", "clone", repositoryName, ".", "--", "--progress", "--single-branch"))
-                                branch?.takeIf(String::isNotBlank)?.let { addAll(listOf("--branch", it)) }
-                            }
-                        } else {
-                            buildList {
-                                addAll(listOf("git", "clone", "--progress", "--single-branch"))
-                                branch?.takeIf(String::isNotBlank)?.let { addAll(listOf("--branch", it)) }
-                                add(normalized)
-                                add(".")
-                            }
-                        }
-                        _state.update { it.copy(gitCloneMessage = "Cloning ${repositoryName ?: normalized.substringAfterLast('/').removeSuffix(".git")}…") }
-                        val process = installer.process(
-                            installed.proot,
-                            installed.rootfs,
-                            workspace,
-                            environment,
-                            command,
-                            guestWorkspacePath = "/workspace/${identity.slug}",
-                            outputFile = output,
-                        )
-                        val exit = process.waitFor()
-                        val details = output.readText().trim()
-                        check(exit == 0) { details.takeLast(600).ifBlank { "Git clone failed with exit code $exit" } }
-                        val metadata = detectImportedProjectMetadata(workspace)
-                        Project(
-                            id = projectId,
-                            name = identity.displayName,
-                            description = repositoryName?.let { "GitHub · $it" } ?: "Imported Git repository",
-                            language = metadata.second,
-                            slug = identity.slug,
-                            kind = ProjectKind.QUICK_PROJECT,
-                        )
-                    } catch (error: Throwable) {
-                        workspace.deleteRecursively()
-                        throw error
-                    } finally {
-                        output.delete()
-                    }
-                }
-            }
-            result.onSuccess { project ->
-                val chat = ProjectChat(title = "New chat")
-                preferences.saveProjectChats(project.id, listOf(chat))
-                _state.update { current -> current.copy(projects = listOf(project) + current.projects) }
-                preferences.saveProjects(_state.value.projects)
-                openProject(project)
-                _state.update { it.copy(gitCloneRunning = false, gitCloneMessage = null, toastMessage = "Repository cloned successfully") }
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        gitCloneRunning = false,
-                        gitCloneMessage = null,
-                        toastMessage = "Clone failed: ${error.message?.lineSequence()?.lastOrNull()?.take(180) ?: "Unknown error"}",
-                    )
-                }
-            }
-        }
-    }
+    fun generateNewGitHubCode() =
+        gitHubAuthCoordinator.generateNewGitHubCode()
 
-    private fun validateGitUrl(value: String): String {
-        val clean = value.trim()
-        val uri = URI(clean)
-        require(uri.scheme.equals("https", ignoreCase = true)) { "Only HTTPS Git URLs are supported" }
-        require(uri.userInfo == null && uri.fragment == null && uri.host?.isNotBlank() == true) { "Enter a valid HTTPS Git URL without credentials" }
-        require(uri.host != "localhost" && uri.host != "127.0.0.1" && uri.host != "::1") { "Local Git URLs are not supported" }
-        require(uri.path.count { it == '/' } >= 2) { "The URL must identify a Git repository" }
-        return uri.toASCIIString()
-    }
+    fun refreshGitHubRepositories() =
+        gitHubAuthCoordinator.refreshGitHubRepositories()
 
-    fun startGitHubLogin() {
-        if (_state.value.githubAuthStatus == GitHubAuthStatus.STARTING || _state.value.githubAuthStatus == GitHubAuthStatus.AWAITING_USER) return
-        _state.update { it.copy(githubAuthStatus = GitHubAuthStatus.STARTING, githubMessage = "Preparing official GitHub sign-in…") }
-        startGitHubForegroundOperation()
-        githubAuthJob = viewModelScope.launch {
-            try {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    installer.ensureGitHubCliInstalled { progress ->
-                        _state.update { it.copy(githubMessage = progress.message) }
-                    }
-                    val runtime = installer.installedRuntime()
-                    val outputFile = File(getApplication<Application>().cacheDir, "github-auth-${System.nanoTime()}.log")
-                    val workspace = File(getApplication<Application>().filesDir, "workspaces/github-auth").apply { mkdirs() }
-                    val process = installer.process(
-                        runtime.proot,
-                        runtime.rootfs,
-                        workspace,
-                        githubCliEnvironment(),
-                        listOf(
-                            RuntimeInstaller.GITHUB_CLI_GUEST_PATH,
-                            "auth", "login",
-                            "--hostname", "github.com",
-                            "--git-protocol", "https",
-                            "--web",
-                            "--insecure-storage",
-                        ),
-                        guestWorkspacePath = "/workspace/github-auth",
-                        outputFile = outputFile,
-                    )
-                    githubAuthProcess = process
-                    var offset = 0L
-                    val captured = StringBuilder()
-                    var browserOpened = false
-                    try {
-                        while (process.isAlive || outputFile.length() > offset) {
-                            if (outputFile.length() > offset) {
-                                val count = (outputFile.length() - offset).coerceAtMost(16L * 1024).toInt()
-                                val bytes = ByteArray(count)
-                                RandomAccessFile(outputFile, "r").use { file -> file.seek(offset); file.readFully(bytes) }
-                                offset += count
-                                captured.append(bytes.toString(Charsets.UTF_8))
-                                val clean = sanitizeTerminalOutput(captured.toString()).takeLast(20_000)
-                                val code = GITHUB_DEVICE_CODE.find(clean)?.value
-                                if (code != null && !browserOpened) {
-                                    browserOpened = true
-                                    _state.update {
-                                        it.copy(
-                                            githubAuthStatus = GitHubAuthStatus.AWAITING_USER,
-                                            githubUserCode = code,
-                                            githubVerificationUri = GITHUB_DEVICE_URL,
-                                            githubMessage = "Enter this one-time code on GitHub",
-                                        )
-                                    }
-                                    openExternalUrl(GITHUB_DEVICE_URL)
-                                }
-                            } else {
-                                delay(100)
-                            }
-                        }
-                        val exit = process.waitFor()
-                        check(exit == 0) {
-                            sanitizeTerminalOutput(captured.toString()).lineSequence().lastOrNull { it.isNotBlank() }
-                                ?: "GitHub sign-in failed (exit $exit)"
-                        }
-                    } finally {
-                        githubAuthProcess = null
-                        outputFile.delete()
-                    }
-                    githubAccountLogin() ?: error("GitHub connected, but the account could not be identified")
-                }
-            }
-            result.onSuccess { login ->
-                preferences.githubLogin = login
-                _state.update {
-                    it.copy(
-                        githubAuthStatus = GitHubAuthStatus.CONNECTED,
-                        githubLogin = login,
-                        githubUserCode = null,
-                        githubVerificationUri = null,
-                        githubMessage = "Connected as @$login",
-                    )
-                }
-                refreshGitHubRepositories()
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        githubAuthStatus = GitHubAuthStatus.ERROR,
-                        githubUserCode = null,
-                        githubVerificationUri = null,
-                        githubMessage = error.message?.take(240) ?: "GitHub sign-in failed",
-                    )
-                }
-            }
-            } finally {
-                stopGitHubForegroundOperation()
-                githubAuthJob = null
-            }
-        }
-    }
+    fun disconnectGitHub() =
+        gitHubAuthCoordinator.disconnectGitHub()
 
-    fun generateNewGitHubCode() {
-        githubAuthProcess?.destroy()
-        githubAuthJob?.cancel()
-        githubAuthProcess = null
-        githubAuthJob = null
-        stopGitHubForegroundOperation()
-        _state.update {
-            it.copy(
-                githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
-                githubUserCode = null,
-                githubVerificationUri = null,
-                githubMessage = "Generating a new GitHub code…",
-            )
-        }
-        startGitHubLogin()
-    }
-
-    fun refreshGitHubRepositories() {
-        if (_state.value.githubAuthStatus != GitHubAuthStatus.CONNECTED) return
-        if (_state.value.githubRepositoriesLoading) return
-        _state.update { it.copy(githubRepositoriesLoading = true, githubMessage = "Loading repositories…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { githubRepositoriesFromCli() } }
-            result.onSuccess { repositories ->
-                _state.update {
-                    it.copy(
-                        githubRepositories = repositories,
-                        githubRepositoriesLoading = false,
-                        githubMessage = "${repositories.size} repositories available",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        githubRepositoriesLoading = false,
-                        githubMessage = error.message ?: "Could not load GitHub repositories",
-                    )
-                }
-            }
-        }
-    }
-
-    fun disconnectGitHub() {
-        if (_state.value.githubAuthStatus == GitHubAuthStatus.STARTING) return
-        val login = _state.value.githubLogin
-        _state.update { it.copy(githubAuthStatus = GitHubAuthStatus.STARTING, githubMessage = "Signing out of GitHub…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val command = buildList {
-                        addAll(listOf("auth", "logout", "--hostname", "github.com"))
-                        login?.takeIf(String::isNotBlank)?.let { addAll(listOf("--user", it)) }
-                    }
-                    val output = runGitHubCli(command)
-                    check(output.first == 0) { output.second.lineSequence().lastOrNull { it.isNotBlank() } ?: "GitHub logout failed" }
-                }
-            }
-            result.onSuccess {
-                preferences.githubLogin = ""
-                _state.update {
-                    it.copy(
-                        githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
-                        githubLogin = null,
-                        githubUserCode = null,
-                        githubVerificationUri = null,
-                        githubRepositories = emptyList(),
-                        githubMessage = "Signed out",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(githubAuthStatus = GitHubAuthStatus.ERROR, githubMessage = error.message ?: "Could not sign out") }
-            }
-        }
-    }
-
-    private suspend fun refreshGitHubConnection() = withContext(Dispatchers.IO) {
-        if (!installer.isGitHubCliInstalled()) return@withContext
-        val login = runCatching { githubAccountLogin() }.getOrNull()
-        if (login.isNullOrBlank()) {
-            preferences.githubLogin = ""
-            _state.update { it.copy(githubAuthStatus = GitHubAuthStatus.DISCONNECTED, githubLogin = null) }
-        } else {
-            preferences.githubLogin = login
-            _state.update {
-                it.copy(
-                    githubAuthStatus = GitHubAuthStatus.CONNECTED,
-                    githubLogin = login,
-                    githubMessage = "Connected as @$login",
-                )
-            }
-        }
-    }
-
-    private fun githubCliEnvironment(): Map<String, String> = mapOf(
-        "GH_PROMPT_DISABLED" to "1",
-        "GH_NO_UPDATE_NOTIFIER" to "1",
-        // Android PRoot has no Secret Service. This keeps the official gh-owned
-        // credential in PocketDev's private Linux home instead of exporting it.
-        "BROWSER" to "/bin/false",
-    )
-
-    private fun runGitHubCli(arguments: List<String>): Pair<Int, String> {
-        check(installer.isGitHubCliInstalled()) { "GitHub CLI is not installed" }
-        val runtime = installer.installedRuntime()
-        val outputFile = File(getApplication<Application>().cacheDir, "github-cli-${System.nanoTime()}.log")
-        val workspace = File(getApplication<Application>().filesDir, "workspaces/github-auth").apply { mkdirs() }
-        return try {
-            val process = installer.process(
-                runtime.proot,
-                runtime.rootfs,
-                workspace,
-                githubCliEnvironment(),
-                listOf(RuntimeInstaller.GITHUB_CLI_GUEST_PATH) + arguments,
-                guestWorkspacePath = "/workspace/github-auth",
-                outputFile = outputFile,
-            )
-            val exit = process.waitFor()
-            exit to sanitizeTerminalOutput(outputFile.readTailText(MAX_PROCESS_OUTPUT_BYTES)).trim()
-        } finally {
-            outputFile.delete()
-        }
-    }
-
-    private fun githubAccountLogin(): String? {
-        val (exit, output) = runGitHubCli(listOf("api", "user", "--jq", ".login"))
-        return output.lineSequence().lastOrNull { it.isNotBlank() }?.trim().takeIf { exit == 0 && !it.isNullOrBlank() }
-    }
-
-    private fun githubRepositoriesFromCli(): List<GitHubRepository> {
-        // Keep the GitHub CLI response line-oriented instead of parsing the
-        // entire paginated response as one JSONArray. This is more resilient
-        // to GitHub API/CLI response-shape changes and avoids nested JSON
-        // conversion failures while loading the repository picker.
-        val endpoint = "user/repos?visibility=all&affiliation=owner,collaborator,organization_member&sort=updated&per_page=100"
-        val (exit, output) = runGitHubCli(
-            listOf(
-                "api",
-                "--paginate",
-                endpoint,
-                "--jq",
-                ".[] | [.full_name, .clone_url, (.private | tostring), .default_branch, .description, .updated_at] | @tsv",
-            ),
-        )
-        check(exit == 0) {
-            output.lineSequence().lastOrNull { it.isNotBlank() }
-                ?: "Could not load GitHub repositories"
-        }
-
-        val repositories = LinkedHashMap<String, GitHubRepository>()
-        output.lineSequence()
-            .filter { it.isNotBlank() }
-            .forEach { line ->
-                val fields = line.split("\t", limit = 6)
-                if (fields.size < 6) return@forEach
-                val fullName = fields[0].trim().takeIf(String::isNotBlank) ?: return@forEach
-                repositories[fullName] = GitHubRepository(
-                    fullName = fullName,
-                    cloneUrl = fields[1].trim().ifBlank { "https://github.com/$fullName.git" },
-                    private = fields[2].trim().equals("true", ignoreCase = true),
-                    defaultBranch = fields[3].trim().ifBlank { "main" },
-                    description = fields[4],
-                    updatedAt = fields[5].trim(),
-                )
-            }
-        return repositories.values.toList()
-    }
-
-    private fun openExternalUrl(url: String) {
-        runCatching {
-            getApplication<Application>().startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }.onFailure {
-            _state.update { state -> state.copy(toastMessage = "Could not open the browser. Copy the URL instead.") }
-        }
-    }
-
-    private fun startGitHubForegroundOperation() {
-        ContextCompat.startForegroundService(
-            getApplication(),
-            Intent(getApplication(), com.jarves.mh.runtime.RuntimeExecutionService::class.java)
-                .setAction(com.jarves.mh.runtime.RuntimeExecutionService.ACTION_START)
-                .putExtra(com.jarves.mh.runtime.RuntimeExecutionService.EXTRA_PROJECT_NAME, "GitHub sign-in")
-                .putExtra(com.jarves.mh.runtime.RuntimeExecutionService.EXTRA_TITLE, "Connecting GitHub")
-                .putExtra(com.jarves.mh.runtime.RuntimeExecutionService.EXTRA_CAN_STOP, false),
-        )
-    }
-
-    private fun stopGitHubForegroundOperation() {
-        runCatching {
-            getApplication<Application>().startService(
-                Intent(getApplication(), com.jarves.mh.runtime.RuntimeExecutionService::class.java)
-                    .setAction(com.jarves.mh.runtime.RuntimeExecutionService.ACTION_CANCELLED),
-            )
-        }.onFailure {
-            getApplication<Application>().stopService(
-                Intent(getApplication(), com.jarves.mh.runtime.RuntimeExecutionService::class.java),
-            )
-        }
-    }
-
+    suspend fun refreshGitHubConnection() =
+        gitHubAuthCoordinator.refreshGitHubConnection()
     fun renameProject(projectId: String, newName: String) {
         val clean = newName.replace(Regex("\\s+"), " ").trim().take(60)
         if (clean.isBlank()) return
@@ -4158,120 +3789,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun runWorkspaceGitCommand(args: List<String>, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val project = _state.value.activeProject ?: return onResult(false, "No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                gitDomainController.executeGit(args, workspace, "/workspace/${project.slug}")
-            }
-            if (!result.success && result.output.isNotBlank()) {
-                _state.update { it.copy(toastMessage = "Git: ${result.output}") }
-            }
-            onResult(result.success, result.output)
-        }
-    }
+    // ---- Milestone 1: workspace Git commands moved to GitCoordinator. ----
+    fun runWorkspaceGitCommand(args: List<String>, onResult: (Boolean, String) -> Unit = { _, _ -> }) =
+        gitCoordinator.runWorkspaceGitCommand(args, onResult)
 
-    fun gitStatus(onResult: (String) -> Unit) {
-        val project = _state.value.activeProject ?: return onResult("No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                gitDomainController.status(workspace, "/workspace/${project.slug}")
-            }
-            onResult(res.output)
-        }
-    }
+    fun gitStatus(onResult: (String) -> Unit) =
+        gitCoordinator.gitStatus(onResult)
 
-    fun gitDiff(onResult: (String) -> Unit) {
-        val project = _state.value.activeProject ?: return onResult("No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                gitDomainController.diff(workspace, "/workspace/${project.slug}")
-            }
-            onResult(res.output)
-        }
-    }
+    fun gitDiff(onResult: (String) -> Unit) =
+        gitCoordinator.gitDiff(onResult)
 
-    fun gitBranchList(onResult: (List<String>) -> Unit) {
-        val project = _state.value.activeProject ?: return onResult(emptyList())
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val branches = withContext(Dispatchers.IO) {
-                gitDomainController.branchList(workspace, "/workspace/${project.slug}")
-            }
-            onResult(branches)
-        }
-    }
+    fun gitBranchList(onResult: (List<String>) -> Unit) =
+        gitCoordinator.gitBranchList(onResult)
 
-    fun gitCheckout(branch: String, createNew: Boolean = false, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val project = _state.value.activeProject ?: return onResult(false, "No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                gitDomainController.checkout(workspace, branch, createNew, "/workspace/${project.slug}")
-            }
-            if (res.success) {
-                _state.update { it.copy(toastMessage = "Checked out $branch") }
-                refreshProjectFiles()
-            } else if (res.output.isNotBlank()) {
-                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
-            }
-            onResult(res.success, res.output)
-        }
-    }
+    fun gitCheckout(branch: String, createNew: Boolean = false, onResult: (Boolean, String) -> Unit = { _, _ -> }) =
+        gitCoordinator.gitCheckout(branch, createNew, onResult)
 
-    fun gitCommit(message: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val project = _state.value.activeProject ?: return onResult(false, "No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                gitDomainController.commit(workspace, message, "/workspace/${project.slug}")
-            }
-            if (res.success) {
-                _state.update { it.copy(toastMessage = "Committed: $message") }
-                refreshProjectFiles()
-            } else if (res.output.isNotBlank()) {
-                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
-            }
-            onResult(res.success, res.output)
-        }
-    }
+    fun gitCommit(message: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) =
+        gitCoordinator.gitCommit(message, onResult)
 
-    fun gitPush(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val project = _state.value.activeProject ?: return onResult(false, "No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                gitDomainController.push(workspace, remote, branch, "/workspace/${project.slug}")
-            }
-            if (res.success) {
-                _state.update { it.copy(toastMessage = "Git push successful") }
-            } else if (res.output.isNotBlank()) {
-                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
-            }
-            onResult(res.success, res.output)
-        }
-    }
+    fun gitPush(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) =
+        gitCoordinator.gitPush(remote, branch, onResult)
 
-    fun gitPull(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val project = _state.value.activeProject ?: return onResult(false, "No active project")
-        val workspace = projectWorkspaceRoot(project)
-        viewModelScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                gitDomainController.pull(workspace, remote, branch, "/workspace/${project.slug}")
-            }
-            if (res.success) {
-                _state.update { it.copy(toastMessage = "Git pull successful") }
-                refreshProjectFiles()
-            } else if (res.output.isNotBlank()) {
-                _state.update { it.copy(toastMessage = "Git: ${res.output}") }
-            }
-            onResult(res.success, res.output)
-        }
-    }
-
+    fun gitPull(remote: String = "origin", branch: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) =
+        gitCoordinator.gitPull(remote, branch, onResult)
     fun scaffoldProjectTemplate(template: com.jarves.mh.workspace.ProjectTemplate) {
         val project = _state.value.activeProject ?: return
         val root = projectWorkspaceRoot(project)
@@ -5872,172 +5413,57 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         targetDirectory: File? = null,
         blueprint: com.jarves.mh.factory.model.AppBlueprint? = _state.value.appFactoryBlueprint
     ) = appFactoryCoordinator.preparePlayStoreListing(targetDirectory, blueprint)
-    fun refreshGitStudio(targetDirectory: File? = null) {
-        val project = _state.value.activeProject
-        val dir = targetDirectory ?: project?.let { projectWorkspaceRoot(it) } ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            val status = gitDomainController.getStatusInfo(dir)
-            val branches = gitDomainController.listBranchesDetailed(dir)
-            val commits = gitDomainController.log(dir, limit = 40)
-            val rawDiff = gitDomainController.rawDiff(dir, staged = false).output
-            val repoFullName = _state.value.githubRepositories.firstOrNull {
-                it.cloneUrl.contains(dir.name, ignoreCase = true) || it.fullName.contains(dir.name, ignoreCase = true)
-            }?.fullName ?: _state.value.githubRepositories.firstOrNull()?.fullName
+    // ---- Milestone 1: Git Studio moved to GitCoordinator. ----
+    fun refreshGitStudio(targetDirectory: File? = null) =
+        gitCoordinator.refreshGitStudio(targetDirectory)
 
-            val issues = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
-                runCatching { gitHubClient.issues("", repoFullName) }.getOrDefault(emptyList())
-            } else emptyList()
+    fun gitStageFile(path: String, targetDirectory: File? = null) =
+        gitCoordinator.gitStageFile(path, targetDirectory)
 
-            val prs = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
-                runCatching { gitHubClient.pullRequests("", repoFullName) }.getOrDefault(emptyList())
-            } else emptyList()
+    fun gitStageAll(targetDirectory: File? = null) =
+        gitCoordinator.gitStageAll(targetDirectory)
 
-            val runs = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
-                runCatching { gitHubClient.listWorkflowRuns("", repoFullName) }.getOrDefault(emptyList())
-            } else emptyList()
+    fun gitUnstageFile(path: String, targetDirectory: File? = null) =
+        gitCoordinator.gitUnstageFile(path, targetDirectory)
 
-            val releases = if (repoFullName != null && preferences.githubLogin.isNotBlank()) {
-                runCatching { gitHubClient.listReleases("", repoFullName) }.getOrDefault(emptyList())
-            } else emptyList()
+    fun gitUnstageAll(targetDirectory: File? = null) =
+        gitCoordinator.gitUnstageAll(targetDirectory)
 
-            _state.update {
-                it.copy(
-                    gitStatusInfo = status,
-                    gitBranches = branches,
-                    gitCommits = commits,
-                    gitRawDiff = rawDiff,
-                    gitConnectedRepo = repoFullName,
-                    gitIssues = issues,
-                    gitPullRequests = prs,
-                    gitWorkflowRuns = runs,
-                    gitReleases = releases
-                )
-            }
-        }
-    }
+    fun gitDiscardFile(path: String, targetDirectory: File? = null) =
+        gitCoordinator.gitDiscardFile(path, targetDirectory)
 
-    fun gitStageFile(path: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        gitDomainController.stageFile(dir, path)
-        refreshGitStudio(dir)
-    }
+    fun gitDiscardAll(targetDirectory: File? = null) =
+        gitCoordinator.gitDiscardAll(targetDirectory)
 
-    fun gitStageAll(targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        gitDomainController.stageAll(dir)
-        refreshGitStudio(dir)
-    }
+    fun gitCommitDetailed(message: String, amend: Boolean = false, signOff: Boolean = false, targetDirectory: File? = null) =
+        gitCoordinator.gitCommitDetailed(message, amend, signOff, targetDirectory)
 
-    fun gitUnstageFile(path: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        gitDomainController.unstageFile(dir, path)
-        refreshGitStudio(dir)
-    }
+    fun gitCreateBranch(name: String, targetDirectory: File? = null) =
+        gitCoordinator.gitCreateBranch(name, targetDirectory)
 
-    fun gitUnstageAll(targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        gitDomainController.unstageAll(dir)
-        refreshGitStudio(dir)
-    }
+    fun gitCheckoutBranch(name: String, targetDirectory: File? = null) =
+        gitCoordinator.gitCheckoutBranch(name, targetDirectory)
 
-    fun gitDiscardFile(path: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        gitDomainController.discardFile(dir, path)
-        refreshGitStudio(dir)
-    }
+    fun gitDeleteBranch(name: String, targetDirectory: File? = null) =
+        gitCoordinator.gitDeleteBranch(name, targetDirectory)
 
-    fun gitDiscardAll(targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        gitDomainController.discardAll(dir)
-        refreshGitStudio(dir)
-    }
+    fun gitMergeBranch(branch: String, targetDirectory: File? = null) =
+        gitCoordinator.gitMergeBranch(branch, targetDirectory)
 
-    fun gitCommitDetailed(message: String, amend: Boolean = false, signOff: Boolean = false, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.commitDetailed(dir, message, amend, signOff)
-        _state.update { it.copy(toastMessage = if (res.success) "Committed successfully" else res.errorMessage ?: "Commit failed") }
-        refreshGitStudio(dir)
-    }
+    fun gitRebaseBranch(upstream: String, targetDirectory: File? = null) =
+        gitCoordinator.gitRebaseBranch(upstream, targetDirectory)
 
-    fun gitCreateBranch(name: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.checkout(dir, name, createNew = true)
-        _state.update { it.copy(toastMessage = if (res.success) "Created branch $name" else res.errorMessage ?: "Failed to create branch") }
-        refreshGitStudio(dir)
-    }
+    fun gitResetBranch(hash: String, mode: com.jarves.mh.git.model.GitResetMode, targetDirectory: File? = null) =
+        gitCoordinator.gitResetBranch(hash, mode, targetDirectory)
+    // ---- Milestone 1: GitHub issues/PRs moved to GitCoordinator. ----
+    fun createGitHubIssue(title: String, body: String = "") =
+        gitCoordinator.createGitHubIssue(title, body)
 
-    fun gitCheckoutBranch(name: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.checkout(dir, name, createNew = false)
-        _state.update { it.copy(toastMessage = if (res.success) "Switched to branch $name" else res.errorMessage ?: "Failed to switch branch") }
-        refreshGitStudio(dir)
-    }
-
-    fun gitDeleteBranch(name: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.deleteBranch(dir, name, force = true)
-        _state.update { it.copy(toastMessage = if (res.success) "Deleted branch $name" else res.errorMessage ?: "Failed to delete branch") }
-        refreshGitStudio(dir)
-    }
-
-    fun gitMergeBranch(branch: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.merge(dir, branch)
-        _state.update { it.copy(toastMessage = if (res.success) "Merged $branch successfully" else res.errorMessage ?: "Merge conflicts or failure") }
-        refreshGitStudio(dir)
-    }
-
-    fun gitRebaseBranch(upstream: String, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.rebase(dir, upstream)
-        _state.update { it.copy(toastMessage = if (res.success) "Rebased onto $upstream" else res.errorMessage ?: "Rebase conflicts or failure") }
-        refreshGitStudio(dir)
-    }
-
-    fun gitResetBranch(hash: String, mode: com.jarves.mh.git.model.GitResetMode, targetDirectory: File? = null) {
-        val dir = targetDirectory ?: _state.value.activeProject?.let { projectWorkspaceRoot(it) } ?: return
-        val res = gitDomainController.reset(dir, hash, mode)
-        _state.update { it.copy(toastMessage = if (res.success) "Reset to $hash (${mode.name})" else res.errorMessage ?: "Reset failed") }
-        refreshGitStudio(dir)
-    }
-
-    fun createGitHubIssue(title: String, body: String = "") {
-        val repo = _state.value.gitConnectedRepo ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val issue = gitHubClient.createIssue("", repo, title, body)
-                _state.update { it.copy(gitIssues = listOf(issue) + it.gitIssues, toastMessage = "Created Issue #${issue.number}") }
-            } catch (e: Exception) {
-                _state.update { it.copy(toastMessage = "Failed to create issue: ${e.message}") }
-            }
-        }
-    }
-
-    fun mergeGitHubPullRequest(prNumber: Int, method: com.jarves.mh.network.PullRequestMergeMethod = com.jarves.mh.network.PullRequestMergeMethod.SQUASH) {
-        val repo = _state.value.gitConnectedRepo ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val result = gitHubClient.mergePullRequest("", repo, prNumber, method = method)
-                _state.update {
-                    it.copy(
-                        toastMessage = if (result.merged) "PR #$prNumber merged successfully!" else "Merge failed: ${result.message}"
-                    )
-                }
-                refreshGitStudio()
-            } catch (e: Exception) {
-                _state.update { it.copy(toastMessage = "Merge failed: ${e.message}") }
-            }
-        }
-    }
-
-    /**
-     * Resolves the GitHub token for API calls from the authenticated GitHub CLI
-     * session. Returns "" when GitHub is not connected. Callers must treat a
-     * blank token as "not configured" and fail fast — never proceed silently.
-     */
+    fun mergeGitHubPullRequest(prNumber: Int, method: com.jarves.mh.network.PullRequestMergeMethod = com.jarves.mh.network.PullRequestMergeMethod.SQUASH) =
+        gitCoordinator.mergeGitHubPullRequest(prNumber, method)
     private fun resolveGitHubToken(): String {
         return try {
-            val (exit, output) = runGitHubCli(listOf("auth", "token"))
+            val (exit, output) = gitHubAuthCoordinator.runGitHubCli(listOf("auth", "token"))
             output.trim().takeIf { exit == 0 && it.isNotBlank() }.orEmpty()
         } catch (e: Exception) {
             AppCrashLogger.log("MainViewModel.resolveGitHubToken: ${e.message}")
@@ -6262,8 +5688,8 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         runCatching {
             projectTerminalProcess?.destroy()
             terminalProcess?.destroy()
-            githubAuthProcess?.destroy()
         }
+        gitHubAuthCoordinator.onCleared()
         if (_state.value.isRunning) {
             sessionManager.recordSessionFailed("App process terminated unexpectedly")
         }
