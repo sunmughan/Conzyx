@@ -1,19 +1,43 @@
 package com.jarves.mh.cloud.runner
 
-import com.jarves.mh.cloud.model.CloudArtifact
+import com.jarves.mh.cloud.model.CloudWorkerSpec
 import com.jarves.mh.cloud.model.ExecutionTarget
 import com.jarves.mh.cloud.model.HybridExecutionJob
 import com.jarves.mh.cloud.model.HybridJobState
-import com.jarves.mh.cloud.model.WorkloadType
-import java.util.UUID
+import com.jarves.mh.core.result.OperationResult
+import com.jarves.mh.core.result.OperationStatus
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Cloud & Local Hybrid Job Execution Runner (Phase 12).
- * Handles dispatching execution to remote cloud endpoints or local PRoot environment,
- * capturing streaming stdout/stderr logs and recovering produced artifacts.
+ * Dispatches execution to remote cloud endpoints or the local PRoot environment.
+ *
+ * Milestone 0 integrity rules:
+ * - The cloud path NEVER claims success without a real remote execution. When no
+ *   reachable worker endpoint is configured, the job returns [HybridJobState.NOT_CONFIGURED]
+ *   with a clear message. All canned logs, hardcoded checksums and hardcoded
+ *   `exitCode = 0` outputs were removed.
+ * - The local fallback runs the job's real [HybridExecutionJob.localCommand] and reports
+ *   the REAL process exit code. A blank command is NOT_CONFIGURED, not success.
+ *
+ * Real remote dispatch (authenticated job API, log streaming, artifact download and
+ * verification) is Milestone 11 work; until then the cloud path honestly reports
+ * NOT_CONFIGURED.
  */
-class CloudJobRunner {
+class CloudJobRunner(
+    /**
+     * Probes whether a worker endpoint is genuinely reachable. Defaults to a real
+     * HTTP health check with a short timeout. Injectable for tests.
+     */
+    private val workerReachability: (CloudWorkerSpec) -> Boolean = ::defaultWorkerReachability,
+    /**
+     * Runs a local shell command and returns its real result. Injectable for tests
+     * and for wiring the PRoot runtime environment.
+     */
+    private val localCommandRunner: (command: String) -> OperationResult = ::defaultLocalCommandRunner,
+) {
 
     private val runningJobs = ConcurrentHashMap<String, Boolean>()
 
@@ -34,107 +58,106 @@ class CloudJobRunner {
         }
 
         val startTime = System.currentTimeMillis()
-        val isCloud = job.routingDecision?.target == ExecutionTarget.CLOUD && job.assignedWorker != null
+        val wantsCloud = job.routingDecision?.target == ExecutionTarget.CLOUD
 
-        if (isCloud) {
-            val worker = job.assignedWorker!!
-            appendLog("[CloudRunner] Dispatched to ${worker.name} (${worker.region}) via ${worker.endpointUrl}")
-            appendLog("[CloudRunner] Uploading workspace delta payload...")
-
+        if (wantsCloud) {
+            val worker = job.assignedWorker
+            if (worker == null) {
+                appendLog("[CloudRunner] No cloud worker assigned for job ${job.title}.")
+                return finishNotConfigured(
+                    job, jobId, logs, startTime,
+                    "No cloud worker is assigned to this job. Cloud execution is not configured."
+                )
+            }
+            appendLog("[CloudRunner] Probing worker ${worker.name} (${worker.region}) at ${worker.endpointUrl} ...")
             if (!isRunning(jobId)) {
                 return job.copy(state = HybridJobState.CANCELLED, finishedAt = System.currentTimeMillis())
             }
-
-            appendLog("[CloudRunner] Remote environment provisioned: ${worker.cpuCores} cores, ${worker.ramGb}GB RAM")
-            appendLog("[CloudRunner] Executing task: ${job.workloadType.displayName}...")
-
-            val artifacts = mutableListOf<CloudArtifact>()
-
-            when (job.workloadType) {
-                WorkloadType.HEAVY_GRADLE_BUILD -> {
-                    appendLog("[Worker] Starting Gradle build on Linux x86_64 runner")
-                    appendLog("[Worker] > Task :app:compileReleaseKotlin UP-TO-DATE")
-                    appendLog("[Worker] > Task :app:packageRelease UP-TO-DATE")
-                    appendLog("[Worker] BUILD SUCCESSFUL. Artifact produced: app-release-unsigned.apk")
-                    artifacts.add(
-                        CloudArtifact(
-                            id = UUID.randomUUID().toString(),
-                            filename = "app-release.apk",
-                            remoteUrl = "${worker.endpointUrl}/artifacts/$jobId/app-release.apk",
-                            sizeBytes = 18_450_200L,
-                            checksumSha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                            artifactType = "APK_BINARY"
-                        )
-                    )
-                }
-                WorkloadType.LARGE_TEST_SUITE -> {
-                    appendLog("[Worker] Executing 420 test assertions across 8 worker threads")
-                    appendLog("[Worker] Test run passed: 420 passing, 0 failing, 0 ignored")
-                    artifacts.add(
-                        CloudArtifact(
-                            id = UUID.randomUUID().toString(),
-                            filename = "test-results.xml",
-                            remoteUrl = "${worker.endpointUrl}/artifacts/$jobId/test-results.xml",
-                            sizeBytes = 145_000L,
-                            checksumSha256 = "cbf529a4d5d117e52bbf81e49758b903ee1782b0b35c3bf72f07714057a0ee6d",
-                            artifactType = "TEST_REPORT"
-                        )
-                    )
-                }
-                WorkloadType.GPU_MODEL_INFERENCE, WorkloadType.AI_CODE_SYNTHESIS -> {
-                    appendLog("[Worker] GPU allocated: NVIDIA L40S 48GB VRAM")
-                    appendLog("[Worker] Token throughput: 88.4 tokens/sec")
-                    appendLog("[Worker] Synthesis completed.")
-                }
-                else -> {
-                    appendLog("[Worker] Executed successfully on cloud node.")
-                }
+            if (!runCatching { workerReachability(worker) }.getOrDefault(false)) {
+                appendLog("[CloudRunner] Worker endpoint is not reachable: ${worker.endpointUrl}")
+                return finishNotConfigured(
+                    job, jobId, logs, startTime,
+                    "No reachable cloud worker endpoint is configured " +
+                        "(tried ${worker.name} at ${worker.endpointUrl}). " +
+                        "Cloud execution is unavailable; configure a real worker API first."
+                )
             }
-
-            val endTime = System.currentTimeMillis()
-            val durationMs = endTime - startTime
-            val durationHours = durationMs.toDouble() / 3_600_000.0
-            val cost = durationHours * worker.costPerHourUsd
-
-            runningJobs.remove(jobId)
-            return job.copy(
-                state = HybridJobState.COMPLETED,
-                outputLogs = logs,
-                producedArtifacts = artifacts,
-                exitCode = 0,
-                finishedAt = endTime,
-                durationMs = durationMs,
-                estimatedCostUsd = (cost * 1000).toLong() / 1000.0
-            )
-        } else {
-            // Local PRoot Execution
-            appendLog("[LocalRunner] Executing task locally on device PRoot environment")
-            appendLog("[LocalRunner] Workload: ${job.title}")
-
-            when (job.workloadType) {
-                WorkloadType.LOCAL_EDIT, WorkloadType.LIGHT_SCRIPT -> {
-                    appendLog("[LocalRunner] Script executed with exit code 0.")
-                }
-                else -> {
-                    appendLog("[LocalRunner] Processing on-device...")
-                    appendLog("[LocalRunner] Completed.")
-                }
-            }
-
-            val endTime = System.currentTimeMillis()
-            val durationMs = endTime - startTime
-
-            runningJobs.remove(jobId)
-            return job.copy(
-                state = HybridJobState.COMPLETED,
-                outputLogs = logs,
-                producedArtifacts = emptyList(),
-                exitCode = 0,
-                finishedAt = endTime,
-                durationMs = durationMs,
-                estimatedCostUsd = 0.0
+            // The endpoint answers, but this build has no job-dispatch protocol
+            // (authenticated API, log streaming, artifact download/verification).
+            // Claiming success here would be a false success, so report honestly.
+            appendLog("[CloudRunner] Worker ${worker.name} is reachable, but no job-dispatch protocol is implemented in this build.")
+            return finishNotConfigured(
+                job, jobId, logs, startTime,
+                "Cloud worker ${worker.name} (${worker.endpointUrl}) is reachable, but this build " +
+                    "implements no remote job dispatch / log streaming / artifact verification protocol. " +
+                    "Cloud execution is not yet available."
             )
         }
+
+        // Local execution: run the real command, report the real exit code.
+        appendLog("[LocalRunner] Executing task locally: ${job.title}")
+        val command = job.localCommand.trim()
+        if (command.isEmpty()) {
+            appendLog("[LocalRunner] No local command was provided for this job.")
+            return finishNotConfigured(
+                job, jobId, logs, startTime,
+                "Local execution requested but the job carries no command to run. Nothing was executed."
+            )
+        }
+        appendLog("[LocalRunner] Running: $command")
+        val result = runCatching { localCommandRunner(command) }
+            .getOrElse { e -> OperationResult.failure("Local command runner crashed: ${e.message}") }
+        result.logs.forEach(::appendLog)
+
+        val endTime = System.currentTimeMillis()
+        runningJobs.remove(jobId)
+        return when (result.status) {
+            OperationStatus.SUCCESS -> job.copy(
+                state = HybridJobState.COMPLETED,
+                outputLogs = logs,
+                exitCode = result.exitCode,
+                finishedAt = endTime,
+                durationMs = endTime - startTime,
+                estimatedCostUsd = 0.0,
+            )
+            OperationStatus.CANCELLED -> job.copy(
+                state = HybridJobState.CANCELLED,
+                outputLogs = logs,
+                exitCode = result.exitCode,
+                finishedAt = endTime,
+                durationMs = endTime - startTime,
+                errorMessage = result.error,
+            )
+            OperationStatus.NOT_CONFIGURED -> finishNotConfigured(
+                job, jobId, logs, startTime, result.error ?: "Local command runner is not configured."
+            )
+            else -> job.copy(
+                state = HybridJobState.FAILED,
+                outputLogs = logs,
+                exitCode = result.exitCode,
+                finishedAt = endTime,
+                durationMs = endTime - startTime,
+                errorMessage = result.error ?: "Local command failed.",
+            )
+        }
+    }
+
+    private fun finishNotConfigured(
+        job: HybridExecutionJob,
+        jobId: String,
+        logs: List<String>,
+        startTime: Long,
+        message: String,
+    ): HybridExecutionJob {
+        val endTime = System.currentTimeMillis()
+        runningJobs.remove(jobId)
+        return job.copy(
+            state = HybridJobState.NOT_CONFIGURED,
+            outputLogs = logs,
+            finishedAt = endTime,
+            durationMs = endTime - startTime,
+            errorMessage = message,
+        )
     }
 
     fun cancel(jobId: String) {
@@ -142,4 +165,63 @@ class CloudJobRunner {
     }
 
     fun isRunning(jobId: String): Boolean = runningJobs[jobId] ?: false
+}
+
+/**
+ * Real reachability probe: HTTP GET against the worker's /health endpoint with a
+ * short timeout. Returns false on any failure. Fictional or dead endpoints
+ * (e.g. the shipped pocketdev.io presets) correctly report unreachable.
+ */
+private fun defaultWorkerReachability(worker: CloudWorkerSpec): Boolean {
+    return try {
+        val url = URL(worker.endpointUrl.trimEnd('/') + "/health")
+        (url.openConnection() as HttpURLConnection).run {
+            connectTimeout = 4000
+            readTimeout = 4000
+            requestMethod = "GET"
+            instanceFollowRedirects = true
+            connect()
+            val code = responseCode
+            disconnect()
+            code in 200..399
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/**
+ * Runs a shell command locally and reports its REAL exit code and output.
+ * Never fabricates success.
+ */
+private fun defaultLocalCommandRunner(command: String): OperationResult {
+    val startedAt = System.currentTimeMillis()
+    return try {
+        val process = ProcessBuilder("sh", "-c", command)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exitCode = process.waitFor()
+        val logs = output.lines().takeLast(200)
+        if (exitCode == 0) {
+            OperationResult.success(
+                exitCode = exitCode,
+                logs = logs,
+                verificationEvidence = "local command exit=0",
+                startedAt = startedAt,
+            )
+        } else {
+            OperationResult.failure(
+                error = "Local command failed with exit code $exitCode.",
+                exitCode = exitCode,
+                logs = logs,
+                startedAt = startedAt,
+            )
+        }
+    } catch (e: Exception) {
+        OperationResult.failure(
+            error = "Local command execution crashed: ${e.message}",
+            startedAt = startedAt,
+        )
+    }
 }

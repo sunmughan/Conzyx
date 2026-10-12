@@ -148,7 +148,9 @@ enum class HybridJobState {
     SYNCING_ARTIFACTS,
     COMPLETED,
     FAILED,
-    CANCELLED
+    CANCELLED,
+    /** No reachable worker endpoint / backend is configured: nothing executed (Milestone 0). */
+    NOT_CONFIGURED
 }
 
 /**
