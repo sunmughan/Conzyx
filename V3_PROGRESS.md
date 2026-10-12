@@ -86,3 +86,25 @@ Statuses: `SUCCESS`, `FAILED`, `CANCELLED`, `NOT_CONFIGURED`, `SIMULATED`. Field
 
 ## Recommended next step
 Milestone 1 (decompose `MainViewModel`) is the report's prescribed next milestone and the highest-leverage one: every later milestone touches that file, and its current size makes further work error-prone. It is also the riskiest (large refactor, no local build to verify) — best done with an Android build environment available.
+
+## Milestone 1 — COMPLETE (2026-10-12)
+
+**MainViewModel decomposed:** 6,880 → 4,590 lines. 15 domain coordinators extracted to `app/src/main/java/com/jarves/mh/ui/coordinators/`:
+- Marketplace, Team, Cloud, Collaboration, Visual, Security, MCP, Skills, AppFactory, Git, GitHubAuth (`github/`), Terminal, Projects, Editor, Runtime
+- Public API preserved via one-line delegates; `CoordinatorHost` pattern (no `_state`/`viewModelScope` in coordinators)
+- **PocketDevNavigator** (`ui/navigation/`): 5 overlay flags → `navigator.openX()/closeOverlay()`, 24 call sites migrated
+
+**Tests added (39 total):**
+- `RuntimeRecoveryMatrixTest` (19 tests): install interruption at each stage, rootfs integrity, checkpoint failures, out-of-storage, workspace corruption
+- `WorkspaceTransactionTest` (9 tests): atomic writes, rollback, checkpoint integrity
+- `ResourceBudgetsTest` (11 tests): storage/RAM/file-count/size violations, boundary conditions
+
+**Profiling/limits:** `core/resources/ResourceBudgets.kt` + `AndroidResourceProbe.kt`; non-blocking `ResourceGate` warning wired into `bootstrap()`
+
+**Deliberately left in MainViewModel:**
+- `buildAndRunAndroidApp` (runtime-health orchestration)
+- `startAutonomousIssueWorkflow`, `runAgentPromptAwaitingResult`, `runRealGradleBuildAndTest` (M0-hardened, agent-core — Milestone 6/10)
+- Import functions (`createProject`, `importZipProject`, etc.) — depend on `detectImportedProjectMetadata`/`configureBridgeRoots`
+- Agent binary functions, Antigravity auth functions
+
+**Deviations:** `.github/workflows/android.yml` untouched per user order (CI locked, no uploads until all milestones done). Fault-injection tests run under existing CI unit-test step.
