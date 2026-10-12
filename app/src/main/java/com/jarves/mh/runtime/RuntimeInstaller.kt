@@ -2631,8 +2631,8 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         require(
             relative.isNotBlank() &&
                 !relative.startsWith('/') &&
-                !relative.startsWith('\\\\') &&
-                !relative.contains('\\\\'),
+                !relative.startsWith('\\') &&
+                !relative.contains('\\'),
         ) { "Unsafe archive path" }
         val segments = relative.split('/')
         require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe archive path" }
