@@ -27,6 +27,9 @@ data class WorkspaceCheckpoint(
 }
 
 class WorkspaceCheckpointManager(private val filesDir: File) {
+    private companion object {
+        const val STALE_STAGING_MAX_AGE_MS = 24L * 60L * 60L * 1000L
+    }
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -90,6 +93,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             check(workspaceDir.isDirectory) { "Workspace is unavailable" }
             val id = "ckpt_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
             val checkpointsDir = checkpointsBaseDir(projectId)
+            cleanupStaleCheckpointStaging(checkpointsDir)
             val checkpointDir = File(checkpointsDir, id)
             val stagingDir = File(checkpointsDir, ".${id}.staging_${UUID.randomUUID()}")
             pendingCheckpointDir = stagingDir
@@ -186,6 +190,20 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             AppCrashLogger.log("Failed to create checkpoint: ${it.message}")
             null
         }
+    }
+
+    private fun cleanupStaleCheckpointStaging(directory: File) {
+        val cutoff = System.currentTimeMillis() - STALE_STAGING_MAX_AGE_MS
+        directory.listFiles().orEmpty()
+            .filter { file ->
+                file.isDirectory &&
+                    file.name.startsWith(".ckpt_") &&
+                    file.name.contains(".staging_") &&
+                    file.lastModified() < cutoff
+            }
+            .forEach { stale ->
+                runCatching { stale.deleteRecursively() }
+            }
     }
 
     /**
