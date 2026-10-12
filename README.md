@@ -267,7 +267,7 @@ The project uses Firebase for authentication, team collaboration (Firestore), an
 3. Download `google-services.json` and place it at **`app/google-services.json`** (this exact path; the `com.google.gms.google-services` Gradle plugin reads it from there).
 4. The plugin is already applied in `app/build.gradle.kts`; no further Gradle changes are needed.
 
-The repository ships with a `google-services.json` for the `codeair-tech` Firebase project. Replace it with your own file to point the app at your project.
+The repository ships with a `google-services.json` for the `codeair-apps` Firebase project. Replace it with your own file to point the app at your project.
 
 ### Firebase Auth
 
