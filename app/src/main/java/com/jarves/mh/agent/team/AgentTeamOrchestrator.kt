@@ -21,8 +21,13 @@ import com.jarves.mh.agent.team.model.TeamTask
 import com.jarves.mh.agent.team.model.TeamTaskPriority
 import com.jarves.mh.agent.team.model.TeamTaskStatus
 import com.jarves.mh.agent.team.review.TeamReviewGatekeeper
+import com.jarves.mh.agent.team.runtime.ConcurrentTeamDispatcher
+import com.jarves.mh.agent.team.runtime.TeamAgentExecutor
+import com.jarves.mh.agent.team.runtime.TeamRoleValidator
+import com.jarves.mh.agent.team.runtime.TeamRunReport
 import com.jarves.mh.agent.team.scheduler.TeamTaskScheduler
 import com.jarves.mh.model.AgentKind
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,9 +65,25 @@ class AgentTeamOrchestrator(
      * Demo mode (default true): tasks are SIMULATED, not executed by real agents.
      * Simulated artifacts, reviews and approvals are explicitly labelled and can
      * never count as real test/security approval. Set to false only when every
-     * role is wired to a real agent executor (Milestone 10).
+     * role is wired to a real agent executor (Milestone 10) — [requireRealExecution]
+     * enforces this: real mode without an executor fails loudly instead of
+     * silently simulating.
      */
-    val isDemoMode: Boolean = true
+    val isDemoMode: Boolean = true,
+    /**
+     * Real per-role agent executor (Milestone 10). Null means no real execution
+     * backend is wired; [isDemoMode] must then stay true.
+     */
+    val teamExecutor: TeamAgentExecutor? = null,
+    /**
+     * Real test/security validator used in real mode. Defaults to the genuine
+     * Gradle + heuristic-scan implementation.
+     */
+    val teamValidator: TeamRoleValidator = TeamRoleValidator(),
+    /** Project directory the real agents work in; null when no project is bound. */
+    val projectDir: File? = null,
+    /** Upper bound on concurrently executing agents in real mode. */
+    val maxConcurrentAgents: Int = 3,
 ) {
 
     private val _sessionState = MutableStateFlow(TeamSessionState())
@@ -70,6 +91,42 @@ class AgentTeamOrchestrator(
 
     private val roleInstances = ConcurrentHashMap<TeamRole, AgentKind>()
     private val roleConfigs = ConcurrentHashMap<TeamRole, TeamRoleConfig>()
+
+    /**
+     * Lazily-built real dispatcher (Milestone 10). Null until a [teamExecutor]
+     * is wired; [requireRealExecution] guarantees real mode never runs without it.
+     */
+    private val realDispatcher: ConcurrentTeamDispatcher? by lazy {
+        val executor = teamExecutor ?: return@lazy null
+        ConcurrentTeamDispatcher(
+            scheduler = scheduler,
+            blackboard = blackboard,
+            commBus = commBus,
+            gatekeeper = gatekeeper,
+            budgetTracker = budgetTracker,
+            executor = executor,
+            validator = teamValidator,
+            roleConfigs = roleConfigs.toMap(),
+            roleAgents = roleInstances.toMap(),
+            projectDir = projectDir,
+            goal = _sessionState.value.activeGoal,
+            maxConcurrentAgents = maxConcurrentAgents,
+        )
+    }
+
+    /**
+     * Enforces the Milestone 10 contract: real mode ([isDemoMode] = false) is
+     * only legal when a real [TeamAgentExecutor] is wired. Fails loudly instead
+     * of silently simulating.
+     */
+    fun requireRealExecution() {
+        if (!isDemoMode && teamExecutor == null) {
+            throw IllegalStateException(
+                "Real multi-agent mode requires a TeamAgentExecutor: isDemoMode=false was set " +
+                    "without wiring teamExecutor. Pass a real executor or keep isDemoMode=true."
+            )
+        }
+    }
 
     init {
         // Register default agent engines and configurations for all 10 roles
@@ -257,11 +314,22 @@ class AgentTeamOrchestrator(
     /**
      * Executes (or, in demo mode, simulates) the next ready task in the DAG.
      *
+     * This is the demo-mode stepping API. In real mode ([isDemoMode] = false)
+     * it refuses to run: silent simulation would violate the integrity
+     * contract, so callers must use the suspend [executeNextReadyTask] or
+     * [autoRunAllReal] instead.
+     *
      * In demo mode ([isDemoMode] = true, the default) no real agent executes:
      * artifacts and reviews are labelled SIMULATED and simulated reviews are never
      * submitted as approvals to the review gatekeeper.
      */
     fun runNextReadyTask(): TeamTask? {
+        if (!isDemoMode) {
+            throw IllegalStateException(
+                "runNextReadyTask() is the demo-mode stepping API; in real mode use the suspend " +
+                    "executeNextReadyTask() or autoRunAllReal() instead."
+            )
+        }
         if (budgetTracker.isQuotaExceeded()) {
             commBus.escalateToManager(
                 fromRole = TeamRole.MANAGER,
@@ -405,6 +473,62 @@ class AgentTeamOrchestrator(
 
         syncState()
         return task
+    }
+
+    /**
+     * Executes the next READY task through the real agent runtime (Milestone 10).
+     *
+     * The task genuinely executes via [teamExecutor]: real output, genuine
+     * artifacts on the blackboard, real validation + review records for
+     * TESTER/SECURITY_REVIEWER/CODE_REVIEWER roles, and handoff messages to
+     * dependents. Failed tasks are marked FAILED (dependents block via the
+     * scheduler) — never silently completed.
+     */
+    suspend fun executeNextReadyTask(): TeamTask? {
+        requireRealExecution()
+        val dispatcher = realDispatcher
+            ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
+        if (budgetTracker.isQuotaExceeded()) {
+            commBus.escalateToManager(
+                fromRole = TeamRole.MANAGER,
+                reason = "Token quota exceeded (${budgetTracker.getBudgetSummary().totalTokensUsed} tokens). Halting team execution."
+            )
+            _sessionState.value = _sessionState.value.copy(isRunning = false)
+            return null
+        }
+
+        val readyTasks = scheduler.getReadyTasks()
+        if (readyTasks.isEmpty()) {
+            if (scheduler.isAllCompleted()) {
+                _sessionState.value = _sessionState.value.copy(isRunning = false, activeRole = null)
+            }
+            return null
+        }
+
+        val task = readyTasks.first()
+        _sessionState.value = _sessionState.value.copy(activeRole = task.assignedRole)
+        dispatcher.runReadyTask(task)
+        syncState()
+        return scheduler.getTask(task.id)
+    }
+
+    /**
+     * Runs the whole task DAG through the real runtime with safe concurrent
+     * stage dispatch (Milestone 10). Returns the aggregated [TeamRunReport].
+     */
+    suspend fun autoRunAllReal(): TeamRunReport {
+        requireRealExecution()
+        val dispatcher = realDispatcher
+            ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
+        val report = dispatcher.runAll()
+        syncState()
+        return report
+    }
+
+    /** Requests cancellation of a real run; in-flight agent runs finish rather than being killed. */
+    fun cancelRealRun() {
+        realDispatcher?.cancel()
+        _sessionState.value = _sessionState.value.copy(isRunning = false, activeRole = null)
     }
 
     /**
