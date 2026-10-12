@@ -100,6 +100,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
+import com.jarves.mh.ui.coordinators.isClaudeRuntimeMetadata
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -740,6 +741,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             terminalSessionController = terminalSessionController,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             refreshProjectFiles = { refreshProjectFiles() },
+        )
+    private val projectsCoordinator =
+        com.jarves.mh.ui.coordinators.ProjectsCoordinator(
+            host = coordinatorHost,
+            preferences = preferences,
+            projectWorkspaceController = projectWorkspaceController,
+            fileOperationsController = fileOperationsController,
+            editorCheckpoints = editorCheckpoints,
+            checkpointManager = checkpointManager,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
+            openProject = { project -> openProject(project) },
+            refreshProjectFiles = { refreshProjectFiles() },
+        )
+    private val editorCoordinator =
+        com.jarves.mh.ui.coordinators.EditorCoordinator(
+            host = coordinatorHost,
+            preferences = preferences,
+            fileOperationsController = fileOperationsController,
+            editorCheckpoints = editorCheckpoints,
+            workspaceRootFor = { project -> projectWorkspaceRoot(project) },
         )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
@@ -2438,26 +2459,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshProjectFiles()
     }
 
-    fun createQuickProject() {
-        if (_state.value.isRunning || _state.value.projectTerminalRunning) {
-            _state.update { it.copy(toastMessage = "Stop the background task before creating another project") }
-            return
-        }
-        val identity = generateQuickChatIdentity(_state.value.projects.mapTo(mutableSetOf()) { it.slug })
-        val project = Project(
-            name = identity.displayName,
-            description = "Quick project workspace",
-            language = "General",
-            slug = identity.slug,
-            kind = ProjectKind.QUICK_PROJECT,
-        )
-        val firstChat = ProjectChat(title = "New chat")
-        File(getApplication<Application>().filesDir, "workspaces/${project.id}").mkdirs()
-        preferences.saveProjectChats(project.id, listOf(firstChat))
-        _state.update { it.copy(projects = listOf(project) + it.projects) }
-        preferences.saveProjects(_state.value.projects)
-        openProject(project)
-    }
+    // ---- Milestone 1: project lifecycle moved to ProjectsCoordinator. ----
+    fun createQuickProject() =
+        projectsCoordinator.createQuickProject()
 
     fun importZipProject(uri: Uri) {
         if (_state.value.projectImporting || _state.value.isRunning || _state.value.projectTerminalRunning) return
@@ -2815,20 +2819,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun refreshGitHubConnection() =
         gitHubAuthCoordinator.refreshGitHubConnection()
-    fun renameProject(projectId: String, newName: String) {
-        val clean = newName.replace(Regex("\\s+"), " ").trim().take(60)
-        if (clean.isBlank()) return
-        _state.update { current ->
-            val projects = current.projects.map { project ->
-                if (project.id == projectId) project.copy(name = clean) else project
-            }
-            val active = current.activeProject?.let { project ->
-                if (project.id == projectId) project.copy(name = clean) else project
-            }
-            current.copy(projects = projects, activeProject = active)
-        }
-        preferences.saveProjects(_state.value.projects)
-    }
+    fun renameProject(projectId: String, newName: String) =
+        projectsCoordinator.renameProject(projectId, newName)
 
     fun deleteProject(projectId: String) {
         val project = _state.value.projects.firstOrNull { it.id == projectId } ?: return
@@ -3162,100 +3154,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun openFile(entry: WorkspaceEntry) {
-        if (entry.isDirectory) return
-        openFileByPath(entry.path)
-    }
+    // ---- Milestone 1: editor state machine moved to EditorCoordinator. ----
+    fun openFile(entry: WorkspaceEntry) =
+        editorCoordinator.openFile(entry)
 
-    fun openFileByPath(path: String) {
-        val project = _state.value.activeProject ?: return
-        val currentTabs = _state.value.openEditorTabs
-        val updatedTabs = if (path in currentTabs) currentTabs else currentTabs + path
-        preferences.setOpenEditorTabs(project.id, updatedTabs)
-        _state.update {
-            it.copy(
-                openEditorTabs = updatedTabs,
-                openedFilePath = path,
-                openedFileContent = null,
-                fileContentLoading = true,
-            )
-        }
-        loadFileContent(project, path)
-    }
+    fun openFileByPath(path: String) =
+        editorCoordinator.openFileByPath(path)
 
-    fun selectEditorTab(path: String) {
-        if (_state.value.openedFilePath == path) return
-        val project = _state.value.activeProject ?: return
-        _state.update {
-            it.copy(
-                openedFilePath = path,
-                openedFileContent = null,
-                fileContentLoading = true,
-            )
-        }
-        loadFileContent(project, path)
-    }
+    fun selectEditorTab(path: String) =
+        editorCoordinator.selectEditorTab(path)
 
-    fun closeEditorTab(path: String) {
-        val project = _state.value.activeProject ?: return
-        val currentTabs = _state.value.openEditorTabs
-        val updatedTabs = currentTabs.filter { it != path }
-        preferences.setOpenEditorTabs(project.id, updatedTabs)
-        if (_state.value.openedFilePath == path) {
-            val nextPath = updatedTabs.lastOrNull()
-            if (nextPath != null) {
-                _state.update {
-                    it.copy(
-                        openEditorTabs = updatedTabs,
-                        openedFilePath = nextPath,
-                        openedFileContent = null,
-                        fileContentLoading = true,
-                    )
-                }
-                loadFileContent(project, nextPath)
-            } else {
-                _state.update {
-                    it.copy(
-                        openEditorTabs = emptyList(),
-                        openedFilePath = null,
-                        openedFileContent = null,
-                        fileContentLoading = false,
-                    )
-                }
-            }
-        } else {
-            _state.update { it.copy(openEditorTabs = updatedTabs) }
-        }
-    }
+    fun closeEditorTab(path: String) =
+        editorCoordinator.closeEditorTab(path)
 
-    fun closeOtherEditorTabs(keepPath: String) {
-        val project = _state.value.activeProject ?: return
-        val updatedTabs = listOf(keepPath)
-        preferences.setOpenEditorTabs(project.id, updatedTabs)
-        if (_state.value.openedFilePath != keepPath) {
-            selectEditorTab(keepPath)
-        }
-        _state.update { it.copy(openEditorTabs = updatedTabs) }
-    }
+    fun closeOtherEditorTabs(keepPath: String) =
+        editorCoordinator.closeOtherEditorTabs(keepPath)
 
-    fun closeAllEditorTabs() {
-        val project = _state.value.activeProject
-        if (project != null) {
-            preferences.setOpenEditorTabs(project.id, emptyList())
-        }
-        _state.update {
-            it.copy(
-                openEditorTabs = emptyList(),
-                openedFilePath = null,
-                openedFileContent = null,
-                fileContentLoading = false,
-            )
-        }
-    }
+    fun closeAllEditorTabs() =
+        editorCoordinator.closeAllEditorTabs()
 
-    fun closeFile() {
-        closeAllEditorTabs()
-    }
+    fun closeFile() =
+        editorCoordinator.closeFile()
 
     fun createFile(relativePath: String, initialContent: String = "") {
         val project = _state.value.activeProject ?: return
@@ -3417,90 +3336,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Changes tab can Undo/Keep the edit using the same durable mechanism as
      * agent-generated changes.
      */
-    suspend fun saveFile(path: String, content: String): Boolean {
-        val current = _state.value
-        val project = current.activeProject ?: return false
-        if (current.isRunning || current.projectTerminalRunning) {
-            _state.update { it.copy(toastMessage = "Stop the running task before editing files") }
-            return false
-        }
-        if (path.isBlank() || path.startsWith('/') || editorCheckpoints.isInternalRuntimePath(path)) {
-            _state.update { it.copy(toastMessage = "This workspace path cannot be edited") }
-            return false
-        }
-        if (path.split('/').any { it == ".." || it.isBlank() }) {
-            _state.update { it.copy(toastMessage = "Unsafe workspace path") }
-            return false
-        }
-        if (content.length > MAX_EDITABLE_FILE_CHARS) {
-            _state.update { it.copy(toastMessage = "This file is too large to edit safely in the mobile editor") }
-            return false
-        }
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val workspace = projectWorkspaceRoot(project).canonicalFile
-                val rootPath = workspace.toPath()
-                val target = File(workspace, path).canonicalFile
-                require(target.parentFile?.canonicalFile?.toPath()?.startsWith(rootPath) == true) { "Workspace path escapes project" }
-                val existing = target.takeIf(File::isFile)
-                if (existing != null && existing.length() > MAX_EDITABLE_FILE_CHARS) {
-                    error("This file is too large to edit safely in the mobile editor")
-                }
-                if (existing != null && existing.readText() == content) return@runCatching Unit
-
-                editorCheckpoints.createCheckpoint(project.id, workspace)
-                target.parentFile?.mkdirs()
-                val temporary = File(
-                    target.parentFile,
-                    ".${target.name}.mh-edit-${UUID.randomUUID()}.tmp",
-                )
-                try {
-                    temporary.writeText(content)
-                    runCatching {
-                        Files.move(
-                            temporary.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        )
-                    }.getOrElse {
-                        Files.move(
-                            temporary.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        )
-                    }
-                } finally {
-                    temporary.delete()
-                }
-                editorCheckpoints.saveChangedPaths(project.id, listOf(path))
-            }
-        }
-        return result.fold(
-            onSuccess = {
-                val workspace = projectWorkspaceRoot(project)
-                val pendingPaths = editorCheckpoints.readChangedPaths(project.id)
-                val changes = editorCheckpoints.buildChangeDetails(project.id, workspace, pendingPaths)
-                _state.update { state ->
-                    state.copy(
-                        openedFileContent = content,
-                        changes = changes,
-                        toastMessage = "Saved " + path,
-                        workspaceFiles = state.workspaceFiles.map { entry ->
-                            if (entry.path == path) entry.copy(
-                                sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
-                            ) else entry
-                        },
-                    )
-                }
-                true
-            },
-            onFailure = { error ->
-                _state.update { it.copy(toastMessage = error.message ?: "Could not save " + path) }
-                false
-            },
-        )
-    }
+    suspend fun saveFile(path: String, content: String): Boolean =
+        editorCoordinator.saveFile(path, content)
 
     private fun readWorkspace(project: Project): List<WorkspaceEntry> {
         val root = projectWorkspaceRoot(project)
@@ -3537,11 +3374,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .toList()
     }
 
-    private fun isClaudeRuntimeMetadata(relativePath: String): Boolean {
-        return relativePath == ".claude" ||
-            relativePath == ".claude.json" ||
-            relativePath.startsWith(".claude/")
-    }
+    // Milestone 1: shared with EditorCoordinator — see coordinators package.
 
     private fun isExportExcludedPath(relativePath: String): Boolean {
         val excludedNames = setOf(
@@ -4802,83 +4635,23 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         }
     }
 
-    fun createWorkspaceCheckpoint(label: String): com.jarves.mh.workspace.WorkspaceCheckpoint? {
-        val project = _state.value.activeProject ?: return null
-        val workspace = projectWorkspaceRoot(project)
-        val ckpt = checkpointManager.createCheckpoint(project.id, workspace, label)
-        if (ckpt != null) {
-            _state.update { it.copy(toastMessage = "Checkpoint created: ${ckpt.label}") }
-        }
-        return ckpt
-    }
+    fun createWorkspaceCheckpoint(label: String): com.jarves.mh.workspace.WorkspaceCheckpoint? =
+        projectsCoordinator.createWorkspaceCheckpoint(label)
 
-    fun rollbackWorkspaceCheckpoint(checkpointId: String): Boolean {
-        val project = _state.value.activeProject ?: return false
-        val workspace = projectWorkspaceRoot(project)
-        val ok = checkpointManager.rollbackToCheckpoint(project.id, checkpointId, workspace)
-        if (ok) {
-            refreshProjectFiles()
-            _state.update { it.copy(toastMessage = "Rolled back to checkpoint") }
-        } else {
-            _state.update { it.copy(toastMessage = "Rollback failed") }
-        }
-        return ok
-    }
+    fun rollbackWorkspaceCheckpoint(checkpointId: String): Boolean =
+        projectsCoordinator.rollbackWorkspaceCheckpoint(checkpointId)
 
-    fun listWorkspaceCheckpoints(): List<com.jarves.mh.workspace.WorkspaceCheckpoint> {
-        val project = _state.value.activeProject ?: return emptyList()
-        return checkpointManager.listCheckpoints(project.id)
-    }
+    fun listWorkspaceCheckpoints(): List<com.jarves.mh.workspace.WorkspaceCheckpoint> =
+        projectsCoordinator.listWorkspaceCheckpoints()
 
-    fun backupAllWorkspaces(): Int {
-        val app = getApplication<Application>()
-        val externalDir = app.getExternalFilesDir("backups") ?: File(app.filesDir, "backups")
-        val count = checkpointManager.backupAllWorkspaces(externalDir)
-        if (count > 0) {
-            _state.update { it.copy(toastMessage = "Backed up $count projects to external storage") }
-        } else {
-            _state.update { it.copy(toastMessage = "No projects to backup") }
-        }
-        return count
-    }
+    fun backupAllWorkspaces(): Int =
+        projectsCoordinator.backupAllWorkspaces()
 
-    fun restoreAllWorkspaces(): Int {
-        val app = getApplication<Application>()
-        val externalDir = app.getExternalFilesDir("backups") ?: File(app.filesDir, "backups")
-        var count = checkpointManager.restoreAllWorkspaces(externalDir)
-        if (count == 0) {
-            // Migration fallback: check legacy package backups directory if current path has no backups
-            val legacyExternalDir = File("/storage/emulated/0/Android/data/com.jarves.mh/files/backups")
-            if (legacyExternalDir.isDirectory) {
-                count = checkpointManager.restoreAllWorkspaces(legacyExternalDir)
-            }
-        }
-        if (count > 0) {
-            reloadProjects()
-            _state.update { it.copy(toastMessage = "Restored $count projects from backup") }
-        } else {
-            _state.update { it.copy(toastMessage = "No backup projects found") }
-        }
-        return count
-    }
+    fun restoreAllWorkspaces(): Int =
+        projectsCoordinator.restoreAllWorkspaces()
 
-    fun reloadProjects() {
-        val loaded = preferences.loadProjects().toMutableList()
-        val loadedIds = loaded.map { it.id }.toSet()
-        val workspacesDir = File(getApplication<Application>().filesDir, "workspaces")
-        workspacesDir.listFiles()?.filter { it.isDirectory && it.name !in loadedIds }?.forEach { dir ->
-            val p = Project(
-                id = dir.name,
-                name = dir.name.replace('-', ' ').replaceFirstChar { it.uppercase() },
-                description = "Restored workspace",
-                language = "General",
-                slug = projectSlug(dir.name),
-            )
-            loaded.add(p)
-        }
-        preferences.saveProjects(loaded)
-        _state.update { it.copy(projects = loaded) }
-    }
+    fun reloadProjects() =
+        projectsCoordinator.reloadProjects()
 
     fun runAutonomousVerification() {
         val project = _state.value.activeProject ?: return

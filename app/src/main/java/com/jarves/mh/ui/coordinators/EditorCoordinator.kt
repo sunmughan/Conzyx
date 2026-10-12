@@ -295,3 +295,15 @@ class EditorCoordinator(
             .toList()
     }
 }
+
+/**
+ * Shared workspace-metadata predicate (Milestone 1).
+ *
+ * Identical logic to the former `MainViewModel.isClaudeRuntimeMetadata`
+ * private helper; promoted to package-internal so both the coordinator and
+ * the ViewModel (e.g. `refreshProjectFiles`) share one definition.
+ */
+internal fun isClaudeRuntimeMetadata(relativePath: String): Boolean =
+    relativePath == ".claude" ||
+        relativePath == ".claude.json" ||
+        relativePath.startsWith(".claude/")
