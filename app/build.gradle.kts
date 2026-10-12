@@ -233,8 +233,9 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
-    // FCM messaging is enabled for online builds
-    add("onlineImplementation", "com.google.firebase:firebase-messaging")
+    // FCM messaging is shared across both online and offline builds so the
+    // messaging service and token registration compile in every variant.
+    implementation("com.google.firebase:firebase-messaging")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
