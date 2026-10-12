@@ -222,6 +222,26 @@ class WorkspaceCheckpointManagerTest {
     }
 
     @Test
+    fun `rollback cleanup does not traverse symlinked directories added after checkpoint`() {
+        val filesDir = tempFolder.newFolder("symlink-cleanup-files")
+        val workspace = tempFolder.newFolder("symlink-cleanup-workspace")
+        val original = File(workspace, "original.txt").apply { writeText("baseline") }
+        val outside = tempFolder.newFolder("symlink-cleanup-outside")
+        val outsideFile = File(outside, "keep.txt").apply { writeText("outside data") }
+
+        val manager = WorkspaceCheckpointManager(filesDir)
+        val checkpoint = manager.createCheckpoint("symlink-cleanup", workspace, "baseline")
+        assertNotNull(checkpoint)
+
+        original.writeText("changed")
+        java.nio.file.Files.createSymbolicLink(File(workspace, "linked-outside").toPath(), outside.toPath())
+
+        assertTrue(manager.rollbackToCheckpoint("symlink-cleanup", checkpoint!!.id, workspace))
+        assertEquals("baseline", original.readText())
+        assertEquals("outside data", outsideFile.readText())
+    }
+
+    @Test
     fun `failed checkpoint creation leaves no partial snapshot behind`() {
         val filesDir = tempFolder.newFolder("failed-checkpoint-files")
         val manager = WorkspaceCheckpointManager(filesDir)
