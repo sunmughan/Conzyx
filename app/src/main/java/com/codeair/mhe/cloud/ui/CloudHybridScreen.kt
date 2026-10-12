@@ -322,7 +322,7 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = "Quick Task Benchmark Trigger",
+                    text = "Test run: watch a task route between phone and cloud",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface

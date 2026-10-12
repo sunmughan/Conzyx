@@ -998,7 +998,7 @@ fun PreviewTab(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "Standalone Systems & Tools",
+                                text = "Self-hosted tools",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.5.sp,
                                 color = MaterialTheme.colorScheme.onSurface,

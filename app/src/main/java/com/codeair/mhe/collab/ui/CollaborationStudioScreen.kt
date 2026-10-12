@@ -599,7 +599,7 @@ private fun TeamRbacTabContent(
         val members = session?.members ?: emptyList()
         if (members.isEmpty()) {
             item {
-                Text("No team members in active session.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No one's here yet. Invite a teammate to review code together.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             items(members) { member ->
