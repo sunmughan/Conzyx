@@ -10,8 +10,8 @@ import org.junit.Test
  */
 class PythonParserTest {
 
-    private val sample = '''
-        """Module docstring."""
+    private val sample = """
+        # Module docstring.
 
         import os
         import sys as system
@@ -21,7 +21,7 @@ class PythonParserTest {
         CONSTANT = 42
 
         class Calculator(BaseCalculator):
-            """A simple calculator."""
+            "A simple calculator."
 
             def __init__(self, brand: str):
                 self.brand = brand
@@ -43,7 +43,7 @@ class PythonParserTest {
 
         async def fetch_rate() -> float:
             return 1.0
-    '''.trimIndent()
+    """.trimIndent()
 
     @Test
     fun `parses imports with as aliases and from forms`() {
