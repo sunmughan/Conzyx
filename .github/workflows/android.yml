@@ -312,6 +312,10 @@ jobs:
 
       - name: Verify in-place update on Android emulator
         continue-on-error: true
+        # Bound the emulator step: it must never hang the whole job. On
+        # timeout/failure the build continues (continue-on-error) and the
+        # APK artifacts are still uploaded.
+        timeout-minutes: 20
         uses: reactivecircus/android-emulator-runner@v2
         env:
           GH_TOKEN: ${{ github.token }}
