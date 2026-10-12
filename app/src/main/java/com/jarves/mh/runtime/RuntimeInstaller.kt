@@ -637,9 +637,13 @@ class RuntimeInstaller(private val context: Context) {
                     check(target.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
                         "Could not create rollback target directory"
                     }
-                    // Revalidate after creating parents to catch symlink substitution.
+                    // Revalidate after creating parents to catch symlink substitution,
+                    // then publish the restored file atomically so a failed write cannot truncate it.
                     val safeTarget = safeRootfsChild(root, entry.name)
-                    FileOutputStream(safeTarget).use { zip.copyTo(it) }
+                    val restoredBytes = zip.readBytes()
+                    check(SafeFileOps.atomicWriteBytes(safeTarget, restoredBytes)) {
+                        "Could not safely restore ${entry.name}"
+                    }
                 }
                 entry = zip.nextEntry
             }
@@ -1729,7 +1733,7 @@ class RuntimeInstaller(private val context: Context) {
         ZipInputStream(BufferedInputStream(archive.inputStream())).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
-                val name = entry.name.removePrefix("./").trimStart('/')
+                val name = entry.name.removePrefix("./")
                 if (name.isNotBlank()) {
                     val target = safeChild(destination, name)
                     if (entry.isDirectory) {
@@ -2624,12 +2628,25 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
     }
 
     private fun safeChild(root: File, relative: String): File {
-        require(relative.isNotBlank() && !relative.startsWith('/')) { "Unsafe archive path" }
-        val file = File(root, relative)
-        val rootPath = root.canonicalFile.toPath()
-        val parentPath = (file.parentFile ?: root).canonicalFile.toPath()
-        require(parentPath.startsWith(rootPath)) { "Archive path escapes runtime" }
-        return file
+        require(
+            relative.isNotBlank() &&
+                !relative.startsWith('/') &&
+                !relative.startsWith('\\\\') &&
+                !relative.contains('\\\\'),
+        ) { "Unsafe archive path" }
+        val segments = relative.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe archive path" }
+        val canonicalRoot = root.canonicalFile
+        val rootPath = canonicalRoot.toPath()
+        var target = canonicalRoot
+        for (segment in segments) {
+            target = File(target, segment)
+            require(!java.nio.file.Files.isSymbolicLink(target.toPath())) {
+                "Archive path traverses a symbolic link"
+            }
+        }
+        require(target.canonicalFile.toPath().startsWith(rootPath)) { "Archive path escapes runtime" }
+        return target
     }
 
     private suspend fun downloadVerified(
