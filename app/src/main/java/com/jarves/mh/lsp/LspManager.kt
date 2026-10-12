@@ -87,7 +87,10 @@ class LspManager(
                 isRunning = true,
                 isRealServer = true,
                 isBuiltInFallback = false,
-                pid = process.pid(),
+                // Process.pid() is not in the compile SDK's android.jar; resolve reflectively.
+                pid = runCatching {
+                    Process::class.java.getMethod("pid").invoke(process) as? Long
+                }.getOrNull(),
             )
             true
         } catch (e: Exception) {
