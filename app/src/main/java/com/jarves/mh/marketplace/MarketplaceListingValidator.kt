@@ -1,5 +1,8 @@
 package com.jarves.mh.marketplace
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 /**
  * A seller's listing submission before it reaches the registry.
  * Validated locally by [validateListing] so malformed drafts are refused
@@ -86,7 +89,7 @@ fun validateListing(draft: ListingDraft): ListingValidationResult {
 }
 
 /** Converts a validated draft into the registry's listing JSON body. */
-fun ListingDraft.toListingJson(): JSONObject = org.json.JSONObject().apply {
+fun ListingDraft.toListingJson(): JSONObject = JSONObject().apply {
     put("name", name.trim())
     put("category", category!!.name)
     put("description", description.trim())
@@ -94,6 +97,6 @@ fun ListingDraft.toListingJson(): JSONObject = org.json.JSONObject().apply {
     put("price", MarketplacePrice(priceCents, currency.trim()).toJson())
     put("artifactUrl", artifactUrl.trim())
     put("sha256", sha256.trim().lowercase())
-    put("tags", org.json.JSONArray(tags))
+    put("tags", JSONArray(tags))
     if (sellerId.isNotBlank()) put("sellerId", sellerId)
 }
