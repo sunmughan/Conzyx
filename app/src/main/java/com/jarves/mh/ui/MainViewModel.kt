@@ -703,6 +703,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             sendPrompt = { prompt -> sendPrompt(prompt) },
         )
+    private val securityCoordinator =
+        com.jarves.mh.ui.coordinators.SecurityCoordinator(
+            host = coordinatorHost,
+            permissionPolicyEngine = permissionPolicyEngine,
+            stopTask = { stopTask() },
+        )
+    private val mcpCoordinator =
+        com.jarves.mh.ui.coordinators.McpCoordinator(
+            host = coordinatorHost,
+            mcpRegistry = mcpRegistry,
+            mcpAuditLogger = mcpAuditLogger,
+            mcpPermissionManager = mcpPermissionManager,
+            mcpClientRunner = mcpClientRunner,
+        )
+    private val skillsCoordinator =
+        com.jarves.mh.ui.coordinators.SkillsCoordinator(
+            host = coordinatorHost,
+            skillManager = skillManager,
+            installer = installer,
+            preferences = preferences,
+        )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
     val visualConsoleLogs: StateFlow<List<com.jarves.mh.visual.ConsoleLogEntry>> = visualCoordinator.visualConsoleLogs
@@ -1332,215 +1353,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(themeMode = mode) }
     }
 
-    fun engageEmergencyKillSwitch(reason: String = "User requested emergency stop") {
-        permissionPolicyEngine.engageEmergencyKillSwitch(reason)
-        _state.update { it.copy(emergencyKillSwitchActive = true) }
-        stopTask()
-    }
+    // ---- Milestone 1: security domain moved to SecurityCoordinator. ----
+    fun engageEmergencyKillSwitch(reason: String = "User requested emergency stop") =
+        securityCoordinator.engageEmergencyKillSwitch(reason)
 
-    fun resetEmergencyKillSwitch() {
-        permissionPolicyEngine.resetEmergencyKillSwitch()
-        _state.update { it.copy(emergencyKillSwitchActive = false) }
-    }
+    fun resetEmergencyKillSwitch() =
+        securityCoordinator.resetEmergencyKillSwitch()
 
-    fun isEmergencyKillSwitchEngaged(): Boolean = permissionPolicyEngine.isEmergencyKillSwitchEngaged()
+    fun isEmergencyKillSwitchEngaged(): Boolean =
+        securityCoordinator.isEmergencyKillSwitchEngaged()
 
-    fun refreshPermissionPolicies() {
-        val globals = permissionPolicyEngine.getAllGlobalPolicies()
-        val shell = when (globals[com.jarves.mh.security.PermissionCategory.SHELL_EXEC]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> true
-        }
-        val net = when (globals[com.jarves.mh.security.PermissionCategory.NETWORK]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> true
-        }
-        val fileDel = when (globals[com.jarves.mh.security.PermissionCategory.FILE_DELETE]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> false
-        }
-        val gitPush = when (globals[com.jarves.mh.security.PermissionCategory.GIT_PUSH]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> false
-        }
-        val apkInstall = when (globals[com.jarves.mh.security.PermissionCategory.INSTALL_APK]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> false
-        }
-        val extServices = when (globals[com.jarves.mh.security.PermissionCategory.EXTERNAL_SERVICES]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> false
-        }
-        val accessEnv = when (globals[com.jarves.mh.security.PermissionCategory.ACCESS_ENV]) {
-            com.jarves.mh.security.PermissionLevel.ALWAYS -> true
-            com.jarves.mh.security.PermissionLevel.DENY -> false
-            else -> false
-        }
-        val logs = permissionPolicyEngine.auditLogger.getEntries(200)
-        _state.update {
-            it.copy(
-                allowShellExec = shell,
-                allowNetworkAccess = net,
-                allowFileDeletion = fileDel,
-                allowGitPush = gitPush,
-                allowApkInstall = apkInstall,
-                allowExternalServices = extServices,
-                allowAccessEnv = accessEnv,
-                securityAuditLogs = logs,
-                emergencyKillSwitchActive = permissionPolicyEngine.isEmergencyKillSwitchEngaged(),
-            )
-        }
-    }
+    fun refreshPermissionPolicies() =
+        securityCoordinator.refreshPermissionPolicies()
 
-    fun updatePermissionPolicy(category: com.jarves.mh.security.PermissionCategory, allowed: Boolean) {
-        if (allowed) {
-            permissionPolicyEngine.grantPermission(category, com.jarves.mh.security.PermissionLevel.ALWAYS)
-        } else {
-            permissionPolicyEngine.grantPermission(category, com.jarves.mh.security.PermissionLevel.DENY)
-        }
-        refreshPermissionPolicies()
-    }
+    fun updatePermissionPolicy(category: com.jarves.mh.security.PermissionCategory, allowed: Boolean) =
+        securityCoordinator.updatePermissionPolicy(category, allowed)
 
-    fun loadSecurityAuditLogs(limit: Int = 200) {
-        val logs = permissionPolicyEngine.auditLogger.getEntries(limit)
-        _state.update { it.copy(securityAuditLogs = logs) }
-    }
+    fun loadSecurityAuditLogs(limit: Int = 200) =
+        securityCoordinator.loadSecurityAuditLogs(limit)
 
     fun searchSecurityAuditLogs(
         query: String = "",
         category: com.jarves.mh.security.PermissionCategory? = null,
         decision: com.jarves.mh.security.AuditDecision? = null,
         limit: Int = 200
-    ) {
-        val logs = permissionPolicyEngine.auditLogger.filter(
-            query = query,
-            category = category,
-            decision = decision,
-            limit = limit
-        )
-        _state.update { it.copy(securityAuditLogs = logs) }
-    }
+    ) = securityCoordinator.searchSecurityAuditLogs(query, category, decision, limit)
 
-    fun clearSecurityAuditLogs() {
-        permissionPolicyEngine.auditLogger.clear()
-        _state.update { it.copy(securityAuditLogs = emptyList()) }
-    }
+    fun clearSecurityAuditLogs() =
+        securityCoordinator.clearSecurityAuditLogs()
+    // ---- Milestone 1: MCP domain moved to McpCoordinator. ----
+    fun refreshMcpServers(projectId: String? = _state.value.activeProject?.id) =
+        mcpCoordinator.refreshMcpServers(projectId)
 
-    fun refreshMcpServers(projectId: String? = _state.value.activeProject?.id) {
-        val servers = mcpRegistry.listServers(projectId)
-        val catalog = mcpRegistry.catalogTemplates
-        _state.update { it.copy(mcpServers = servers, mcpCatalog = catalog) }
-    }
+    fun installMcpServer(server: com.jarves.mh.mcp.McpServerInfo) =
+        mcpCoordinator.installMcpServer(server)
 
-    fun installMcpServer(server: com.jarves.mh.mcp.McpServerInfo) {
-        mcpRegistry.installServer(server)
-        refreshMcpServers()
-    }
+    fun installMcpTemplate(templateId: String, envOverrides: Map<String, String> = emptyMap(), projectId: String? = _state.value.activeProject?.id) =
+        mcpCoordinator.installMcpTemplate(templateId, envOverrides, projectId)
 
-    fun installMcpTemplate(templateId: String, envOverrides: Map<String, String> = emptyMap(), projectId: String? = _state.value.activeProject?.id) {
-        runCatching {
-            mcpRegistry.installFromTemplate(templateId, envOverrides, projectId)
-            refreshMcpServers(projectId)
-        }.onFailure { err ->
-            _state.update { it.copy(toastMessage = "Failed to install MCP template: ${err.message}") }
-        }
-    }
+    fun toggleMcpServer(serverId: String, enabled: Boolean) =
+        mcpCoordinator.toggleMcpServer(serverId, enabled)
 
-    fun toggleMcpServer(serverId: String, enabled: Boolean) {
-        mcpRegistry.toggleServer(serverId, enabled)
-        refreshMcpServers()
-    }
+    fun removeMcpServer(serverId: String) =
+        mcpCoordinator.removeMcpServer(serverId)
 
-    fun removeMcpServer(serverId: String) {
-        mcpClientRunner.stopServer(serverId)
-        mcpRegistry.removeServer(serverId)
-        refreshMcpServers()
-    }
+    fun updateMcpConfig(server: com.jarves.mh.mcp.McpServerInfo) =
+        mcpCoordinator.updateMcpConfig(server)
 
-    fun updateMcpConfig(server: com.jarves.mh.mcp.McpServerInfo) {
-        mcpRegistry.updateServer(server)
-        refreshMcpServers()
-    }
-
-    fun discoverMcpTools(server: com.jarves.mh.mcp.McpServerInfo) {
-        viewModelScope.launch {
-            _state.update { it.copy(mcpBusy = true, mcpSelectedServerId = server.id, mcpMessage = "Discovering tools for ${server.name}...") }
-            val res = mcpClientRunner.discoverTools(server)
-            res.onSuccess { tools ->
-                _state.update { it.copy(mcpBusy = false, mcpTools = tools, mcpMessage = "Found ${tools.size} tools") }
-            }.onFailure { err ->
-                _state.update { it.copy(mcpBusy = false, mcpMessage = "Tool discovery failed: ${err.message}") }
-            }
-        }
-    }
+    fun discoverMcpTools(server: com.jarves.mh.mcp.McpServerInfo) =
+        mcpCoordinator.discoverMcpTools(server)
 
     suspend fun executeMcpTool(
         server: com.jarves.mh.mcp.McpServerInfo,
         toolName: String,
         arguments: org.json.JSONObject,
         projectId: String? = _state.value.activeProject?.id
-    ): com.jarves.mh.runtime.McpToolCallResult {
-        val perm = mcpPermissionManager.evaluate(server, toolName, projectId)
-        if (!perm.allowed) {
-            val auditEntry = com.jarves.mh.mcp.McpAuditEntry(
-                serverId = server.id,
-                toolName = toolName,
-                argumentsJson = arguments.toString(),
-                success = false,
-                projectId = projectId,
-                permissionDecision = if (perm.requiresPrompt) "PROMPT_REQUIRED" else "DENIED",
-                error = perm.reason
-            )
-            mcpAuditLogger.log(auditEntry)
-            loadMcpAuditLogs()
-            return com.jarves.mh.runtime.McpToolCallResult(
-                success = false,
-                content = "",
-                error = "Permission check failed: ${perm.reason}"
-            )
-        }
+    ): com.jarves.mh.runtime.McpToolCallResult =
+        mcpCoordinator.executeMcpTool(server, toolName, arguments, projectId)
 
-        val result = mcpClientRunner.callTool(server, toolName, arguments)
-        val auditEntry = com.jarves.mh.mcp.McpAuditEntry(
-            serverId = server.id,
-            toolName = toolName,
-            argumentsJson = arguments.toString(),
-            success = result.success,
-            resultPreview = result.content.take(200),
-            durationMs = result.durationMs,
-            projectId = projectId,
-            permissionDecision = "ALLOWED",
-            error = result.error
-        )
-        mcpAuditLogger.log(auditEntry)
-        loadMcpAuditLogs()
-        return result
-    }
+    fun setMcpProjectPermission(projectId: String, serverId: String, policy: com.jarves.mh.mcp.McpPermissionPolicy) =
+        mcpCoordinator.setMcpProjectPermission(projectId, serverId, policy)
 
-    fun setMcpProjectPermission(projectId: String, serverId: String, policy: com.jarves.mh.mcp.McpPermissionPolicy) {
-        mcpPermissionManager.setProjectServerPolicy(projectId, serverId, policy)
-    }
+    fun setMcpGlobalPermission(serverId: String, policy: com.jarves.mh.mcp.McpPermissionPolicy) =
+        mcpCoordinator.setMcpGlobalPermission(serverId, policy)
 
-    fun setMcpGlobalPermission(serverId: String, policy: com.jarves.mh.mcp.McpPermissionPolicy) {
-        mcpPermissionManager.setGlobalServerPolicy(serverId, policy)
-    }
+    fun loadMcpAuditLogs(limit: Int = 100) =
+        mcpCoordinator.loadMcpAuditLogs(limit)
 
-    fun loadMcpAuditLogs(limit: Int = 100) {
-        val logs = mcpAuditLogger.getEntries(limit)
-        _state.update { it.copy(mcpAuditLogs = logs) }
-    }
-
-    fun clearMcpAuditLogs() {
-        mcpAuditLogger.clear()
-        _state.update { it.copy(mcpAuditLogs = emptyList()) }
-    }
-
+    fun clearMcpAuditLogs() =
+        mcpCoordinator.clearMcpAuditLogs()
     fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()
 
     fun getSavedApiKeys(kind: ProviderKind): List<ApiKeyInfo> = vault.list(kind.name)
@@ -5761,232 +5642,33 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         return true
     }
 
-    fun refreshSkills() {
-        _state.update { it.copy(skills = skillManager.installed()) }
-    }
+    // ---- Milestone 1: skills domain moved to SkillsCoordinator. ----
+    fun refreshSkills() =
+        skillsCoordinator.refreshSkills()
 
-    fun checkSkillUpdates() {
-        if (_state.value.skillsBusy) return
-        _state.update { it.copy(skillsBusy = true, skillsMessage = "Checking installed skills for updates…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { skillManager.checkUpdates() } }
-            result.onSuccess { updates ->
-                _state.update {
-                    it.copy(
-                        skillsBusy = false,
-                        skillUpdates = updates.mapTo(mutableSetOf()) { update -> update.name },
-                        skillsMessage = if (updates.isEmpty()) "All remotely sourced skills are up to date." else updates.size.toString() + " skill update" + (if (updates.size == 1) "" else "s") + " available.",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill update check failed.") }
-            }
-        }
-    }
+    fun checkSkillUpdates() =
+        skillsCoordinator.checkSkillUpdates()
 
-    fun updateSkill(name: String) {
-        if (_state.value.skillsBusy) return
-        val skill = _state.value.skills.firstOrNull { it.name == name } ?: return
-        _state.update { it.copy(skillsBusy = true, skillsMessage = "Updating $name…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { skillManager.update(skill) } }
-            result.onSuccess {
-                _state.update {
-                    it.copy(
-                        skills = skillManager.installed(),
-                        skillsBusy = false,
-                        skillUpdates = it.skillUpdates - name,
-                        skillsMessage = "$name updated successfully.",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill update failed.") }
-            }
-        }
-    }
+    fun updateSkill(name: String) =
+        skillsCoordinator.updateSkill(name)
 
-    fun searchSkills(query: String) {
-        if (_state.value.skillsBusy) return
-        _state.update { it.copy(skillsBusy = true, skillsMessage = "Searching GitHub…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { skillManager.searchGitHub(query) } }
-            result.onSuccess { matches -> _state.update { it.copy(skillsBusy = false, skillSearchResults = matches, skillsMessage = "Found " + matches.size + " repositories.") } }
-                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "GitHub skill search failed.") } }
-        }
-    }
+    fun searchSkills(query: String) =
+        skillsCoordinator.searchSkills(query)
 
-    fun importSkillFromGitHub(url: String) {
-        if (_state.value.skillsBusy) return
-        _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing skill bundle…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromGitHub(url) } }
-            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillUpdates = it.skillUpdates - installed.map { skill -> skill.name }.toSet(), skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
-                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
-        }
-    }
+    fun importSkillFromGitHub(url: String) =
+        skillsCoordinator.importSkillFromGitHub(url)
 
-    fun importSkillFromUri(uri: Uri) {
-        if (_state.value.skillsBusy) return
-        _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing local skill bundle…") }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromUri(uri) } }
-            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillUpdates = it.skillUpdates - installed.map { skill -> skill.name }.toSet(), skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
-                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
-        }
-    }
+    fun importSkillFromUri(uri: Uri) =
+        skillsCoordinator.importSkillFromUri(uri)
 
-    fun removeSkill(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val removed = skillManager.remove(name)
-            _state.update { it.copy(skills = skillManager.installed(), skillsMessage = if (removed) "Removed " + name else "Skill was not installed.") }
-        }
-    }
-    private fun touchProject(projectId: String) {
-        val now = System.currentTimeMillis()
-        _state.update { current ->
-            val updatedProjects = current.projects.map { p ->
-                if (p.id == projectId) p.copy(updatedAtMillis = now) else p
-            }
-            val active = if (current.activeProject?.id == projectId) current.activeProject?.copy(updatedAtMillis = now) else current.activeProject
-            current.copy(projects = updatedProjects, activeProject = active)
-        }
-        preferences.saveProjects(_state.value.projects)
-    }
+    fun removeSkill(name: String) =
+        skillsCoordinator.removeSkill(name)
 
-    private fun persistMessages(includeLiveProcess: Boolean = true) {
-        val current = _state.value
-        val project = current.activeProject ?: return
-        val chatId = current.activeChatId ?: return
-        val liveItems = if (includeLiveProcess) current.liveProcess.filterNot(::isNoisyRuntimeItem) else emptyList()
-        val messages = if (liveItems.isEmpty() && !current.liveThinking) {
-            current.messages
-        } else {
-            val startedAt = current.workSegmentStartedAtMillis ?: current.taskStartedAtMillis ?: System.currentTimeMillis()
-            current.messages + ChatMessage(
-                id = "interrupted-${current.activeSessionId ?: chatId}",
-                fromUser = false,
-                text = "",
-                workItems = liveItems.map { it.copy(isComplete = true) } + ActivityItem(
-                    "Task interrupted",
-                    "The agent process stopped before reporting completion. Continue this chat to resume its official session.",
-                ),
-                workedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
-            )
-        }
-        transcriptWrites.trySend(TranscriptWrite(project.id, chatId, messages))
-    }
+    fun toggleAutoUpdateToolsAndSkills(enabled: Boolean) =
+        skillsCoordinator.toggleAutoUpdateToolsAndSkills(enabled)
 
-    private fun updateActiveChatTitle(prompt: String) {
-        val project = _state.value.activeProject ?: return
-        val chatId = _state.value.activeChatId ?: return
-        val now = System.currentTimeMillis()
-        val title = prompt.replace(Regex("\\s+"), " ").trim().let {
-            if (it.length <= 42) it else it.take(39).trimEnd() + "…"
-        }
-        _state.update { current ->
-            val chats = current.projectChats.map { chat ->
-                if (chat.id == chatId) {
-                    chat.copy(
-                        title = if (chat.title == "New chat") title else chat.title,
-                        updatedAtMillis = now,
-                    )
-                } else chat
-            }.sortedByDescending { it.updatedAtMillis }
-            current.copy(projectChats = chats)
-        }
-        preferences.saveProjectChats(project.id, _state.value.projectChats)
-    }
-
-    fun toggleAutoUpdateToolsAndSkills(enabled: Boolean) {
-        preferences.autoUpdateToolsAndSkills = enabled
-        _state.update { it.copy(autoUpdateToolsAndSkills = enabled) }
-        if (enabled) {
-            autoUpdateToolsAndSkills(force = true)
-        }
-    }
-
-    fun autoUpdateToolsAndSkills(force: Boolean = false) {
-        if (!preferences.autoUpdateToolsAndSkills) return
-        val current = _state.value
-        if (current.isRunning || current.projectTerminalRunning || current.devStackInstalling != null || current.agentUpdating != null || current.autoUpdatingToolsOrSkills) return
-        val now = System.currentTimeMillis()
-        if (!force && (now - preferences.lastToolsAutoUpdateCheckMillis < 4L * 60L * 60L * 1000L)) return
-
-        viewModelScope.launch {
-            _state.update { it.copy(autoUpdatingToolsOrSkills = true, toolsAutoUpdateMessage = "Checking for tool and skill updates…") }
-            val updatedItems = mutableListOf<String>()
-            withContext(Dispatchers.IO) {
-                // 1. Universal Skills auto-update
-                runCatching {
-                    val updates = skillManager.checkUpdates()
-                    if (updates.isNotEmpty()) {
-                        updates.forEach { updateInfo ->
-                            val skill = skillManager.installed().firstOrNull { it.name == updateInfo.name }
-                            if (skill != null) {
-                                runCatching {
-                                    skillManager.update(skill)
-                                    updatedItems.add("Skill ${skill.name}")
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 2. Agents / Coding CLI Tools auto-update
-                runCatching {
-                    val agentUpdates = installer.checkAgentUpdates()
-                    agentUpdates.forEach { (kind, updateInfo) ->
-                        if (!_state.value.isRunning && _state.value.agentUpdating == null) {
-                            runCatching {
-                                installer.updateAgent(kind, updateInfo.latestVersion) {}
-                                updatedItems.add("${kind.title} ${updateInfo.latestVersion}")
-                            }
-                        }
-                    }
-                }
-
-                // 3. Installed Development Toolchains auto-update
-                runCatching {
-                    val installed = installer.installedStacks().filter { it != DevStack.WEB }
-                    installed.forEach { stack ->
-                        if (!_state.value.isRunning && _state.value.devStackInstalling == null) {
-                            runCatching {
-                                var didUpdate = false
-                                installer.updateStack(stack) { progress ->
-                                    if (progress.event == RuntimeInstallEvent.COMPLETED &&
-                                        !progress.message.contains("already up to date", ignoreCase = true) &&
-                                        !progress.message.contains("tools are up to date", ignoreCase = true)) {
-                                        didUpdate = true
-                                    }
-                                }
-                                if (didUpdate) {
-                                    updatedItems.add(stack.label)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            preferences.lastToolsAutoUpdateCheckMillis = System.currentTimeMillis()
-            val message = if (updatedItems.isEmpty()) {
-                "Tools, toolchains, and skills are up to date"
-            } else {
-                "Updated: ${updatedItems.joinToString(", ")}"
-            }
-            _state.update {
-                it.copy(
-                    autoUpdatingToolsOrSkills = false,
-                    toolsAutoUpdateMessage = message,
-                    skills = skillManager.installed(),
-                    skillUpdates = emptySet(),
-                    installedDevStacks = installer.installedStacks(),
-                    installedAgentVersions = installer.installedAgentVersions(),
-                )
-            }
-        }
-    }
-
+    fun autoUpdateToolsAndSkills(force: Boolean = false) =
+        skillsCoordinator.autoUpdateToolsAndSkills(force)
     fun dismissInterruptedSession() {
         sessionManager.clearActiveSession()
         _state.update { it.copy(interruptedSession = null) }
