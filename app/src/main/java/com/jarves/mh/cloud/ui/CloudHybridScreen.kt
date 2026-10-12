@@ -607,6 +607,8 @@ private fun JobCard(job: HybridExecutionJob) {
                     color = when (job.state) {
                         HybridJobState.COMPLETED -> Color(0xFF2E7D32)
                         HybridJobState.FAILED -> Color(0xFFD32F2F)
+                        // Honest states: never green. NOT_CONFIGURED is amber, SIMULATED is grey.
+                        HybridJobState.NOT_CONFIGURED -> Color(0xFFEF6C00)
                         else -> MaterialTheme.colorScheme.primary
                     }
                 ) {
