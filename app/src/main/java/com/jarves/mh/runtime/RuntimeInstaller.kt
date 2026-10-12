@@ -637,12 +637,32 @@ class RuntimeInstaller(private val context: Context) {
                     check(target.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
                         "Could not create rollback target directory"
                     }
-                    // Revalidate after creating parents to catch symlink substitution,
-                    // then publish the restored file atomically so a failed write cannot truncate it.
+                    // Revalidate after creating parents to catch symlink substitution.
+                    // Stream into a sibling file (runtime archives may contain large binaries)
+                    // so a failed restore neither exhausts memory nor truncates the installed file.
                     val safeTarget = safeRootfsChild(root, entry.name)
-                    val restoredBytes = zip.readBytes()
-                    check(SafeFileOps.atomicWriteBytes(safeTarget, restoredBytes)) {
-                        "Could not safely restore ${entry.name}"
+                    val staged = File(
+                        safeTarget.parentFile,
+                        ".${safeTarget.name}.rollback_${UUID.randomUUID()}.tmp",
+                    )
+                    try {
+                        FileOutputStream(staged).use { output ->
+                            zip.copyTo(output)
+                            output.fd.sync()
+                        }
+                        safeRootfsChild(root, entry.name)
+                        try {
+                            Files.move(
+                                staged.toPath(),
+                                safeTarget.toPath(),
+                                StandardCopyOption.ATOMIC_MOVE,
+                                StandardCopyOption.REPLACE_EXISTING,
+                            )
+                        } catch (_: AtomicMoveNotSupportedException) {
+                            Files.move(staged.toPath(), safeTarget.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        }
+                    } finally {
+                        runCatching { Files.deleteIfExists(staged.toPath()) }
                     }
                 }
                 entry = zip.nextEntry
