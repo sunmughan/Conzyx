@@ -19,17 +19,27 @@ import java.util.concurrent.ConcurrentHashMap
 class LspManager(
     private val workspaceDir: File? = null,
     private val semanticIndex: WorkspaceSemanticIndex = WorkspaceSemanticIndex(workspaceDir),
+    /**
+     * Locates a real language-server binary for a language, or null when none is
+     * installed. Defaults to a PATH lookup for well-known server binaries.
+     * Injectable for tests.
+     */
+    private val serverBinaryLocator: (language: String) -> File? = ::defaultServerBinaryLocator,
 ) {
 
     private val serverStatuses = ConcurrentHashMap<String, LspServerStatus>()
     private val activeProcesses = ConcurrentHashMap<String, Process>()
 
     init {
-        // Initialize supported language statuses
+        // Initialize supported language statuses. Milestone 0 honesty: no real
+        // language server is running at init — only the built-in fallback
+        // intelligence (SemanticCodeEngine) is available. Never report
+        // isRunning=true when only the fallback is active.
         listOf("Kotlin", "Java", "TypeScript", "JavaScript", "Python", "C++", "Go", "Rust", "PHP", "Dart").forEach { lang ->
             serverStatuses[lang] = LspServerStatus(
                 language = lang,
-                isRunning = true,
+                isRunning = false,
+                isRealServer = false,
                 isBuiltInFallback = true,
             )
         }
@@ -38,27 +48,69 @@ class LspManager(
     fun getServerStatus(language: String): LspServerStatus {
         return serverStatuses[language] ?: LspServerStatus(
             language = language,
-            isRunning = true,
+            isRunning = false,
+            isRealServer = false,
             isBuiltInFallback = true,
         )
     }
 
+    /**
+     * Starts a REAL language-server process for [language].
+     *
+     * Returns true only when a server binary was found and its process launched.
+     * When no binary is installed, returns false and the status honestly reports
+     * `isRunning=false` with the built-in fallback still available — the old
+     * behaviour of reporting success without launching anything was a
+     * false-success path (Milestone 0).
+     */
     fun startServer(language: String, rootPath: String): Boolean {
-        // Record active server status
-        serverStatuses[language] = LspServerStatus(
-            language = language,
-            isRunning = true,
-            isBuiltInFallback = true,
-        )
-        return true
+        stopServer(language)
+        val binary = runCatching { serverBinaryLocator(language) }.getOrNull()
+        if (binary == null || !binary.canExecute()) {
+            serverStatuses[language] = LspServerStatus(
+                language = language,
+                isRunning = false,
+                isRealServer = false,
+                isBuiltInFallback = true,
+                lastError = "No language-server binary found for $language; using built-in fallback intelligence.",
+            )
+            return false
+        }
+        return try {
+            val process = ProcessBuilder(binary.absolutePath, "--stdio")
+                .directory(File(rootPath).takeIf { it.isDirectory } ?: workspaceDir ?: File("."))
+                .redirectErrorStream(true)
+                .start()
+            activeProcesses[language] = process
+            serverStatuses[language] = LspServerStatus(
+                language = language,
+                isRunning = true,
+                isRealServer = true,
+                isBuiltInFallback = false,
+                pid = process.pid(),
+            )
+            true
+        } catch (e: Exception) {
+            serverStatuses[language] = LspServerStatus(
+                language = language,
+                isRunning = false,
+                isRealServer = false,
+                isBuiltInFallback = true,
+                lastError = "Failed to launch language server for $language: ${e.message}",
+            )
+            false
+        }
     }
 
     fun stopServer(language: String): Boolean {
         activeProcesses.remove(language)?.destroy()
+        // The built-in fallback intelligence remains available after stopping a
+        // real server; only isRunning/isRealServer go false.
         serverStatuses[language] = LspServerStatus(
             language = language,
             isRunning = false,
-            isBuiltInFallback = false,
+            isRealServer = false,
+            isBuiltInFallback = true,
         )
         return true
     }
@@ -272,4 +324,37 @@ class LspManager(
         }
         return (offset + charNum).coerceIn(0, content.length)
     }
+}
+
+/**
+ * Well-known language-server binaries looked up on PATH.
+ */
+private val LANGUAGE_SERVER_BINARIES: Map<String, List<String>> = mapOf(
+    "Kotlin" to listOf("kotlin-language-server"),
+    "Java" to listOf("jdtls", "java-language-server"),
+    "TypeScript" to listOf("typescript-language-server"),
+    "JavaScript" to listOf("typescript-language-server"),
+    "Python" to listOf("pyright-langserver", "pylsp", "pyright"),
+    "C++" to listOf("clangd"),
+    "Go" to listOf("gopls"),
+    "Rust" to listOf("rust-analyzer"),
+    "PHP" to listOf("intelephense"),
+    "Dart" to listOf("dart"),
+)
+
+/**
+ * Default [LspManager] binary locator: searches PATH for a known server binary.
+ * Returns null when nothing is installed, which makes [LspManager.startServer]
+ * honestly report that only the built-in fallback is available.
+ */
+private fun defaultServerBinaryLocator(language: String): File? {
+    val candidates = LANGUAGE_SERVER_BINARIES[language] ?: return null
+    val pathDirs = (System.getenv("PATH") ?: "").split(File.pathSeparator)
+    for (dir in pathDirs) {
+        for (name in candidates) {
+            val file = File(dir, name)
+            if (file.isFile && file.canExecute()) return file
+        }
+    }
+    return null
 }

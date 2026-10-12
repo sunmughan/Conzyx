@@ -10,19 +10,28 @@ import org.junit.Test
 class LspManagerTest {
 
     @Test
-    fun `server lifecycle management starts and stops language servers`() {
+    fun `server status honestly distinguishes real server from built-in fallback`() {
         val manager = LspManager()
+        // Milestone 0: no real server is running at init — only the fallback.
+        // isRunning must never be true when only the fallback is active.
         val status = manager.getServerStatus("Kotlin")
-        assertTrue(status.isRunning)
+        assertFalse(status.isRunning)
+        assertFalse(status.isRealServer)
         assertTrue(status.isBuiltInFallback)
 
         manager.stopServer("Kotlin")
         val stoppedStatus = manager.getServerStatus("Kotlin")
         assertFalse(stoppedStatus.isRunning)
+        assertFalse(stoppedStatus.isRealServer)
 
-        manager.startServer("Kotlin", "/workspace")
+        // No language-server binary is installed in the test environment, so
+        // startServer must honestly return false and keep isRunning=false.
+        val started = manager.startServer("Kotlin", "/workspace")
+        assertFalse(started)
         val restartedStatus = manager.getServerStatus("Kotlin")
-        assertTrue(restartedStatus.isRunning)
+        assertFalse(restartedStatus.isRunning)
+        assertFalse(restartedStatus.isRealServer)
+        assertTrue(restartedStatus.isBuiltInFallback)
     }
 
     @Test

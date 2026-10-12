@@ -68,7 +68,13 @@ data class LspCodeAction(
 
 data class LspServerStatus(
     val language: String,
+    /**
+     * True only when a REAL language-server process is running. Never true when
+     * only the built-in fallback is active (Milestone 0).
+     */
     val isRunning: Boolean,
+    /** True only when [isRunning] refers to a genuine external server process. */
+    val isRealServer: Boolean = false,
     val isBuiltInFallback: Boolean = false,
     val pid: Long? = null,
     val lastError: String? = null,
