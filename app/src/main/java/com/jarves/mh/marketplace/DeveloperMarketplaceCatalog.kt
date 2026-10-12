@@ -21,6 +21,8 @@ data class MarketplaceItem(
     val isInstalled: Boolean = false,
     val isCustom: Boolean = false,
     val tags: List<String> = emptyList(),
+    /** Price in minor currency units (0 = free). Paid items require an entitlement to install. */
+    val priceCents: Long = 0,
 )
 
 /**
