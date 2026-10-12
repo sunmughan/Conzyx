@@ -1,5 +1,13 @@
-package com.jarves.mh.lsp.parser
+package com.jarves.mh.lsp
 
+import com.jarves.mh.lsp.parser.LanguageSyntax
+import com.jarves.mh.lsp.parser.ParsedFile
+import com.jarves.mh.lsp.parser.ParsedSymbol
+import com.jarves.mh.lsp.parser.ParsedSymbolKind
+import com.jarves.mh.lsp.parser.SourceParser
+import com.jarves.mh.lsp.parser.Token
+import com.jarves.mh.lsp.parser.TokenType
+import com.jarves.mh.lsp.parser.Tokenizer
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -417,7 +425,7 @@ class ParserProjectIndex {
         return chain
     }
 
-    private data class ScopeView(val name: String, val symbols: List<ParsedSymbol>)
+    internal data class ScopeView(val name: String, val symbols: List<ParsedSymbol>)
 
     private fun ParsedSymbol.toLocation(path: String): SymbolLocation =
         SymbolLocation(
