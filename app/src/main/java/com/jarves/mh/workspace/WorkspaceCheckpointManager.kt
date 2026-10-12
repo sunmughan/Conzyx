@@ -6,6 +6,9 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,10 +89,12 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         return runCatching {
             check(workspaceDir.isDirectory) { "Workspace is unavailable" }
             val id = "ckpt_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
-            val checkpointDir = File(checkpointsBaseDir(projectId), id)
-            pendingCheckpointDir = checkpointDir
-            check(checkpointDir.mkdirs() || checkpointDir.isDirectory) { "Could not create checkpoint staging directory" }
-            val backupDir = File(checkpointDir, "files")
+            val checkpointsDir = checkpointsBaseDir(projectId)
+            val checkpointDir = File(checkpointsDir, id)
+            val stagingDir = File(checkpointsDir, ".${id}.staging_${UUID.randomUUID()}")
+            pendingCheckpointDir = stagingDir
+            check(stagingDir.mkdirs() || stagingDir.isDirectory) { "Could not create checkpoint staging directory" }
+            val backupDir = File(stagingDir, "files")
             check(backupDir.mkdirs() || backupDir.isDirectory) { "Could not create checkpoint files directory" }
 
             var fileCount = 0
@@ -129,7 +134,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             )
 
             // Write metadata
-            val metaFile = File(checkpointDir, "meta.json")
+            val metaFile = File(stagingDir, "meta.json")
             val json = JSONObject().apply {
                 put("id", checkpoint.id)
                 put("projectId", checkpoint.projectId)
@@ -151,7 +156,20 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             }
             check(SafeFileOps.atomicWriteText(metaFile, json.toString(2))) { "Could not persist checkpoint metadata" }
 
-            // Update index
+            // Publish only a complete snapshot directory. An interrupted copy leaves
+            // a clearly marked staging directory rather than a partial checkpoint.
+            check(!checkpointDir.exists() && !Files.isSymbolicLink(checkpointDir.toPath())) {
+                "Checkpoint destination already exists"
+            }
+            try {
+                Files.move(stagingDir.toPath(), checkpointDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(stagingDir.toPath(), checkpointDir.toPath())
+            }
+            pendingCheckpointDir = checkpointDir
+
+            // The index is itself atomically replaced. If this fails, remove the complete
+            // but unpublished checkpoint so callers never observe an unindexed partial operation.
             val existing = listCheckpoints(projectId).toMutableList()
             existing.add(0, checkpoint)
             saveIndex(projectId, existing)
