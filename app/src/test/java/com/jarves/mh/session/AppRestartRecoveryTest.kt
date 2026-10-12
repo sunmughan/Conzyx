@@ -163,6 +163,43 @@ class AppRestartRecoveryTest {
     }
 
     @Test
+    fun `session IDs cannot escape the history directory`() {
+        val sessionsDir = tempFolder.newFolder("unsafe_session_id")
+        val manager = AgentSessionManager(sessionsDir)
+
+        assertTrue(runCatching {
+            manager.recordSessionStart(
+                sessionId = "../outside",
+                projectId = "p1",
+                projectTitle = "Unsafe",
+                chatId = "c1",
+                prompt = "Must reject path traversal",
+            )
+        }.isFailure)
+        assertFalse(File(tempFolder.root, "outside.json").exists())
+    }
+
+    @Test
+    fun `session history symlink is rejected and active session remains recoverable`() {
+        val sessionsDir = tempFolder.newFolder("symlinked_history_sessions")
+        val outside = tempFolder.newFolder("symlinked_history_outside")
+        val manager = AgentSessionManager(sessionsDir)
+        manager.recordSessionStart(
+            sessionId = "session-safe",
+            projectId = "p1",
+            projectTitle = "Safe session",
+            chatId = "c1",
+            prompt = "Retain active metadata",
+        )
+        java.nio.file.Files.createSymbolicLink(File(sessionsDir, "history").toPath(), outside.toPath())
+
+        manager.recordSessionCompleted("finished")
+
+        assertTrue(File(sessionsDir, "active_session.json").isFile)
+        assertTrue(outside.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun `clearing restored session deletes active session file cleanly`() {
         val sessionsDir = tempFolder.newFolder("cleanup_sessions")
         val manager1 = AgentSessionManager(sessionsDir)
