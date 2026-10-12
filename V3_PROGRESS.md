@@ -158,9 +158,9 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Device/emulator acceptance for keyboard/mouse/tablet/foldable/landscape — requires a real device; the keyboard map + palette provide the touch-free path.
 - Minimap — not present; not claimed.
 
-## Milestone 3 — COMPLETE (2026-10-12)
+## Milestone 3 — IN PROGRESS (2026-10-12, CI verifying)
 
-**Real semantic intelligence** (Phase 3). CI green. Commits on `v3`.
+**Real semantic intelligence** (Phase 3). Commits on `v3`.
 
 ### Real structural parsers (not regex)
 - `lsp/parser/Tokenizer.kt` (new): language-aware tokenizer — strings (incl. triple-quoted, template literals), line/block comments, accurate line/character positions; optional COMMENT tokens for doc-comments; optional NEWLINE/INDENT/DEDENT for Python.
