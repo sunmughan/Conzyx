@@ -579,12 +579,30 @@ class RuntimeInstaller(private val context: Context) {
                 entries.forEach { relative ->
                     val source = File(rootfs, relative)
                     check(source.exists()) { "Installed " + id + " runtime is missing: " + relative }
-                    source.walkTopDown().filter { it.isFile }.forEach { file ->
-                        val name = file.relativeTo(rootfs).path.replace(File.separatorChar, '/')
-                        zip.putNextEntry(ZipEntry(name))
-                        FileInputStream(file).use { it.copyTo(zip) }
-                        zip.closeEntry()
-                    }
+                    source.walkTopDown()
+                        .onEnter { directory ->
+                            directory == source || (
+                                !Files.isSymbolicLink(directory.toPath()) &&
+                                    runCatching {
+                                        directory.canonicalFile.toPath().startsWith(source.canonicalFile.toPath()) &&
+                                            directory.canonicalFile.toPath().startsWith(rootfs.canonicalFile.toPath())
+                                    }.getOrDefault(false)
+                                )
+                        }
+                        .filter {
+                            it.isFile &&
+                                !Files.isSymbolicLink(it.toPath()) &&
+                                runCatching {
+                                    it.canonicalFile.toPath().startsWith(source.canonicalFile.toPath()) &&
+                                        it.canonicalFile.toPath().startsWith(rootfs.canonicalFile.toPath())
+                                }.getOrDefault(false)
+                        }
+                        .forEach { file ->
+                            val name = file.relativeTo(rootfs).invariantSeparatorsPath
+                            zip.putNextEntry(ZipEntry(name))
+                            FileInputStream(file).use { it.copyTo(zip) }
+                            zip.closeEntry()
+                        }
                 }
             }
             RandomAccessFile(part, "rw").use { it.fd.sync() }
@@ -615,10 +633,13 @@ class RuntimeInstaller(private val context: Context) {
             var entry = zip.nextEntry
             while (entry != null) {
                 if (entry.name != ".version") {
-                    val target = File(root, entry.name)
-                    check(target.canonicalFile.toPath().startsWith(root.canonicalFile.toPath())) { "Unsafe rollback path" }
-                    target.parentFile?.mkdirs()
-                    FileOutputStream(target).use { zip.copyTo(it) }
+                    val target = safeRootfsChild(root, entry.name)
+                    check(target.parentFile?.let { it.mkdirs() || it.isDirectory } == true) {
+                        "Could not create rollback target directory"
+                    }
+                    // Revalidate after creating parents to catch symlink substitution.
+                    val safeTarget = safeRootfsChild(root, entry.name)
+                    FileOutputStream(safeTarget).use { zip.copyTo(it) }
                 }
                 entry = zip.nextEntry
             }
@@ -628,6 +649,22 @@ class RuntimeInstaller(private val context: Context) {
             "antigravity" -> Os.chmod(File(root, AGY_GUEST_PATH.removePrefix("/")).absolutePath, 0b111101101)
         }
         onProgress(RuntimeInstallProgress(id + " rollback complete", 1f, event = RuntimeInstallEvent.COMPLETED))
+    }
+
+    private fun safeRootfsChild(root: File, relative: String): File {
+        require(relative.isNotBlank() && !relative.startsWith('/') && !relative.contains('\\')) {
+            "Unsafe rollback path"
+        }
+        val segments = relative.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe rollback path" }
+        val canonicalRoot = root.canonicalFile
+        var current = canonicalRoot
+        for (segment in segments) {
+            current = File(current, segment)
+            check(!Files.isSymbolicLink(current.toPath())) { "Rollback path cannot traverse symbolic links" }
+        }
+        check(current.canonicalFile.toPath().startsWith(canonicalRoot.toPath())) { "Unsafe rollback path" }
+        return current
     }
 
     private fun backupVersionFromEnvironmentBackup(file: File): String =
