@@ -62,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +83,7 @@ import com.codeair.mhe.agent.team.model.TeamRolePermissions
 import com.codeair.mhe.agent.team.model.TeamTask
 import com.codeair.mhe.agent.team.model.TeamTaskPriority
 import com.codeair.mhe.agent.team.model.TeamTaskStatus
+import kotlinx.coroutines.launch
 
 /**
  * Multi-Agent Engineering Studio Dashboard (Phase 11 v2.2).
@@ -94,6 +96,7 @@ fun TeamStudioScreen(
     onDispatchToAgent: (String) -> Unit = {}
 ) {
     val sessionState by orchestrator.sessionState.collectAsState()
+    val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
     var inputGoal by remember { mutableStateOf(sessionState.activeGoal.ifBlank { "Build robust offline mobile feature with testing and CI" }) }
 
@@ -145,16 +148,17 @@ fun TeamStudioScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Phase 11 - 10 Specialized Autonomous Agents",
+                                text = "10 Specialized Autonomous Agents",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (sessionState.isDemoMode) {
+                            if (sessionState.isRunning) {
                                 Text(
-                                    text = "DEMO MODE - simulated execution, not real agents",
+                                    text = sessionState.activeRole?.let { "Executing: ${it.title}" }
+                                        ?: "Running",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFB26A00)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -200,7 +204,7 @@ fun TeamStudioScreen(
 
                     if (sessionState.isRunning) {
                         Button(
-                            onClick = { orchestrator.runNextReadyTask() },
+                            onClick = { scope.launch { orchestrator.executeNextReadyTask() } },
                             modifier = Modifier.height(52.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(8.dp),
@@ -211,7 +215,7 @@ fun TeamStudioScreen(
                             Text("Step", fontSize = 12.sp)
                         }
                         OutlinedButton(
-                            onClick = { orchestrator.cancelSession() },
+                            onClick = { orchestrator.cancelRealRun() },
                             modifier = Modifier.height(52.dp),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -415,7 +419,7 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
-                    onClick = { orchestrator.runNextReadyTask() },
+                    onClick = { scope.launch { orchestrator.executeNextReadyTask() } },
                     modifier = Modifier.height(48.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -429,7 +433,7 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
                     Text("Next Ready", fontSize = 13.sp, maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(
-                    onClick = { orchestrator.autoRunAll() },
+                    onClick = { scope.launch { orchestrator.autoRunAllReal() } },
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {

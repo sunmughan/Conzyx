@@ -1,12 +1,10 @@
 package com.codeair.mhe.agent.team.runtime
 
-import com.codeair.mhe.agent.team.model.ArtifactType
 import com.codeair.mhe.agent.team.model.ReviewVerdict
 import com.codeair.mhe.agent.team.model.TeamArtifact
 import com.codeair.mhe.agent.team.model.TeamRole
 import com.codeair.mhe.agent.team.model.TeamTask
 import com.codeair.mhe.core.result.OperationResult
-import com.codeair.mhe.core.result.OperationStatus
 import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.ProjectKind
 import com.codeair.mhe.model.ProviderProfile
@@ -21,13 +19,12 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Genuine per-role agent executor for the Multi-Agent Engineering Studio.
@@ -138,36 +135,44 @@ class RealTeamAgentExecutor(
             bridge.events.collect { captured.add(it) }
         }
 
-        val sessionId: String
-        try {
-            val result = withTimeout(timeoutMs) {
-                bridge.startSession(
-                    projectId = projectId,
-                    projectSlug = projectSlug,
-                    projectKind = ProjectKind.PROJECT,
-                    prompt = prompt,
-                    conversationHistory = emptyList(),
-                    provider = provider,
-                )
-            }
-            sessionId = result
-        } catch (e: TimeoutCancellationException) {
-            collector.cancel()
-            runCatching { bridge.stopActiveSession() }
-            return TeamExecutionResult(
-                result = OperationResult.failure(
-                    error = "Agent '${context.role.title}' timed out after ${timeoutMs / 1000}s on '${task.title}'.",
-                    logs = listOf("timeoutMs=$timeoutMs"),
-                    startedAt = startedAt,
-                ),
-                outputText = "",
-                durationMs = System.currentTimeMillis() - startedAt,
+        // startSession blocks until the agent process ends and always emits a
+        // terminal event (SessionCompleted / SessionFailed) before returning.
+        // It runs NonCancellable internally, so a timeout cannot interrupt it
+        // directly: on timeout we stop the active session (destroys the
+        // process), which lets startSession wind down promptly.
+        val sessionDeferred = scope.async {
+            bridge.startSession(
+                projectId = projectId,
+                projectSlug = projectSlug,
+                projectKind = ProjectKind.PROJECT,
+                prompt = prompt,
+                conversationHistory = emptyList(),
+                provider = provider,
             )
+        }
+        val sessionId: String?
+        try {
+            sessionId = withTimeoutOrNull(timeoutMs) { sessionDeferred.await() }
         } catch (e: Exception) {
             collector.cancel()
             return TeamExecutionResult(
                 result = OperationResult.failure(
                     error = "Agent '${context.role.title}' failed to start: ${e.message}",
+                    startedAt = startedAt,
+                ),
+                outputText = "",
+                durationMs = System.currentTimeMillis() - startedAt,
+            )
+        }
+        if (sessionId == null) {
+            runCatching { bridge.stopActiveSession() }
+            // Give the bridge a short grace period to wind down; never hang.
+            withTimeoutOrNull(20_000L) { sessionDeferred.await() }
+            collector.cancel()
+            return TeamExecutionResult(
+                result = OperationResult.failure(
+                    error = "Agent '${context.role.title}' timed out after ${timeoutMs / 1000}s on '${task.title}'.",
+                    logs = listOf("timeoutMs=$timeoutMs"),
                     startedAt = startedAt,
                 ),
                 outputText = "",

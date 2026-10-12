@@ -47,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,6 +60,7 @@ import com.codeair.mhe.agent.team.AgentTeamOrchestrator
 import com.codeair.mhe.agent.team.TeamRole
 import com.codeair.mhe.agent.team.TeamTask
 import com.codeair.mhe.agent.team.TeamTaskStatus
+import kotlinx.coroutines.launch
 
 /**
  * Multi-Agent Engineering Team UI Dashboard (Phase 11).
@@ -73,6 +75,7 @@ fun MultiAgentTeamBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val sessionState by orchestrator.sessionState.collectAsState()
+    val scope = rememberCoroutineScope()
     var inputGoal by remember { mutableStateOf(sessionState.activeGoal.ifBlank { "Create full application architecture and implementation" }) }
     var fullStudioMode by rememberSaveable { mutableStateOf(false) }
 
@@ -117,7 +120,7 @@ fun MultiAgentTeamBottomSheet(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                text = "Phase 11 — 10 Specialized Autonomous Agents",
+                                text = "10 Specialized Autonomous Agents",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -205,7 +208,7 @@ fun MultiAgentTeamBottomSheet(
 
                     if (sessionState.isRunning) {
                         Button(
-                            onClick = { orchestrator.runNextReadyTask() },
+                            onClick = { scope.launch { orchestrator.executeNextReadyTask() } },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(10.dp),
                         ) {
@@ -215,14 +218,14 @@ fun MultiAgentTeamBottomSheet(
                         }
 
                         OutlinedButton(
-                            onClick = { orchestrator.autoRunAll() },
+                            onClick = { scope.launch { orchestrator.autoRunAllReal() } },
                             shape = RoundedCornerShape(10.dp),
                         ) {
                             Text("Run All")
                         }
 
                         OutlinedButton(
-                            onClick = { orchestrator.cancelSession() },
+                            onClick = { orchestrator.cancelRealRun() },
                             shape = RoundedCornerShape(10.dp),
                         ) {
                             Text("Stop")

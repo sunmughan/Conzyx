@@ -186,11 +186,12 @@ fun AgentScreen(
     onRemoveAntigravityAccount: (String) -> Unit = {},
     onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
     onDispatchTeamTask: ((String) -> Unit)? = null,
+    teamOrchestrator: AgentTeamOrchestrator? = null,
 ) {
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
     val scope = rememberCoroutineScope()
     var showTeamDialog by rememberSaveable { mutableStateOf(false) }
-    val teamOrchestrator = remember { AgentTeamOrchestrator() }
+    val teamOrchestratorResolved = teamOrchestrator ?: remember { AgentTeamOrchestrator() }
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
     var baseUrl by rememberSaveable(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
     var model by rememberSaveable(state.provider.model) { mutableStateOf(state.provider.model) }
@@ -1180,7 +1181,7 @@ fun AgentScreen(
 
     if (showTeamDialog) {
         MultiAgentTeamBottomSheet(
-            orchestrator = teamOrchestrator,
+            orchestrator = teamOrchestratorResolved,
             onDismiss = { showTeamDialog = false },
             onDispatchToAgent = { goal ->
                 onDispatchTeamTask?.invoke(goal)

@@ -399,7 +399,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitHubClient = com.codeair.mhe.network.GitHubClient()
     val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val marketplaceInstallManager = com.codeair.mhe.marketplace.MarketplaceInstallManager(application)
-    val teamOrchestrator = com.codeair.mhe.agent.team.AgentTeamOrchestrator()
+    val teamOrchestrator = com.codeair.mhe.agent.team.AgentTeamOrchestrator(
+        teamExecutor = com.codeair.mhe.agent.team.runtime.RealTeamAgentExecutor(
+            workspaceBaseDir = File(application.filesDir, "team-workspaces"),
+            bridges = mapOf(
+                AgentKind.CLAUDE_CODE to claudeRuntime,
+                AgentKind.DEEPSEEK_HARNESS to dshRuntime,
+                AgentKind.ANTIGRAVITY to antigravityRuntime,
+                AgentKind.CLOUD_CODE to cloudCodeRuntime,
+            ),
+            installer = installer,
+            providerFor = { kind -> preferences.loadProvider(vault, kind) },
+            secretFor = { profile -> vault.get(profile.kind.name) },
+        ),
+        isDemoMode = false,
+    )
     val cloudHybridCoordinator = com.codeair.mhe.cloud.CloudHybridCoordinator()
     val workspaceCollaborationManager = com.codeair.mhe.collab.WorkspaceCollaborationManager()
     private val projectIndex = ProjectIndex(application.filesDir)
