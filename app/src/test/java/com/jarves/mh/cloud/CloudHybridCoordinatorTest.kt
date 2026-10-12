@@ -84,10 +84,12 @@ class CloudHybridCoordinatorTest {
             runImmediately = true
         )
 
-        assertEquals(HybridJobState.COMPLETED, job.state)
+        // Milestone 0 honesty: no real cloud worker endpoint is configured in
+        // this build, so the cloud path must report NOT_CONFIGURED with a clear
+        // message, never a fake COMPLETED with canned logs.
+        assertEquals(HybridJobState.NOT_CONFIGURED, job.state)
         assertEquals(ExecutionTarget.CLOUD, job.routingDecision?.target)
-        assertNotNull(job.assignedWorker)
-        assertTrue(job.producedArtifacts.isNotEmpty())
+        assertTrue(job.errorMessage?.isNotBlank() == true)
         assertTrue(job.outputLogs.isNotEmpty())
 
         val state = coordinator.state.value

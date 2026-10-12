@@ -67,7 +67,7 @@ class GitHubWorkflowEngineTest {
         var agentExecutedPrompt = ""
         val result = workflowEngine.runAutonomousWorkflow(
             issue = issue,
-            token = "", // Offline test
+            token = "fake-token-for-testing", // Offline test: fake token; git + GitHub API are mocked, no network
             repoFullName = "example/repo",
             workingDir = tempDir,
             baseBranch = "main",
@@ -130,7 +130,7 @@ class GitHubWorkflowEngineTest {
 
         val result = workflowEngine.runAutonomousWorkflow(
             issue = issue,
-            token = "",
+            token = "fake-token-for-testing",
             repoFullName = "example/repo",
             workingDir = tempDir,
             agentExecutor = { prompt ->
@@ -175,7 +175,7 @@ class GitHubWorkflowEngineTest {
 
         val result = workflowEngine.runAutonomousWorkflow(
             issue = issue,
-            token = "",
+            token = "fake-token-for-testing",
             repoFullName = "example/repo",
             workingDir = tempDir,
             agentExecutor = { OperationResult.failure("Agent failed") } // Agent fails
@@ -198,10 +198,11 @@ class GitHubWorkflowEngineTest {
         val issue = GitHubIssue(number = 1, title = "Bug", state = "open", user = "u", comments = 0, htmlUrl = "")
         workflowEngine.runAutonomousWorkflow(
             issue = issue,
-            token = "",
+            token = "fake-token-for-testing",
             repoFullName = "repo",
             workingDir = tempDir,
-            agentExecutor = { OperationResult.success() }
+            agentExecutor = { OperationResult.success() },
+            buildAndTestValidator = { OperationResult.success() }
         )
 
         assertEquals(WorkflowStage.COMPLETED, workflowEngine.state.value.currentStage)

@@ -82,7 +82,25 @@ class AgentTeamOrchestratorTest {
         assertTrue(sessionState.budget.totalTokensUsed > 0L)
         assertTrue(sessionState.budget.totalCostUsd > 0.0)
 
-        // Check reviews were recorded
+        // Demo-mode integrity (Milestone 0): simulated reviews are NEVER recorded
+        // as gatekeeper approvals. No review verdicts may exist in demo mode.
+        assertTrue(sessionState.reviews.none { it.reviewerRole == TeamRole.SECURITY_REVIEWER })
+        assertTrue(sessionState.reviews.none { it.reviewerRole == TeamRole.CODE_REVIEWER })
+    }
+
+    @Test
+    fun testNonDemoModeRecordsReviewsThroughGatekeeper() {
+        // Gatekeeper mechanics test: with demo mode explicitly off, the review
+        // pipeline records approvals. (Real agent executors are Milestone 10 work;
+        // this exercises the gatekeeper path, not real reviews.)
+        val realModeOrchestrator = AgentTeamOrchestrator(isDemoMode = false)
+        realModeOrchestrator.planProject("Build complete mobile app")
+
+        val completedCount = realModeOrchestrator.autoRunAll()
+        assertEquals(10, completedCount)
+
+        val sessionState = realModeOrchestrator.sessionState.value
+        assertTrue(sessionState.tasks.all { it.status == TeamTaskStatus.COMPLETED })
         assertTrue(sessionState.reviews.any { it.reviewerRole == TeamRole.SECURITY_REVIEWER })
         assertTrue(sessionState.reviews.any { it.reviewerRole == TeamRole.CODE_REVIEWER })
     }
