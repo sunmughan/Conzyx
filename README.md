@@ -33,6 +33,24 @@
 
 ---
 
+## Capability Status (v3 — Milestone 0 integrity gate)
+
+Honest labels for what each area actually does today. A feature is only
+`IMPLEMENTED` when it executes real work end-to-end; anything simulated is
+labelled `SIMULATED` and never reports success.
+
+| Area | Status | What it really means |
+|---|---|---|
+| PRoot Linux runtime, terminal, editor, checkpoints, sessions | IMPLEMENTED | Real on-device execution, process/session lifecycle, workspace snapshots |
+| Semantic code index, completions, diagnostics | PARTIAL | Real regex/symbol engine; **no real language-server process** — the built-in fallback is labelled as fallback, never "server running" |
+| Autonomous GitHub Issue-to-PR | PARTIAL | Real Git ops + real PR API; the agent step awaits genuine completion and the build step runs **real Gradle build+test**; blank token or empty diff fails fast |
+| Multi-Agent Engineering Team | SIMULATED | **Demo mode**: roles, DAG, blackboard and review structures exist, but no real agent executes per role; simulated test/security outputs are labelled and never count as approval |
+| Cloud + Phone Hybrid | SIMULATED | Routing/worker/job models exist; **no real cloud backend is configured** — jobs return `NOT_CONFIGURED`, never fake success; local fallback reports real exit codes |
+| Team Collaboration sync | PARTIAL | Local session/share models and RBAC calculations; no shared backend or cross-device sync |
+| AI Developer Marketplace | PARTIAL | Real catalog + durable install manager (packages materialized on disk); no hosted publisher service yet |
+
+---
+
 ## The 14 Engineering Phases (v3.0.0)
 
 Mobile Harness Extended v3.0.0 is the culmination of 14 core engineering phases designed to bring high-end AI software engineering into a mobile form factor:
@@ -72,6 +90,7 @@ Mobile Harness Extended v3.0.0 is the culmination of 14 core engineering phases 
 - **Multi-Provider Unified Gateway:** Connects seamlessly with Anthropic Claude Code, DeepSeek Coder, Antigravity, OpenRouter, and custom OpenAI-compatible endpoints.
 
 ### Phase 7: Autonomous GitHub Issue-to-PR Engine
+> **Integrity (v3):** the workflow now fails fast on a blank GitHub token, waits for the real agent result (no fire-and-forget), runs a **real Gradle build + test** instead of a canned pass, and refuses empty diffs. Real API errors surface to the UI.
 - **Native GitHub Integration:** Bundled `gh` CLI and GitHub REST API integration with OAuth token authentication and repository context indexing.
 - **Autonomous Issue Triage:** Analyzes issue descriptions, reproduces bug conditions, extracts stack traces, and creates dedicated feature/fix branches.
 - **Automated Verification & Pull Request Submission:** Edits code, executes the test suite offline, commits changes with conventional commit messages, pushes to origin, and opens a fully documented pull request.
@@ -103,6 +122,7 @@ Mobile Harness Extended v3.0.0 is the culmination of 14 core engineering phases 
   10. **UX Designer:** Accessibility compliance, tactile ergonomics, navigation flow, and visual hierarchy.
 
 ### Phase 11: Multi-Agent Team Orchestration & Studio UI
+> **Demo mode (v3):** the team structures, DAG scheduler, blackboard, and review gates are real, but no autonomous agent executes per role yet — task and review outputs are simulated, labelled `SIMULATED`, and never count as test/security approval.
 - **Shared Blackboard Architecture:** Unified memory structure where all agent roles post proposals, review feedbacks, and merge artifacts.
 - **Directed Acyclic Graph (DAG) Task Scheduler:** Resolves task dependencies, executes parallel subtasks, and synchronizes milestones.
 - **Asynchronous Communication Bus:** Type-safe message broker enabling inter-agent messaging, escalation, and peer handoffs.
@@ -110,6 +130,7 @@ Mobile Harness Extended v3.0.0 is the culmination of 14 core engineering phases 
 - **Team Studio UI:** Dedicated visual dashboard displaying live agent states, role badges, active tasks, log streams, and token usage meters.
 
 ### Phase 12: Cloud + Phone Hybrid Coordinator
+> **Not configured (v3):** no cloud worker backend ships with the app. Jobs report `NOT_CONFIGURED` instead of fake success; the local fallback runs the real command and reports its real exit code.
 - **Workload Decision Engine:** Dynamically calculates whether to execute tasks locally on the phone or offload them to remote cloud workers.
 - **Environmental Telemetry:** Monitors battery percentage, charging state, thermal throttling state, available RAM, and network throughput.
 - **Remote Build Runners:** Offloads CPU-intensive Gradle compilation, Docker packaging, and heavyweight model training to cloud runners.
