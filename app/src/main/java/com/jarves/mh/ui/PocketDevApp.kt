@@ -311,11 +311,8 @@ fun PocketDevApp(
     val projectsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     var guestDismissedAuth by rememberSaveable { mutableStateOf(false) }
     var showAuthModal by rememberSaveable { mutableStateOf(false) }
-    var showAppFactoryScreen by rememberSaveable { mutableStateOf(false) }
-    var showTeamStudioScreen by rememberSaveable { mutableStateOf(false) }
-    var showCloudHybridScreen by rememberSaveable { mutableStateOf(false) }
-    var showCollaborationScreen by rememberSaveable { mutableStateOf(false) }
-    var showMarketplaceScreen by rememberSaveable { mutableStateOf(false) }
+    // Milestone 1: overlay navigation separated into PocketDevNavigator.
+    val navigator = remember { com.jarves.mh.ui.navigation.PocketDevNavigator() }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -337,7 +334,7 @@ fun PocketDevApp(
         return
     }
 
-    if (showAppFactoryScreen) {
+    if (navigator.showAppFactoryScreen) {
         com.jarves.mh.factory.ui.AppFactoryScreen(
             currentBlueprint = state.appFactoryBlueprint,
             isGeneratingBlueprint = state.appFactoryGeneratingBlueprint,
@@ -349,7 +346,7 @@ fun PocketDevApp(
             keystoreConfig = state.appFactoryKeystoreConfig,
             storeListingBundle = state.appFactoryStoreBundle,
             statusMessage = state.appFactoryMessage,
-            onBack = { showAppFactoryScreen = false },
+            onBack = { navigator.closeOverlay() },
             onGenerateBlueprint = { prompt, fw, mode, arch ->
                 viewModel.generateAppFactoryBlueprint(prompt, fw, mode, arch)
             },
@@ -375,10 +372,10 @@ fun PocketDevApp(
         return
     }
 
-    if (showTeamStudioScreen) {
+    if (navigator.showTeamStudioScreen) {
         com.jarves.mh.agent.team.ui.TeamStudioScreen(
             orchestrator = viewModel.teamOrchestrator,
-            onClose = { showTeamStudioScreen = false },
+            onClose = { navigator.closeOverlay() },
             onDispatchToAgent = { goal ->
                 viewModel.sendPrompt("Multi-Agent Team Goal: $goal")
             }
@@ -386,27 +383,27 @@ fun PocketDevApp(
         return
     }
 
-    if (showCloudHybridScreen) {
+    if (navigator.showCloudHybridScreen) {
         com.jarves.mh.cloud.ui.CloudHybridScreen(
             coordinator = viewModel.cloudHybridCoordinator,
-            onClose = { showCloudHybridScreen = false }
+            onClose = { navigator.closeOverlay() }
         )
         return
     }
 
-    if (showCollaborationScreen) {
+    if (navigator.showCollaborationScreen) {
         com.jarves.mh.collab.ui.CollaborationStudioScreen(
             manager = viewModel.workspaceCollaborationManager,
             projectName = state.activeProject?.name ?: "Mobile-Harness-Project",
             projectId = state.activeProject?.id ?: "project-current",
-            onClose = { showCollaborationScreen = false }
+            onClose = { navigator.closeOverlay() }
         )
         return
     }
 
-    if (showMarketplaceScreen) {
+    if (navigator.showMarketplaceScreen) {
         MarketplaceScreen(
-            onBack = { showMarketplaceScreen = false },
+            onBack = { navigator.closeOverlay() },
             onInstallItem = { item -> viewModel.installMarketplaceItem(item) },
             onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
             initiallyInstalledIds = marketplaceInstalledIds,
@@ -567,11 +564,11 @@ fun PocketDevApp(
             onScanPorts = viewModel::scanActiveLocalhostPorts,
             onAttachVisualInspection = viewModel::attachVisualInspectionToAgent,
             viewModel = viewModel,
-            onOpenAppFactory = { showAppFactoryScreen = true },
-            onOpenTeamStudio = { showTeamStudioScreen = true },
-            onOpenCloudHybrid = { showCloudHybridScreen = true },
-            onOpenCollaboration = { showCollaborationScreen = true },
-            onOpenMarketplace = { showMarketplaceScreen = true },
+            onOpenAppFactory = { navigator.openAppFactory() },
+            onOpenTeamStudio = { navigator.openTeamStudio() },
+            onOpenCloudHybrid = { navigator.openCloudHybrid() },
+            onOpenCollaboration = { navigator.openCollaboration() },
+            onOpenMarketplace = { navigator.openMarketplace() },
         )
         else -> RootScreenHost(
             state = state,
@@ -579,10 +576,10 @@ fun PocketDevApp(
             projectsListState = projectsListState,
             authViewModel = authViewModel,
             onNavigateToAuth = { showAuthModal = true },
-            onOpenAppFactory = { showAppFactoryScreen = true },
-            onOpenTeamStudio = { showTeamStudioScreen = true },
-            onOpenCloudHybrid = { showCloudHybridScreen = true },
-            onOpenCollaboration = { showCollaborationScreen = true },
+            onOpenAppFactory = { navigator.openAppFactory() },
+            onOpenTeamStudio = { navigator.openTeamStudio() },
+            onOpenCloudHybrid = { navigator.openCloudHybrid() },
+            onOpenCollaboration = { navigator.openCollaboration() },
         )
     }
 }

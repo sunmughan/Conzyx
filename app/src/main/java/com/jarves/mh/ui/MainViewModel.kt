@@ -759,6 +759,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val detectedPortInfos: StateFlow<List<com.jarves.mh.visual.LocalhostPortInfo>> = visualCoordinator.detectedPortInfos
     val detectedLocalhostPorts: StateFlow<List<Int>> = visualCoordinator.detectedLocalhostPorts
 
+    /**
+     * Milestone 1: checks a project's workspace against the supported resource
+     * budgets (file count, total size). Returns SUCCESS when within budget,
+     * FAILED with an actionable message naming the exceeded budget otherwise.
+     */
+    fun checkProjectResources(projectRoot: File): com.jarves.mh.core.result.OperationResult {
+        return com.jarves.mh.core.resources.ResourceGate().checkProject(
+            projectRoot,
+            com.jarves.mh.core.resources.AndroidResourceProbe(getApplication()),
+        )
+    }
+
     private val _terminalLines = MutableStateFlow<List<TerminalOutputLine>>(
         listOf(
             TerminalOutputLine(
@@ -1505,7 +1517,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        val setupSnapshot = RuntimeSetupController.snapshot.value
+        // Milestone 1: surface low-RAM / low-storage conditions early with an
+        // actionable message instead of failing mysteriously later. Non-blocking:
+        // the install flow reports its own errors; this is an early warning.
+        val resourceCheck = com.jarves.mh.core.resources.ResourceGate()
+            .checkDevice(com.jarves.mh.core.resources.AndroidResourceProbe(getApplication()))
+        if (!resourceCheck.isSuccess) {
+            _state.update { it.copy(toastMessage = resourceCheck.error) }
+        }        val setupSnapshot = RuntimeSetupController.snapshot.value
         if (setupSnapshot.status == RuntimeSetupStatus.RUNNING) {
             onSetupSnapshot(setupSnapshot)
             resumeRuntimeSetupService()
