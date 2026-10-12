@@ -4,6 +4,8 @@ import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.Project
 import com.jarves.mh.runtime.NativeSpawnProcess
 import com.jarves.mh.runtime.RuntimeInstaller
+import com.jarves.mh.terminal.TerminalProcessHandle
+import com.jarves.mh.terminal.TerminalProcessRegistry
 import com.jarves.mh.terminal.TerminalSessionController
 import com.jarves.mh.ui.TerminalOutputLine
 import com.jarves.mh.ui.TerminalSessionTab
@@ -25,6 +27,9 @@ import org.json.JSONObject
 internal data class ProjectTerminalSnapshot(
     val lines: List<TerminalOutputLine> = emptyList(),
     val cwd: String = "/workspace",
+    /** All persisted session tabs (Milestone 2). Empty when none were saved. */
+    val sessions: List<TerminalSessionTab> = emptyList(),
+    val activeSessionId: String? = null,
 )
 
 internal data class ProjectTerminalResult(
@@ -78,6 +83,14 @@ class TerminalCoordinator(
     @Volatile private var projectTerminalProcess: Process? = null
     @Volatile private var projectTerminalProjectId: String? = null
     @Volatile private var projectTerminalStopRequested: Boolean = false
+
+    /**
+     * Milestone 2 — attach/detach registry binding running processes to their
+     * originating session. A process keeps running when the user switches tabs
+     * (detach); switching back re-attaches. [projectTerminalProcess] is kept
+     * as a legacy alias updated alongside the registry for the active session.
+     */
+    private val processRegistry = TerminalProcessRegistry()
 
     fun runTerminalCommand(cmd: String) {
         val command = cmd.trim()
@@ -213,7 +226,10 @@ class TerminalCoordinator(
         val project = host.state().activeProject ?: return
         if (host.state().projectTerminalRunning) return
         val startingCwd = host.state().projectTerminalCwd
-        val existingLines = host.state().projectTerminalLines
+        // Milestone 2: the command belongs to the session that was active when
+        // it started. If the user switches tabs mid-run, the process detaches
+        // and keeps running; completion is routed back to THIS session.
+        val originatingSessionId = host.state().activeTerminalSessionId
         projectTerminalStopRequested = false
         val requestedPreviewUrl = detectServerUrl(command)
         host.updateState {
@@ -225,13 +241,13 @@ class TerminalCoordinator(
                 previewReady = it.previewReady || requestedPreviewUrl != null,
                 previewUrl = requestedPreviewUrl ?: it.previewUrl,
                 terminalSessions = it.terminalSessions.map { s ->
-                    if (s.id == it.activeTerminalSessionId) s.copy(isRunning = true) else s
+                    if (s.id == originatingSessionId) s.copy(isRunning = true) else s
                 },
             )
         }
         host.scope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { runProjectTerminalProcess(project.id, command, startingCwd) }
+                runCatching { runProjectTerminalProcess(project.id, command, startingCwd, originatingSessionId) }
                     .getOrElse { error ->
                         ProjectTerminalResult(
                             output = "Terminal error: ${error.message ?: error::class.java.simpleName}",
@@ -247,25 +263,32 @@ class TerminalCoordinator(
                 },
                 exitCode = result.exitCode,
             )
-            val updatedLines = (existingLines + completedLine).takeLast(MAX_PROJECT_TERMINAL_HISTORY)
-            saveProjectTerminal(project.id, result.cwd, updatedLines)
-            if (host.state().activeProject?.id == project.id) {
-                host.updateState {
-                    it.copy(
-                        projectTerminalLines = updatedLines,
-                        projectTerminalLiveOutput = "",
-                        projectTerminalRunning = false,
-                        projectTerminalCwd = result.cwd,
-                        projectTerminalCommand = null,
-                        terminalSessions = it.terminalSessions.map { s ->
-                            if (s.id == it.activeTerminalSessionId) s.copy(
-                                lines = updatedLines,
-                                cwd = result.cwd,
-                                isRunning = false,
-                            ) else s
-                        },
-                    )
+            processRegistry.detach(originatingSessionId)
+            // Route completion to the originating session, wherever the UI is now.
+            host.updateState { current ->
+                val updatedSessions = current.terminalSessions.map { s ->
+                    if (s.id == originatingSessionId) {
+                        s.copy(
+                            lines = (s.lines + completedLine).takeLast(MAX_PROJECT_TERMINAL_HISTORY),
+                            cwd = result.cwd,
+                            isRunning = false,
+                        )
+                    } else s
                 }
+                val isActiveSession = originatingSessionId == current.activeTerminalSessionId
+                val isActiveProject = current.activeProject?.id == project.id
+                val sessionLines = updatedSessions.firstOrNull { it.id == originatingSessionId }?.lines.orEmpty()
+                current.copy(
+                    terminalSessions = updatedSessions,
+                    projectTerminalLines = if (isActiveSession && isActiveProject) sessionLines else current.projectTerminalLines,
+                    projectTerminalLiveOutput = if (isActiveSession) "" else current.projectTerminalLiveOutput,
+                    projectTerminalRunning = if (isActiveSession) false else current.projectTerminalRunning,
+                    projectTerminalCwd = if (isActiveSession && isActiveProject) result.cwd else current.projectTerminalCwd,
+                    projectTerminalCommand = if (isActiveSession) null else current.projectTerminalCommand,
+                )
+            }
+            if (host.state().activeProject?.id == project.id) {
+                persistTerminalState(project.id)
                 refreshProjectFiles()
             }
             projectTerminalProcess = null
@@ -277,19 +300,47 @@ class TerminalCoordinator(
     fun stopProjectTerminalCommand() {
         if (!host.state().projectTerminalRunning) return
         projectTerminalStopRequested = true
+        // Milestone 2: stop targets the active session's process via the registry.
+        val handle = processRegistry.handleFor(host.state().activeTerminalSessionId)
         host.scope.launch(Dispatchers.IO) {
-            projectTerminalProcess?.destroy()
+            handle?.destroy()
             delay(400)
-            if (projectTerminalProcess?.isAlive == true) projectTerminalProcess?.destroyForcibly()
+            if (handle?.isAlive == true) handle.destroyForcibly()
         }
     }
 
     fun sendProjectTerminalInput(text: String) {
-        sendProcessInput(projectTerminalProcess, text)
+        if (text.isBlank()) return
+        // Milestone 2: input goes to the ACTIVE session's process. A detached
+        // background session keeps running but no longer receives UI input.
+        val handle = processRegistry.handleFor(host.state().activeTerminalSessionId)
+        if (handle == null) {
+            host.updateState { current -> current.copy(toastMessage = "No running process in this terminal session.") }
+            return
+        }
+        host.scope.launch(Dispatchers.IO) {
+            if (!handle.sendInput(text)) {
+                host.updateState { current -> current.copy(toastMessage = "This process is no longer accepting input.") }
+            }
+        }
     }
 
     fun interruptProjectTerminalCommand() {
-        interruptProcess(projectTerminalProcess)
+        // Milestone 2: interrupt targets the active session's process.
+        processRegistry.handleFor(host.state().activeTerminalSessionId)?.interrupt()
+    }
+
+    /**
+     * Milestone 2 — explicit lifecycle control for any session's process,
+     * including background (detached) sessions.
+     */
+    fun stopTerminalSessionProcess(sessionId: String) {
+        val handle = processRegistry.handleFor(sessionId) ?: return
+        host.scope.launch(Dispatchers.IO) {
+            handle.destroy()
+            delay(400)
+            if (handle.isAlive) handle.destroyForcibly()
+        }
     }
 
     fun clearProjectTerminal() {
@@ -304,7 +355,7 @@ class TerminalCoordinator(
                 },
             )
         }
-        saveProjectTerminal(project.id, host.state().projectTerminalCwd, emptyList())
+        persistTerminalState(project.id)
     }
 
     fun createTerminalSession() {
@@ -320,6 +371,7 @@ class TerminalCoordinator(
                 projectTerminalLiveOutput = "",
             )
         }
+        host.state().activeProject?.let { persistTerminalState(it.id) }
     }
 
     fun selectTerminalSession(sessionId: String) {
@@ -343,6 +395,12 @@ class TerminalCoordinator(
                 projectTerminalLiveOutput = "",
             )
         }
+        // Milestone 2: the newly attached session may have a live background
+        // process; reflect the registry truth in the UI running flag.
+        if (processRegistry.hasRunningProcess(target.id)) {
+            host.updateState { it.copy(projectTerminalRunning = true) }
+        }
+        host.state().activeProject?.let { persistTerminalState(it.id) }
     }
 
     fun closeTerminalSession(sessionId: String) {
@@ -356,16 +414,20 @@ class TerminalCoordinator(
             targetSessionId = sessionId,
         )
         val active = newActive ?: remaining.firstOrNull() ?: return
+        // Milestone 2: closing a session with a live process kills it — the
+        // process cannot outlive its session tab.
+        processRegistry.handleFor(sessionId)?.let { processRegistry.detach(sessionId)?.destroy() }
         host.updateState {
             it.copy(
                 terminalSessions = remaining,
                 activeTerminalSessionId = active.id,
                 projectTerminalLines = active.lines,
                 projectTerminalCwd = active.cwd,
-                projectTerminalRunning = active.isRunning,
+                projectTerminalRunning = active.isRunning || processRegistry.hasRunningProcess(active.id),
                 projectTerminalLiveOutput = "",
             )
         }
+        host.state().activeProject?.let { persistTerminalState(it.id) }
     }
 
     /** Loads persisted terminal history; called by openProject in the ViewModel. */
@@ -385,24 +447,154 @@ class TerminalCoordinator(
                     exitCode = item.optInt("exitCode"),
                 )
             }
+            // Milestone 2: restore the full session tab list. A process can
+            // never survive app death, so any session still marked running is
+            // honestly reported as interrupted — never silently resurrected.
+            val sessionsArray = root.optJSONArray("sessions") ?: JSONArray()
+            val sessions = (0 until sessionsArray.length()).mapNotNull { index ->
+                val item = sessionsArray.optJSONObject(index) ?: return@mapNotNull null
+                val id = item.optString("id").ifBlank { return@mapNotNull null }
+                val wasRunning = item.optBoolean("isRunning", false)
+                val sessionLines = readSessionLines(item.optJSONArray("lines"))
+                val recoveredLines = if (wasRunning) {
+                    sessionLines + TerminalOutputLine(
+                        command = "",
+                        output = "Session recovered after app restart — the running process did not survive.",
+                        exitCode = 1,
+                    )
+                } else {
+                    sessionLines
+                }
+                TerminalSessionTab(
+                    id = id,
+                    title = item.optString("title").ifBlank { "Terminal" },
+                    isRunning = false,
+                    cwd = item.optString("cwd", guestRoot).takeIf {
+                        it == guestRoot || it.startsWith("$guestRoot/")
+                    } ?: guestRoot,
+                    lines = recoveredLines.takeLast(MAX_PROJECT_TERMINAL_HISTORY),
+                )
+            }
+            val activeSessionId = root.optString("activeSessionId").takeIf { id ->
+                id.isNotBlank() && sessions.any { it.id == id }
+            }
+            val active = sessions.firstOrNull { it.id == activeSessionId } ?: sessions.lastOrNull()
             ProjectTerminalSnapshot(
-                lines = lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY),
-                cwd = root.optString("cwd", guestRoot).takeIf {
+                lines = active?.lines ?: lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY),
+                cwd = active?.cwd ?: root.optString("cwd", guestRoot).takeIf {
                     it == guestRoot || it.startsWith("$guestRoot/")
                 } ?: guestRoot,
+                sessions = sessions,
+                activeSessionId = active?.id,
             )
         }.getOrDefault(ProjectTerminalSnapshot(cwd = guestRoot))
     }
 
+    private fun readSessionLines(array: JSONArray?): List<TerminalOutputLine> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            TerminalOutputLine(
+                id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
+                command = item.optString("command"),
+                output = item.optString("output"),
+                exitCode = item.optInt("exitCode"),
+            )
+        }
+    }
+
+    /**
+     * Milestone 2 — persists the full terminal state for a project: the
+     * session tab list, the active session, and the active session's
+     * lines/cwd (legacy top-level fields kept for compatibility).
+     */
+    internal fun persistTerminalState(projectId: String) {
+        val state = host.state()
+        runCatching {
+            val file = terminalHistoryFile(projectId)
+            file.parentFile?.mkdirs()
+            val sessionsArray = JSONArray()
+            state.terminalSessions.forEach { session ->
+                val linesArray = JSONArray()
+                session.lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY).forEach { line ->
+                    linesArray.put(
+                        JSONObject()
+                            .put("id", line.id)
+                            .put("command", line.command)
+                            .put("output", line.output.takeLast(MAX_PROJECT_TERMINAL_OUTPUT))
+                            .put("exitCode", line.exitCode),
+                    )
+                }
+                sessionsArray.put(
+                    JSONObject()
+                        .put("id", session.id)
+                        .put("title", session.title)
+                        .put("isRunning", session.isRunning || processRegistry.hasRunningProcess(session.id))
+                        .put("cwd", session.cwd)
+                        .put("lines", linesArray),
+                )
+            }
+            val active = state.terminalSessions.firstOrNull { it.id == state.activeTerminalSessionId }
+            val root = JSONObject()
+                .put("cwd", active?.cwd ?: state.projectTerminalCwd)
+                .put("activeSessionId", state.activeTerminalSessionId)
+                .put("sessions", sessionsArray)
+            // Legacy top-level lines for readers that only know the old shape.
+            val linesArray = JSONArray()
+            (active?.lines ?: state.projectTerminalLines).takeLast(MAX_PROJECT_TERMINAL_HISTORY).forEach { line ->
+                linesArray.put(
+                    JSONObject()
+                        .put("id", line.id)
+                        .put("command", line.command)
+                        .put("output", line.output.takeLast(MAX_PROJECT_TERMINAL_OUTPUT))
+                        .put("exitCode", line.exitCode),
+                )
+            }
+            root.put("lines", linesArray)
+            file.writeText(root.toString())
+        }
+    }
+
     /** Destroys terminal processes; called from the ViewModel's onCleared. */
     fun onCleared() {
+        // Milestone 2: kill every tracked session process, not just the active one.
+        processRegistry.destroyAll()
         runCatching {
             projectTerminalProcess?.destroy()
             terminalProcess?.destroy()
         }
     }
 
-    private fun runProjectTerminalProcess(projectId: String, command: String, cwd: String): ProjectTerminalResult {
+    /**
+     * Milestone 2 — adapts a real [Process] to the registry's handle interface.
+     */
+    private fun Process.asTerminalHandle(): TerminalProcessHandle {
+        val process = this
+        return object : TerminalProcessHandle {
+            override val isAlive: Boolean get() = process.isAlive
+            override fun destroy() {
+                runCatching { process.destroy() }
+            }
+            override fun destroyForcibly() {
+                runCatching { process.destroyForcibly() }
+            }
+            override fun interrupt() {
+                (process as? NativeSpawnProcess)?.interrupt() ?: runCatching { process.destroy() }
+            }
+            override fun sendInput(text: String): Boolean = runCatching {
+                process.outputStream.write((text + "\n").toByteArray())
+                process.outputStream.flush()
+                true
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun runProjectTerminalProcess(
+        projectId: String,
+        command: String,
+        cwd: String,
+        sessionId: String,
+    ): ProjectTerminalResult {
         if (!installer.isInstalled()) return ProjectTerminalResult("Linux environment is not ready yet.", 1, cwd)
         val installed = installer.installedRuntime()
         val project = host.state().projects.firstOrNull { it.id == projectId }
@@ -430,6 +622,8 @@ class TerminalCoordinator(
         projectTerminalProcess = process
         projectTerminalProjectId = projectId
         if (projectTerminalStopRequested) process.destroy()
+        // Milestone 2: bind the live process to its session for attach/detach.
+        processRegistry.attach(sessionId, process.asTerminalHandle())
         val native = process as? NativeSpawnProcess
             ?: return ProjectTerminalResult("Unsupported terminal process.", 1, cwd)
         var offset = 0L
@@ -458,7 +652,10 @@ class TerminalCoordinator(
                 }
                 val detectedPreviewUrl = detectPreviewUrl(visible)
                 host.updateState { current ->
-                    if (current.activeProject?.id == projectId) {
+                    // Milestone 2: live output only drives the UI while this
+                    // session is attached (active). A detached session's
+                    // process keeps running; its output lands on completion.
+                    if (current.activeProject?.id == projectId && current.activeTerminalSessionId == sessionId) {
                         current.copy(
                             projectTerminalLiveOutput = visible,
                             previewReady = current.previewReady || detectedPreviewUrl != null,
@@ -556,21 +753,9 @@ class TerminalCoordinator(
         File(host.appContext.filesDir, "terminal-history/$projectId.json")
 
     internal fun saveProjectTerminal(projectId: String, cwd: String, lines: List<TerminalOutputLine>) {
-        runCatching {
-            val file = terminalHistoryFile(projectId)
-            file.parentFile?.mkdirs()
-            val array = JSONArray()
-            lines.takeLast(MAX_PROJECT_TERMINAL_HISTORY).forEach { line ->
-                array.put(
-                    JSONObject()
-                        .put("id", line.id)
-                        .put("command", line.command)
-                        .put("output", line.output.takeLast(MAX_PROJECT_TERMINAL_OUTPUT))
-                        .put("exitCode", line.exitCode),
-                )
-            }
-            file.writeText(JSONObject().put("cwd", cwd).put("lines", array).toString())
-        }
+        // Legacy entry point: the Milestone 2 session-aware persistTerminalState
+        // is the canonical path; this keeps old callers compiling.
+        persistTerminalState(projectId)
     }
 
     /** Deletes persisted terminal history for a project (e.g. on project deletion). */
