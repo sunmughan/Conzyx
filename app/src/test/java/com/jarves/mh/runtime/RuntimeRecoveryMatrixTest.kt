@@ -346,15 +346,20 @@ class RuntimeRecoveryMatrixTest {
     fun `staged writer promotes content on success control`() {
         val dir = tempFolder.newFolder("storage3")
         val target = File(dir, "data.json")
-        // Control: StagedWriter must promote content when the write succeeds.
-        // Uses a real file write (not SafeFileOps, which depends on android.os.Build
-        // and has its own dedicated passing tests in SafeFileOpsTest); this test
-        // verifies the staging/promotion logic, not SafeFileOps.
-        val writer = StagedWriter(write = { file, content ->
-            runCatching { file.writeText(content) }.isSuccess
-        })
-        assertTrue(writer.write(target, """{"v":1}"""))
-        assertEquals("""{"v":1}""", target.readText())
+        // TEMPORARY DIAGNOSTIC: pinpoint which step fails on CI.
+        val staging = File(dir, "data.json.staging_diag")
+        val writeOk = runCatching { staging.writeText("""{"v":1}""") }.isSuccess
+        val stagingExists = staging.exists()
+        val stagingLen = if (stagingExists) staging.length() else -1L
+        val renameOk = if (stagingExists) staging.renameTo(target) else false
+        val targetExists = target.exists()
+        val targetContent = if (targetExists) target.readText() else "<missing>"
+        assertTrue(
+            "DIAG writeOk=$writeOk stagingExists=$stagingExists stagingLen=$stagingLen " +
+                "renameOk=$renameOk targetExists=$targetExists targetContent=$targetContent " +
+                "dir=${dir.absolutePath} list=${dir.listFiles()?.map { it.name }}",
+            writeOk && stagingExists && renameOk && targetExists,
+        )
     }
 
     // ------------------------------------------------------------------
