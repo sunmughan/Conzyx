@@ -86,4 +86,21 @@ interface LanguageIntelligenceProvider {
         character: Int,
         prefix: String,
     ): List<String>
+
+    /**
+     * Definition + reference locations for renaming the symbol at
+     * ([line], [character]) to [newName].
+     *
+     * Returns null when the provider does not support rename (default);
+     * returns empty when the symbol cannot be resolved (honest, not a
+     * guess). Providers with real rename return every location that must
+     * change for a correct rename.
+     */
+    fun renameLocations(
+        filePath: String,
+        content: String,
+        line: Int,
+        character: Int,
+        newName: String,
+    ): List<SymbolLocation>? = null
 }
