@@ -291,3 +291,44 @@ Milestone 1 (decompose `MainViewModel`) is the report's prescribed next mileston
 - Wiring the runner into UI view-models / `MainViewModel` coordinators — the engine is complete and tested; UI integration is product work, not milestone work.
 - Real agent executor backends for IMPLEMENT steps — the executor interface is ready; M10 wires real executors.
 - Remote MCP transport/auth — M7 scope (unchanged).
+
+## Milestone 7 — COMPLETE (2026-10-12)
+
+**Production MCP & Skills** (Phase 7): hardened stdio lifecycle; versioned install/update/remove; secure credentials; remote MCP transport/auth. CI green (run 38257056509).
+
+### JSON-RPC protocol layer (pure JVM, shared by both transports)
+- `mcp/McpProtocol.kt` (new): request/notification builders, `initialize`/`tools/list`/`tools/call`/`ping` constructors, `parseResponse` (result vs error), `parseToolsList` (skips nameless entries), `parseToolsCallResult` (text-block join, isError), SSE `data:` line parsing + first-payload extraction. `McpProtocolVersion.PROTOCOL_VERSION` constant.
+
+### Hardened stdio lifecycle
+- `mcp/McpServerProcessManager.kt` (new): `McpManagedProcess`/`McpProcessFactory` seams (production `RealMcpProcessFactory` over ProcessBuilder, daemon reader threads, stderr ring buffer). `McpServerSession` states IDLE→STARTING→INITIALIZING→RUNNING→STOPPING→STOPPED/FAILED; initialize handshake with timeout (never hangs); `ensureRunning()` with bounded restarts + backoff; request/response id matching that skips interleaved notifications; graceful stop (destroy, wait, forcible kill); `ping()` health check; `diagnostics()` stderr.
+
+### Secure credentials
+- `mcp/McpCredentialStore.kt` (new): `McpCredentialBackend` seam; `AesGcmFileCredentialBackend` (AES-256/GCM, key in owner-only sidecar file, values encrypted in JSON — pure JVM so tests exercise the real path); `InMemoryCredentialBackend` for tests. Secrets keyed `<serverId>::<name>`; never written to `mcp_servers.json`; `removeServerCredentials` purges on uninstall.
+
+### Remote MCP transport/auth
+- `mcp/McpRemoteTransport.kt` (new): `McpAuthType` (NONE/BEARER/API_KEY_HEADER/BASIC), `McpRemoteConfig`, `McpHttpLayer` seam (`UrlConnectionMcpHttpLayer` production), `McpRemoteOperations` interface, `McpRemoteClient`: auth headers resolved from the credential store (missing credential fails before any HTTP call), SSE or plain-JSON response handling, 401/403 → `McpAuthException`, transport failures → `McpTransportException`, RPC errors → `McpRpcException`, URL validation.
+
+### Tool registration/discovery
+- `mcp/McpToolRegistry.kt` (new): TTL-cached `discover()` (tools/list) per server; `callTool()` evaluated by `McpPermissionManager` first — DENY/disabled never reach the transport, PROMPT raises `McpPromptRequiredException`; every attempt audited to `McpAuditLogger` with its permission decision; `resolveEnv()` merges static env + stored secrets and fails honestly on missing secrets; lazy stdio sessions; remote dispatch for SSE/Streamable-HTTP servers; `invalidate()`/`shutdown()`.
+
+### Versioned install/update/remove + skills
+- `mcp/McpServerInfo.kt`: added `version`, `secretEnvNames`, `remoteUrl`, `authType`, `credentialName`, `apiKeyHeaderName`; `McpTransportType.STREAMABLE_HTTP`; `isRemote`; backward-compatible JSON (opt-parses with defaults).
+- `mcp/McpRegistry.kt`: template `requiredEnv` now maps to `secretEnvNames` (secrets resolve from the store, never the registry JSON); `updateServerVersion()` with downgrade refusal (numeric semver compare); `removeServerAndCredentials()` purges secrets on uninstall.
+- `skills/SkillPackage.kt` (new package `com.jarves.mh.skills`): `SkillManifest` (skill.json validation), `SkillLoader` (package dir validation incl. entry prompt file), `SkillRegistry` (versioned install/update/remove under `<base>/skills/<id>/`, downgrade refused unless forced, update requires strictly newer).
+
+### Tests (73 new)
+- `McpProtocolTest` (14): envelope shape, notifications, initialize params, response/error parsing, non-JSON-RPC rejection, tools/list + tools/call parsing, SSE parsing, id uniqueness.
+- `McpCredentialStoreTest` (8): in-memory round-trip, per-server scoping, blank rejection, per-server purge, AES-GCM round-trip across recreation, secrets never in plaintext on disk, encrypted default backend.
+- `McpServerProcessManagerTest` (13): handshake → RUNNING, env passthrough, failed handshake, tool round-trip, RPC error surfacing, tools/list, hang timeout, bounded restart recovery, budget exhaustion, graceful stop, ping true/false, stderr diagnostics.
+- `McpRemoteTransportTest` (14): JSON + SSE bodies, callTool, RPC/401/500/network error mapping, bearer/api-key/basic auth headers, missing-credential pre-check (zero HTTP calls), URL validation, ping.
+- `McpToolRegistryTest` (12): discovery caching + TTL expiry + invalidation, allowed call + audit, DENY/PROMPT/disabled never touch transport (audited), remote dispatch, secret env merge, missing-secret failure, unknown server.
+- `SkillLoaderTest` (12): manifest/prompt validation, malformed JSON, required tools, install/list/get/remove, downgrade refusal + force, update version guard, missing-skill update.
+- `McpTestFixtures.kt`: shared scripted fake process/factory + handshake responders.
+
+### CI fix rounds (1)
+1. `McpCredentialStoreTest`: wrong test expectation — asserted the credential *key* (`srv1::KEY`) must not appear in the storage file, but key identifiers are non-secret by design (only values are encrypted). Fixed the test to assert the identifier is present and the secret value never is.
+
+**Deliberately deferred:**
+- Wiring the tool registry / session manager into UI view-models / `MainViewModel` coordinators — the engine is complete and tested; UI integration is product work, not milestone work.
+- OAuth2 device-flow for remote MCP auth — scheme enum is extensible; BEARER/API_KEY/BASIC cover the current server landscape.
+- Skill marketplace distribution (signed packages, publisher trust) — M13 scope.
