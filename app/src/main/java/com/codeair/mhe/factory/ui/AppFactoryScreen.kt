@@ -131,19 +131,6 @@ fun AppFactoryScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    "v2.0",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
                         }
                         Text(
                             text = "Prompt to native Android, Flutter & React Native with automated CI",

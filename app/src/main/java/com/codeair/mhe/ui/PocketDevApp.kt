@@ -335,6 +335,7 @@ fun PocketDevApp(
     }
 
     if (navigator.showAppFactoryScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.factory.ui.AppFactoryScreen(
             currentBlueprint = state.appFactoryBlueprint,
             isGeneratingBlueprint = state.appFactoryGeneratingBlueprint,
@@ -373,6 +374,7 @@ fun PocketDevApp(
     }
 
     if (navigator.showTeamStudioScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.agent.team.ui.TeamStudioScreen(
             orchestrator = viewModel.teamOrchestrator,
             onClose = { navigator.closeOverlay() },
@@ -384,6 +386,7 @@ fun PocketDevApp(
     }
 
     if (navigator.showCloudHybridScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.cloud.ui.CloudHybridScreen(
             coordinator = viewModel.cloudHybridCoordinator,
             onClose = { navigator.closeOverlay() }
@@ -392,6 +395,7 @@ fun PocketDevApp(
     }
 
     if (navigator.showCollaborationScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.collab.ui.CollaborationStudioScreen(
             manager = viewModel.workspaceCollaborationManager,
             projectName = state.activeProject?.name ?: "Mobile-Harness-Project",
@@ -402,6 +406,7 @@ fun PocketDevApp(
     }
 
     if (navigator.showMarketplaceScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
         MarketplaceScreen(
             onBack = { navigator.closeOverlay() },
             onInstallItem = { item -> viewModel.installMarketplaceItem(item) },
@@ -621,7 +626,7 @@ private fun AntigravityOnboardingScreen(
         ) {
             Text("Connect your Google account", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                "PocketDev runs Google's official agy CLI inside its private Linux environment. Google handles authentication and agy owns the saved session.",
+                "Mobile Harness Extended runs Google's official agy CLI inside its private Linux environment. Google handles authentication and agy owns the saved session.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             when (state.antigravityAuth.status) {
@@ -686,7 +691,7 @@ private fun AntigravityOnboardingScreen(
             }
             Surface(color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f), shape = RoundedCornerShape(14.dp)) {
                 Text(
-                    "Automatic tool approval is enabled for Antigravity. It can edit project files and run commands without confirmation. Changes remain reviewable in PocketDev.",
+                    "Automatic tool approval is enabled for Antigravity. It can edit project files and run commands without confirmation. Changes remain reviewable in Mobile Harness Extended.",
                     Modifier.fillMaxWidth().padding(14.dp),
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     fontSize = 12.sp,
@@ -4245,7 +4250,7 @@ private fun ProjectsScreen(
                                 letterSpacing = 2.sp,
                             )
                         }
-                        Text("Tap the code to copy it. PocketDev will connect automatically after approval.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Tap the code to copy it. Mobile Harness Extended will connect automatically after approval.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OutlinedButton(
                             onClick = onGenerateNewGitHubCode,
                             modifier = Modifier.fillMaxWidth(),

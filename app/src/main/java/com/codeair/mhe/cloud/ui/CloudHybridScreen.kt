@@ -6,14 +6,18 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -95,6 +99,7 @@ fun CloudHybridScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
     ) {
         // Top Header
         Surface(
@@ -131,24 +136,12 @@ fun CloudHybridScreen(
                             Text(
                                 text = "Cloud Hybrid Studio",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            ) {
-                                Text(
-                                    text = "v2.3",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
                         }
                         Text(
-                            text = "Phase 12 — Phone + Cloud Workload Routing",
+                            text = "Phase 12 - Phone + Cloud Workload Routing",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -224,7 +217,8 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                 Text(
                     text = "Phone Hardware Telemetry (PRoot)",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(10.dp))
 
@@ -244,10 +238,11 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                 )
 
                 Spacer(Modifier.height(12.dp))
-                // Quick Badges Row
-                Row(
+                // Quick Badges Row (uniform pills, wraps on narrow screens)
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TelemetryChip(
                         icon = Icons.Default.BatteryChargingFull,
@@ -261,7 +256,7 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                     )
                     TelemetryChip(
                         icon = Icons.Default.Wifi,
-                        label = if (metrics.isWifiConnected) "Wi-Fi (Fast)" else "Cellular",
+                        label = if (metrics.isWifiConnected) "Wi-Fi" else "Cellular",
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -279,12 +274,15 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                 Text(
                     text = "Workload Offloading Balance",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(10.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     MetricBox(
@@ -322,7 +320,8 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                 Text(
                     text = "Quick Task Benchmark Trigger",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -404,7 +403,8 @@ private fun HybridWorkersTab(coordinator: CloudHybridCoordinator) {
             Text(
                 text = "Cloud Runner Fleet (${state.registeredWorkers.size} registered)",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -519,7 +519,7 @@ private fun AddWorkerCard(
     onCancel: () -> Unit
 ) {
     var name by remember { mutableStateOf("Self-Hosted VPS Runner") }
-    var url by remember { mutableStateOf("https://vps.pocketdev.io:8080") }
+    var url by remember { mutableStateOf("https://vps.mobileharness-extended.io:8080") }
     var region by remember { mutableStateOf("custom-vps") }
     var isGpu by remember { mutableStateOf(false) }
 
@@ -529,7 +529,7 @@ private fun AddWorkerCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Register New Cloud Runner Node", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Register New Cloud Runner Node", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Runner Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Endpoint URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -701,7 +701,8 @@ private fun HybridPoliciesTab(coordinator: CloudHybridCoordinator) {
         Text(
             text = "Workload Routing Policy",
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = "Select how Mobile Harness balances on-device battery/thermals against cloud execution speed.",
@@ -755,10 +756,13 @@ private fun TelemetryChip(icon: androidx.compose.ui.graphics.vector.ImageVector,
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = color.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f)),
+        modifier = Modifier.height(40.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -773,11 +777,11 @@ private fun MetricBox(title: String, value: String, subtitle: String, modifier: 
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = color.copy(alpha = 0.4f),
-        modifier = modifier
+        modifier = modifier.fillMaxHeight()
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Text(text = title, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             Text(text = subtitle, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

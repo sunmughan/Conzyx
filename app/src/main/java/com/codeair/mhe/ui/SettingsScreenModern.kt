@@ -2582,7 +2582,7 @@ private fun AccountSectionContent(
                         }
                     }
                     Text(
-                        "You are currently using PocketDev in local guest mode. All your projects, tools, and code run privately on this device.",
+                        "You are currently using Mobile Harness Extended in local guest mode. All your projects, tools, and code run privately on this device.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

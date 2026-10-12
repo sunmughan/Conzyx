@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -61,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -106,7 +109,11 @@ fun CollaborationStudioScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        ) {
             // Header Bar
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -143,19 +150,6 @@ fun CollaborationStudioScreen(
                                     fontSize = 17.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                ) {
-                                    Text(
-                                        "v2.4",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                    )
-                                }
                             }
                             Text(
                                 if (activeSession != null) "${activeSession.members.size} Collaborator(s) • LiveSync ${if (activeSession.isLiveSyncEnabled) "ON" else "OFF"}"
@@ -586,18 +580,13 @@ private fun TeamRbacTabContent(
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(org.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text("Plan: ${org.plan.displayName} (Max ${org.plan.maxSeats} seats)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Button(onClick = onOpenInviteDialog) {
-                            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Invite Member", fontSize = 11.5.sp)
-                        }
+                        CompactActionButton("Invite Member", onClick = onOpenInviteDialog, icon = Icons.Default.Add)
                     }
                 }
             }
@@ -706,15 +695,15 @@ private fun CodeReviewsTabContent(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Inline Code Review Threads (${comments.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Button(onClick = onOpenNewComment) {
-                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add Comment", fontSize = 11.5.sp)
-                }
+                Text(
+                    "Inline Code Review Threads (${comments.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactActionButton("Add Comment", onClick = onOpenNewComment, icon = Icons.Default.Add)
             }
         }
 
@@ -818,15 +807,15 @@ private fun CheckpointsAndJobsTabContent(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Collaborative Checkpoints (${checkpoints.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Button(onClick = onOpenNewCheckpoint) {
-                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("New Checkpoint", fontSize = 11.sp)
-                }
+                Text(
+                    "Collaborative Checkpoints (${checkpoints.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactActionButton("New Checkpoint", onClick = onOpenNewCheckpoint, icon = Icons.Default.Add)
             }
         }
 
@@ -866,15 +855,15 @@ private fun CheckpointsAndJobsTabContent(
             Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Shared AI Agent Sessions (${agentJobs.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Button(onClick = onOpenNewAgentJob) {
-                    Icon(Icons.Default.SmartToy, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Dispatch Agent", fontSize = 11.sp)
-                }
+                Text(
+                    "Shared AI Agent Sessions (${agentJobs.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactActionButton("Dispatch Agent", onClick = onOpenNewAgentJob, icon = Icons.Default.SmartToy)
             }
         }
 
@@ -953,6 +942,25 @@ private fun CheckpointsAndJobsTabContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CompactActionButton(
+    text: String,
+    onClick: () -> Unit,
+    icon: ImageVector? = null
+) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.height(42.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        if (icon != null) {
+            Icon(icon, null, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(text, maxLines = 1, fontSize = 12.sp)
     }
 }
 

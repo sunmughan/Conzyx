@@ -136,13 +136,13 @@ fun YouTubeVideoDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(44.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                 }
@@ -312,7 +312,7 @@ fun YouTubeVideoDialog(
                                 onDismiss()
                             }
                         },
-                        enabled = isValid && videoInfo != null,
+                        enabled = true,
                         modifier = Modifier.weight(1.5f),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -329,7 +329,7 @@ fun YouTubeVideoDialog(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Analyze with Gemini",
+                            text = "AI Analyze",
                             fontWeight = FontWeight.SemiBold,
                         )
                     }

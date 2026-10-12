@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -101,6 +102,7 @@ fun TeamStudioScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .background(MaterialTheme.colorScheme.background)
     ) {
         // Header
@@ -143,13 +145,13 @@ fun TeamStudioScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Phase 11 — 10 Specialized Autonomous Agents",
+                                text = "Phase 11 - 10 Specialized Autonomous Agents",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (sessionState.isDemoMode) {
                                 Text(
-                                    text = "DEMO MODE — simulated execution, not real agents",
+                                    text = "DEMO MODE - simulated execution, not real agents",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFB26A00)
@@ -173,7 +175,9 @@ fun TeamStudioScreen(
                     OutlinedTextField(
                         value = inputGoal,
                         onValueChange = { inputGoal = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
                         singleLine = true,
                         placeholder = { Text("Enter engineering goal...", fontSize = 12.sp) },
                         shape = RoundedCornerShape(8.dp)
@@ -185,8 +189,9 @@ fun TeamStudioScreen(
                                 onDispatchToAgent("Multi-Agent Team Goal: $inputGoal")
                             }
                         },
+                        modifier = Modifier.height(52.dp),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 16.dp)
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
@@ -196,6 +201,7 @@ fun TeamStudioScreen(
                     if (sessionState.isRunning) {
                         Button(
                             onClick = { orchestrator.runNextReadyTask() },
+                            modifier = Modifier.height(52.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -206,6 +212,7 @@ fun TeamStudioScreen(
                         }
                         OutlinedButton(
                             onClick = { orchestrator.cancelSession() },
+                            modifier = Modifier.height(52.dp),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                         ) {
@@ -401,18 +408,25 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
             Text(
                 text = "DAG Execution Pipeline (${sessionState.tasks.count { it.status == TeamTaskStatus.COMPLETED }}/${sessionState.tasks.size} Completed)",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
                     onClick = { orchestrator.runNextReadyTask() },
+                    modifier = Modifier.height(48.dp),
                     shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color(0xFF1A1207)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Next Ready", fontSize = 11.sp)
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Next Ready", fontSize = 13.sp, maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(
                     onClick = { orchestrator.autoRunAll() },

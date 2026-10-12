@@ -222,7 +222,7 @@ data class SharedProjectSession(
  */
 data class CollaborationSessionState(
     val activeSession: SharedProjectSession? = null,
-    val organization: OrganizationAccount = OrganizationAccount(name = "PocketDev Workspace", slug = "pocketdev-workspace"),
+    val organization: OrganizationAccount = OrganizationAccount(name = "Mobile Harness Extended Workspace", slug = "pocketdev-workspace"),
     val availableCheckpoints: List<SharedCheckpoint> = emptyList(),
     val pendingReviewComments: List<CodeComment> = emptyList(),
     val activeAgentJobs: List<SharedAgentJob> = emptyList(),
