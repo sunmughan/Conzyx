@@ -1,33 +1,33 @@
 {
   "project_info": {
-    "project_number": "1002286704211",
-    "project_id": "codeair-tech",
-    "storage_bucket": "codeair-tech.firebasestorage.app"
+    "project_number": "249079131159",
+    "project_id": "codeair-apps",
+    "storage_bucket": "codeair-apps.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1002286704211:android:a056dab525e3af282d48a6",
+        "mobilesdk_app_id": "1:249079131159:android:55417b14ee77d1284a4052",
         "android_client_info": {
           "package_name": "com.codeair.mhe"
         }
       },
       "oauth_client": [
         {
-          "client_id": "1002286704211-lbuun3ktfpg16j7puv6ndc78pdlp3fcm.apps.googleusercontent.com",
+          "client_id": "249079131159-kjeg6nr3unpfnbt3gn9pm28vv97cdb83.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBTO8BE8joPhZxpvMgTnTbWRUTaxcZtzpI"
+          "current_key": "AIzaSyB2WTminot_AR087gGnUVwjvirP5lo2CCs"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "1002286704211-lbuun3ktfpg16j7puv6ndc78pdlp3fcm.apps.googleusercontent.com",
+              "client_id": "249079131159-kjeg6nr3unpfnbt3gn9pm28vv97cdb83.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
