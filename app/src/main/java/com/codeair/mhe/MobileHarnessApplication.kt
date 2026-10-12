@@ -28,6 +28,13 @@ class MobileHarnessApplication : Application() {
             FirebaseApp.initializeApp(this)
             FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = true
         }
+        // FCM: fetch and persist the registration token for push notifications.
+        runCatching {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    com.codeair.mhe.runtime.PushTokenStore.save(this, token)
+                }
+        }
         AppCrashLogger.log("Application.onCreate completed")
     }
 }
