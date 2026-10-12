@@ -9,7 +9,7 @@ import com.jarves.mh.workspace.SafeFileOps
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
+import java.nio.file.Files
 
 enum class AgentSessionStatus {
     RUNNING,
@@ -36,10 +36,22 @@ class AgentSessionManager(private val baseSessionsDir: File) {
     constructor(context: Context) : this(File(context.filesDir, "agent_sessions"))
 
     private val sessionsDir: File
-        get() = baseSessionsDir.apply { mkdirs() }
+        get() {
+            check(!Files.isSymbolicLink(baseSessionsDir.toPath())) {
+                "Agent session storage cannot be a symbolic link"
+            }
+            check(baseSessionsDir.mkdirs() || baseSessionsDir.isDirectory) {
+                "Agent session storage is unavailable"
+            }
+            return baseSessionsDir.canonicalFile
+        }
 
     private val activeSessionFile: File
         get() = File(sessionsDir, "active_session.json")
+
+    private fun validateSessionId(sessionId: String) {
+        require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Invalid agent session ID" }
+    }
 
     /**
      * Records the start of an agent session, persisting initial metadata to disk.
@@ -52,6 +64,7 @@ class AgentSessionManager(private val baseSessionsDir: File) {
         prompt: String,
         roadmap: ActiveRoadmap? = null,
     ) {
+        validateSessionId(sessionId)
         val session = PersistedAgentSession(
             sessionId = sessionId,
             projectId = projectId,
@@ -183,11 +196,13 @@ class AgentSessionManager(private val baseSessionsDir: File) {
      */
     fun listSessionHistory(): List<PersistedAgentSession> {
         val historyDir = File(sessionsDir, "history")
-        if (!historyDir.isDirectory) return emptyList()
+        if (Files.isSymbolicLink(historyDir.toPath()) || !historyDir.isDirectory) return emptyList()
         val files = historyDir.listFiles() ?: return emptyList()
         val list = mutableListOf<PersistedAgentSession>()
         for (file in files) {
-            if (file.isFile && file.name.startsWith("session_") && file.extension == "json") {
+            if (!Files.isSymbolicLink(file.toPath()) &&
+                file.isFile && file.name.startsWith("session_") && file.extension == "json"
+            ) {
                 val content = SafeFileOps.safeReadText(file) ?: continue
                 val session = runCatching { deserializeSession(JSONObject(content)) }.getOrNull()
                 if (session != null) {
@@ -206,9 +221,10 @@ class AgentSessionManager(private val baseSessionsDir: File) {
         if (!historyDir.isDirectory) return 0
         val cutoff = System.currentTimeMillis() - (retentionDays.toLong() * 24 * 60 * 60 * 1000L)
         var cleaned = 0
+        if (Files.isSymbolicLink(historyDir.toPath())) return 0
         runCatching {
             historyDir.listFiles()?.forEach { file ->
-                if (file.lastModified() < cutoff) {
+                if (!Files.isSymbolicLink(file.toPath()) && file.lastModified() < cutoff) {
                     if (file.delete()) cleaned++
                 }
             }
@@ -218,6 +234,10 @@ class AgentSessionManager(private val baseSessionsDir: File) {
 
     private fun writeActiveSession(session: PersistedAgentSession): Boolean =
         runCatching {
+            validateSessionId(session.sessionId)
+            check(!Files.isSymbolicLink(activeSessionFile.toPath())) {
+                "Active session marker cannot be a symbolic link"
+            }
             val json = serializeSession(session)
             check(SafeFileOps.atomicWriteText(activeSessionFile, json.toString(2))) {
                 "Atomic write returned false for active session"
@@ -228,6 +248,10 @@ class AgentSessionManager(private val baseSessionsDir: File) {
         }.getOrDefault(false)
 
     private fun readActiveSession(): PersistedAgentSession? {
+        if (Files.isSymbolicLink(activeSessionFile.toPath())) {
+            AppCrashLogger.log("Refusing to read a symlinked active session marker")
+            return null
+        }
         if (!activeSessionFile.exists()) return null
         return runCatching {
             val content = SafeFileOps.safeReadText(activeSessionFile) ?: return null
@@ -238,9 +262,17 @@ class AgentSessionManager(private val baseSessionsDir: File) {
 
     private fun archiveSession(session: PersistedAgentSession): Boolean =
         runCatching {
-            val historyDir = File(sessionsDir, "history")
+            validateSessionId(session.sessionId)
+            val storageRoot = sessionsDir.canonicalFile
+            val historyDir = File(storageRoot, "history")
+            check(!Files.isSymbolicLink(historyDir.toPath())) {
+                "Agent session history cannot be a symbolic link"
+            }
             if (!historyDir.exists() && !historyDir.mkdirs() && !historyDir.isDirectory) {
                 error("Unable to create session history directory")
+            }
+            check(historyDir.canonicalFile.toPath().startsWith(storageRoot.toPath())) {
+                "Agent session history escapes storage"
             }
             val archiveFile = File(historyDir, "session_${session.sessionId}.json")
             val json = serializeSession(session)
