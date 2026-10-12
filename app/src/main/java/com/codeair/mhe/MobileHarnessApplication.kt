@@ -2,6 +2,10 @@ package com.codeair.mhe
 
 import android.app.Application
 
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.codeair.mhe.runtime.KeepAliveService
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.CoroutineScope
@@ -36,5 +40,22 @@ class MobileHarnessApplication : Application() {
                 }
         }
         AppCrashLogger.log("Application.onCreate completed")
+        // Keep-alive: when the app goes to the background, start a lightweight
+        // foreground service so aggressive OEM task killers do not freeze the
+        // process. When the app returns to the foreground the service stops,
+        // so no persistent notification shows while the app is in use.
+        runCatching {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(
+                object : DefaultLifecycleObserver {
+                    override fun onStop(owner: LifecycleOwner) {
+                        runCatching { KeepAliveService.start(this@MobileHarnessApplication) }
+                    }
+
+                    override fun onStart(owner: LifecycleOwner) {
+                        runCatching { KeepAliveService.stop(this@MobileHarnessApplication) }
+                    }
+                }
+            )
+        }
     }
 }
