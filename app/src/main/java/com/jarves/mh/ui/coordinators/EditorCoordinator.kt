@@ -431,9 +431,17 @@ class EditorCoordinator(
             bufferManager.updateContent(buffer.path, buffer.currentContent)
             bufferManager.updateViewState(buffer.path, buffer.viewState)
         }
+        // Restore view states for clean tabs too (they have no persisted buffer).
+        session.viewStates.forEach { (path, viewState) ->
+            if (bufferManager.getBuffer(path) == null) {
+                bufferManager.openBuffer(path, "")
+                bufferManager.markSaved(path, "")
+            }
+            bufferManager.updateViewState(path, viewState)
+        }
         host.updateState {
             it.copy(
-                editorViewStates = session.buffers.associate { b -> b.path to b.viewState },
+                editorViewStates = bufferManager.allViewStates(),
                 editorSplitState = session.splitState,
                 editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet(),
             )
@@ -468,6 +476,7 @@ class EditorCoordinator(
         sessionPersistJob?.cancel()
         // Capture the buffers snapshot now; the debounced write uses it.
         val dirtyBuffers = bufferManager.dirtyBuffers()
+        val viewStates = bufferManager.allViewStates()
         sessionPersistJob = host.scope.launch {
             delay(SESSION_PERSIST_DEBOUNCE_MS)
             val session = EditorSession(
@@ -475,6 +484,7 @@ class EditorCoordinator(
                 tabs = tabs,
                 activePath = activePath,
                 buffers = dirtyBuffers,
+                viewStates = viewStates,
                 splitState = splitState,
             )
             withContext(Dispatchers.IO) { sessionStore.saveSession(session) }

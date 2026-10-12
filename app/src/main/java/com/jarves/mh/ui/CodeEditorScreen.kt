@@ -711,7 +711,7 @@ fun CodeEditorScreen(
                                     }
                                 }
                             },
-                            enabled = renamePreview?.totalFiles ?: 0 > 0,
+                            enabled = (renamePreview?.totalFiles ?: 0) > 0,
                         ) { Text("Rename") }
                     }
                 }

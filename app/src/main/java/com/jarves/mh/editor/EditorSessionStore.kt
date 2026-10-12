@@ -75,6 +75,11 @@ class EditorSessionStore(sessionsDir: File) {
             )
         }
         root.put("buffers", buffers)
+        val viewStates = JSONObject()
+        session.viewStates.forEach { (path, viewState) ->
+            viewStates.put(path, serializeViewState(viewState))
+        }
+        root.put("viewStates", viewStates)
         root.put(
             "splitState",
             JSONObject()
@@ -124,11 +129,21 @@ class EditorSessionStore(sessionsDir: File) {
                 vertical = splitJson.optBoolean("vertical", true),
             )
         }
+        val viewStates = mutableMapOf<String, EditorViewState>()
+        val viewStatesJson = root.optJSONObject("viewStates")
+        if (viewStatesJson != null) {
+            val keys = viewStatesJson.keys()
+            while (keys.hasNext()) {
+                val path = keys.next()
+                viewStates[path] = deserializeViewState(viewStatesJson.optJSONObject(path))
+            }
+        }
         return EditorSession(
             projectId = projectId,
             tabs = tabs,
             activePath = root.optString("activePath").takeIf { it.isNotBlank() },
             buffers = buffers,
+            viewStates = viewStates,
             splitState = splitState,
         )
     }

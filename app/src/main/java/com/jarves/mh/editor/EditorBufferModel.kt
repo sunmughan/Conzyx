@@ -64,13 +64,16 @@ data class EditorSplitState(
  * A restorable editor session for one project.
  *
  * Only dirty buffers are persisted ([buffers]); clean tabs are restored from
- * [tabs] and re-read from disk. This keeps the session file small while
- * guaranteeing no unsaved work is ever lost.
+ * [tabs] and re-read from disk. [viewStates] carries cursor/scroll positions
+ * for ALL open tabs (dirty or clean) so navigation state survives process
+ * death. This keeps the session file small while guaranteeing no unsaved work
+ * and no navigation state is ever lost.
  */
 data class EditorSession(
     val projectId: String,
     val tabs: List<String> = emptyList(),
     val activePath: String? = null,
     val buffers: List<EditorBuffer> = emptyList(),
+    val viewStates: Map<String, EditorViewState> = emptyMap(),
     val splitState: EditorSplitState = EditorSplitState(),
 )

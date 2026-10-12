@@ -114,6 +114,10 @@ class EditorBufferManagerTest {
                         viewState = EditorViewState(cursorOffset = 7, selectionEnd = 10, scrollLine = 4),
                     ),
                 ),
+                viewStates = mapOf(
+                    "a.txt" to EditorViewState(cursorOffset = 3, scrollLine = 12),
+                    "b.txt" to EditorViewState(cursorOffset = 7, selectionEnd = 10, scrollLine = 4),
+                ),
                 splitState = EditorSplitState(secondaryPath = "a.txt", vertical = false),
             )
             store.saveSession(session)
@@ -132,6 +136,10 @@ class EditorBufferManagerTest {
             assertEquals(4, buffer?.viewState?.scrollLine)
             assertEquals("a.txt", loaded?.splitState?.secondaryPath)
             assertFalse(loaded?.splitState?.vertical == true)
+            // View states for all tabs (dirty or clean) round-trip.
+            assertEquals(3, loaded?.viewStates?.get("a.txt")?.cursorOffset)
+            assertEquals(12, loaded?.viewStates?.get("a.txt")?.scrollLine)
+            assertEquals(7, loaded?.viewStates?.get("b.txt")?.cursorOffset)
         } finally {
             dir.deleteRecursively()
         }

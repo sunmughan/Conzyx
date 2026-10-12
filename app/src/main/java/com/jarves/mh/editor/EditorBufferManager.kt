@@ -86,6 +86,10 @@ class EditorBufferManager {
 
     fun allPaths(): Set<String> = buffers.keys.toSet()
 
+    /** Cursor/scroll state for every open buffer (dirty or clean). */
+    fun allViewStates(): Map<String, EditorViewState> =
+        buffers.mapValues { (_, buffer) -> buffer.viewState }
+
     fun clear() {
         buffers.clear()
     }
