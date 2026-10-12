@@ -674,7 +674,7 @@ private fun MemberRowItem(
                     )
                 }
                 if (member.role != TeamMemberRole.OWNER) {
-                    IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                     }
                 }
@@ -953,7 +953,7 @@ private fun CompactActionButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = Modifier.height(42.dp),
+        modifier = Modifier.height(48.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
         if (icon != null) {

@@ -432,7 +432,7 @@ private fun FileRowItem(
                 Text(actionLabel, fontSize = 11.sp)
             }
             if (onSecondaryAction != null) {
-                IconButton(onClick = onSecondaryAction, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = onSecondaryAction, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Discard", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                 }
             }
@@ -548,10 +548,10 @@ private fun BranchesTab(
                         TextButton(onClick = { onCheckoutBranch(branch.name) }) {
                             Text("Switch", fontSize = 11.sp)
                         }
-                        IconButton(onClick = { onMergeBranch(branch.name) }, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = { onMergeBranch(branch.name) }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Default.CallMerge, contentDescription = "Merge", modifier = Modifier.size(16.dp))
                         }
-                        IconButton(onClick = { onDeleteBranch(branch.name) }, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = { onDeleteBranch(branch.name) }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                         }
                     }

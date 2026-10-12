@@ -136,7 +136,7 @@ fun YouTubeVideoDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(44.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -162,7 +162,7 @@ fun YouTubeVideoDialog(
                     trailingIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (urlInput.isNotBlank()) {
-                                IconButton(onClick = { urlInput = "" }, modifier = Modifier.size(28.dp)) {
+                                IconButton(onClick = { urlInput = "" }, modifier = Modifier.size(48.dp)) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Clear",
