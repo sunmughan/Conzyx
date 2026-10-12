@@ -1,5 +1,7 @@
 package com.jarves.mh.git.workflow
 
+import com.jarves.mh.core.result.OperationResult
+import com.jarves.mh.core.result.OperationStatus
 import com.jarves.mh.git.model.GitCommandResult
 import com.jarves.mh.network.GitHubClient
 import com.jarves.mh.network.GitHubIssue
@@ -51,12 +53,23 @@ data class WorkflowExecutionState(
     val steps: List<WorkflowStep> = emptyList(),
     val prUrl: String? = null,
     val errorMessage: String? = null,
-    val isRunning: Boolean = false
+    val isRunning: Boolean = false,
+    /** The integrity-gated result of the last run. Null while a run is in progress or never ran. */
+    val lastResult: OperationResult? = null,
 )
 
 /**
  * Autonomous Issue-to-PR Engine implementing the roadmap workflow loop:
  * Issue -> Understand -> Create Branch -> Implement -> Build -> Test -> Fix -> Commit -> Push -> Create PR
+ *
+ * Milestone 0 integrity rules:
+ * - The agent executor is a suspend function whose [OperationResult] completes only when the
+ *   agent request genuinely ends. Fire-and-forget callbacks are rejected.
+ * - The build/test validator must run REAL build and test commands and return their real
+ *   exit codes and logs. The default validator honestly reports NOT_CONFIGURED.
+ * - A blank GitHub token fails the workflow immediately; the workflow never proceeds.
+ * - An empty diff fails the workflow before commit; a no-op agent run can never open a PR.
+ * - A SIMULATED agent result is refused: demo output must never become a real PR.
  */
 class GitHubWorkflowEngine(
     private val gitController: GitDomainController,
@@ -76,9 +89,15 @@ class GitHubWorkflowEngine(
         repoFullName: String,
         workingDir: File,
         baseBranch: String = "main",
-        agentExecutor: suspend (prompt: String) -> Boolean,
-        buildAndTestValidator: suspend () -> Pair<Boolean, String> = { true to "All tests passing" }
-    ): Boolean {
+        agentExecutor: suspend (prompt: String) -> OperationResult,
+        buildAndTestValidator: suspend (workingDir: File) -> OperationResult = { dir ->
+            OperationResult.notConfigured(
+                "No build/test validator was provided for ${dir.path}. " +
+                    "Wire a real Gradle build+test invocation; the workflow refuses to claim passing tests it never ran."
+            )
+        }
+    ): OperationResult {
+        val startedAt = System.currentTimeMillis()
         val initialSteps = WorkflowStage.entries
             .filter { it != WorkflowStage.IDLE && it != WorkflowStage.COMPLETED && it != WorkflowStage.FAILED }
             .map { WorkflowStep(it, it.title, "Queued", WorkflowStepStatus.PENDING) }
@@ -94,7 +113,17 @@ class GitHubWorkflowEngine(
                 steps = initialSteps,
                 prUrl = null,
                 errorMessage = null,
-                isRunning = true
+                isRunning = true,
+                lastResult = null,
+            )
+        }
+
+        // Fail fast: no token, no workflow. Never proceed silently.
+        if (token.isBlank()) {
+            return failWorkflow(
+                "GitHub token is missing or empty. Connect GitHub in Settings before running the " +
+                    "autonomous workflow. Refusing to run without credentials.",
+                startedAt = startedAt,
             )
         }
 
@@ -105,7 +134,6 @@ class GitHubWorkflowEngine(
             updateStep(WorkflowStage.FETCHING_ISSUE, WorkflowStepStatus.SUCCESS, "Loaded Issue #${issue.number}")
 
             updateStep(WorkflowStage.UNDERSTANDING, WorkflowStepStatus.IN_PROGRESS, "Analyzing requirements & scope...")
-            val analysis = "Issue context: ${issue.title}\nScope details: $issueBody"
             updateStep(WorkflowStage.UNDERSTANDING, WorkflowStepStatus.SUCCESS, "Problem understood: ${issue.title}")
 
             // 2. Create Branch
@@ -113,76 +141,122 @@ class GitHubWorkflowEngine(
             val branchRes = gitController.checkout(workingDir, branchName, createNew = true)
             if (!branchRes.success) {
                 // If branch exists, checkout directly
-                gitController.checkout(workingDir, branchName, createNew = false)
+                val retry = gitController.checkout(workingDir, branchName, createNew = false)
+                if (!retry.success) {
+                    return failWorkflow(
+                        "Could not create or check out branch $branchName: ${retry.errorMessage ?: retry.output}",
+                        startedAt = startedAt,
+                    )
+                }
             }
             updateStep(WorkflowStage.CREATING_BRANCH, WorkflowStepStatus.SUCCESS, "Active branch: $branchName")
 
-            // 3. Implement Solution
+            // 3. Implement Solution — awaits the REAL agent result.
             updateStep(WorkflowStage.IMPLEMENTING, WorkflowStepStatus.IN_PROGRESS, "Autonomous coding agent modifying workspace...")
             val taskPrompt = """
                 [Autonomous Issue Fixer]
                 Please resolve GitHub Issue #${issue.number}: ${issue.title}
-                
+
                 Description:
                 $issueBody
-                
+
                 Analyze the codebase, implement necessary changes, and verify code consistency.
             """.trimIndent()
-            val agentSuccess = agentExecutor(taskPrompt)
-            if (!agentSuccess) {
-                updateStep(WorkflowStage.IMPLEMENTING, WorkflowStepStatus.FAILED, "Agent implementation failed")
-                failWorkflow("Agent implementation interrupted or failed")
-                return false
+            val agentResult = agentExecutor(taskPrompt)
+            if (agentResult.status == OperationStatus.SIMULATED) {
+                updateStep(WorkflowStage.IMPLEMENTING, WorkflowStepStatus.FAILED, "Agent ran in demo mode")
+                return failWorkflow(
+                    "The agent executor reported SIMULATED (demo mode). Refusing to turn simulated " +
+                        "work into a real pull request.",
+                    startedAt = startedAt,
+                )
             }
-            updateStep(WorkflowStage.IMPLEMENTING, WorkflowStepStatus.SUCCESS, "Code changes generated")
+            if (!agentResult.isSuccess) {
+                updateStep(WorkflowStage.IMPLEMENTING, WorkflowStepStatus.FAILED, agentResult.error ?: "Agent implementation failed")
+                return failWorkflow(
+                    "Agent implementation did not complete: ${agentResult.error ?: agentResult.status}",
+                    startedAt = startedAt,
+                )
+            }
+            updateStep(
+                WorkflowStage.IMPLEMENTING,
+                WorkflowStepStatus.SUCCESS,
+                "Code changes generated (${agentResult.verificationEvidence ?: "agent completed"})"
+            )
 
-            // 4. Build
+            // 4-5. Build & Test — real commands, real exit codes.
             updateStep(WorkflowStage.BUILDING, WorkflowStepStatus.IN_PROGRESS, "Compiling project...")
-            val (buildSuccess, buildMsg) = buildAndTestValidator()
-            if (!buildSuccess) {
-                updateStep(WorkflowStage.BUILDING, WorkflowStepStatus.FAILED, buildMsg)
-                // 5. Auto-Fix Failures
+            val buildResult = buildAndTestValidator(workingDir)
+            if (!buildResult.isSuccess) {
+                updateStep(WorkflowStage.BUILDING, WorkflowStepStatus.FAILED, buildResult.error ?: "Build/test failed")
+                // 6. Auto-Fix Failures — one bounded repair attempt driven by the real failure.
                 updateStep(WorkflowStage.FIXING, WorkflowStepStatus.IN_PROGRESS, "Triggering self-healing repair...")
-                val fixSuccess = agentExecutor("Build failed with error:\n$buildMsg\nPlease fix the compilation errors immediately.")
-                val (rebuildSuccess, rebuildMsg) = buildAndTestValidator()
-                if (!fixSuccess || !rebuildSuccess) {
-                    updateStep(WorkflowStage.FIXING, WorkflowStepStatus.FAILED, rebuildMsg)
-                    failWorkflow("Build repair failed: $rebuildMsg")
-                    return false
+                val fixPrompt = buildString {
+                    append("Build/test failed with the following real output:\n")
+                    append(buildResult.logs.takeLast(60).joinToString("\n"))
+                    append("\n\nPlease fix the failures immediately.")
                 }
-                updateStep(WorkflowStage.FIXING, WorkflowStepStatus.SUCCESS, "Repair successful")
+                val fixResult = agentExecutor(fixPrompt)
+                if (fixResult.status == OperationStatus.SIMULATED || !fixResult.isSuccess) {
+                    updateStep(WorkflowStage.FIXING, WorkflowStepStatus.FAILED, fixResult.error ?: "Repair agent failed")
+                    return failWorkflow(
+                        "Build repair failed: ${fixResult.error ?: fixResult.status}",
+                        startedAt = startedAt,
+                    )
+                }
+                val rebuildResult = buildAndTestValidator(workingDir)
+                if (!rebuildResult.isSuccess) {
+                    updateStep(WorkflowStage.FIXING, WorkflowStepStatus.FAILED, rebuildResult.error ?: "Rebuild failed")
+                    return failWorkflow(
+                        "Build still failing after repair: ${rebuildResult.error ?: rebuildResult.status}",
+                        startedAt = startedAt,
+                    )
+                }
+                updateStep(
+                    WorkflowStage.FIXING,
+                    WorkflowStepStatus.SUCCESS,
+                    "Repair successful (${rebuildResult.verificationEvidence ?: "rebuild passed"})"
+                )
+                updateStep(WorkflowStage.TESTING, WorkflowStepStatus.SUCCESS, rebuildResult.verificationEvidence ?: "Tests passed")
             } else {
-                updateStep(WorkflowStage.BUILDING, WorkflowStepStatus.SUCCESS, "Build passed")
-                updateStep(WorkflowStage.TESTING, WorkflowStepStatus.SUCCESS, "All tests passed")
+                updateStep(WorkflowStage.BUILDING, WorkflowStepStatus.SUCCESS, buildResult.verificationEvidence ?: "Build passed")
+                updateStep(WorkflowStage.TESTING, WorkflowStepStatus.SUCCESS, buildResult.verificationEvidence ?: "All tests passed")
                 updateStep(WorkflowStage.FIXING, WorkflowStepStatus.SKIPPED, "No repairs needed")
             }
 
-            // 6. Commit
+            // 7. Commit — only when the agent actually changed something.
+            updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.IN_PROGRESS, "Verifying changes...")
+            val diffCheck = workingTreeDiff(workingDir)
+            if (!diffCheck.hasChanges) {
+                updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, "Empty diff")
+                return failWorkflow(
+                    "The agent produced no changes (working tree is clean). Refusing to commit an empty diff.",
+                    startedAt = startedAt,
+                )
+            }
             updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.IN_PROGRESS, "Staging and committing...")
             gitController.stageAll(workingDir)
             val commitMsg = "fix(#${issue.number}): ${issue.title}\n\nCloses #${issue.number}\nAutomated by Mobile Harness Extended Autonomous Workflow."
             val commitRes = gitController.commitDetailed(workingDir, commitMsg)
             if (!commitRes.success && !commitRes.output.contains("nothing to commit", ignoreCase = true)) {
                 updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, commitRes.errorMessage ?: "Commit failed")
-                failWorkflow(commitRes.errorMessage ?: "Commit failed")
-                return false
+                return failWorkflow(commitRes.errorMessage ?: "Commit failed", startedAt = startedAt)
             }
             updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.SUCCESS, "Committed: fix(#${issue.number})")
 
-            // 7. Push
+            // 8. Push — token was validated up front, so this path always has credentials.
             updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.IN_PROGRESS, "Pushing $branchName to origin...")
-            if (token.isNotBlank()) {
-                val pushRes = gitController.push(workingDir, "origin", branchName)
-                if (!pushRes.success) {
-                    updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.FAILED, pushRes.errorMessage ?: "Push failed")
-                    failWorkflow(pushRes.errorMessage ?: "Push failed")
-                    return false
-                }
-                updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.SUCCESS, "Pushed to origin/$branchName")
+            val pushRes = gitController.push(workingDir, "origin", branchName)
+            if (!pushRes.success) {
+                updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.FAILED, pushRes.errorMessage ?: "Push failed")
+                return failWorkflow(pushRes.errorMessage ?: "Push failed", startedAt = startedAt)
+            }
+            updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.SUCCESS, "Pushed to origin/$branchName")
 
-                // 8. Open PR
-                updateStep(WorkflowStage.CREATING_PR, WorkflowStepStatus.IN_PROGRESS, "Opening PR on GitHub...")
-                val pr = githubClient.createPullRequest(
+            // 9. Open PR — surface the real API result or its real error.
+            updateStep(WorkflowStage.CREATING_PR, WorkflowStepStatus.IN_PROGRESS, "Opening PR on GitHub...")
+            val pr: GitHubPullRequest = try {
+                githubClient.createPullRequest(
                     token = token,
                     repoFullName = repoFullName,
                     title = "fix(#${issue.number}): ${issue.title}",
@@ -190,39 +264,71 @@ class GitHubWorkflowEngine(
                     base = baseBranch,
                     body = """
                         Resolves #${issue.number}.
-                        
+
                         ### Changes
                         Autonomous implementation generated and verified by Mobile Harness Extended GitHub-Native Engine.
                         - Root cause analyzed
                         - Automated tests verified
                     """.trimIndent()
                 )
-                updateStep(WorkflowStage.CREATING_PR, WorkflowStepStatus.SUCCESS, "PR #${pr.number} created: ${pr.htmlUrl}")
-
-                _state.update {
-                    it.copy(
-                        currentStage = WorkflowStage.COMPLETED,
-                        prUrl = pr.htmlUrl,
-                        isRunning = false
-                    )
-                }
-            } else {
-                updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.SKIPPED, "Offline / token not provided")
-                updateStep(WorkflowStage.CREATING_PR, WorkflowStepStatus.SKIPPED, "Offline / token not provided")
-                _state.update {
-                    it.copy(
-                        currentStage = WorkflowStage.COMPLETED,
-                        isRunning = false
-                    )
-                }
+            } catch (e: Exception) {
+                updateStep(WorkflowStage.CREATING_PR, WorkflowStepStatus.FAILED, "GitHub API error: ${e.message}")
+                return failWorkflow(
+                    "GitHub pull-request creation failed: ${e.message}",
+                    startedAt = startedAt,
+                )
             }
+            updateStep(WorkflowStage.CREATING_PR, WorkflowStepStatus.SUCCESS, "PR #${pr.number} created: ${pr.htmlUrl}")
 
-            return true
+            val evidence = "GitHub PR #${pr.number} created: ${pr.htmlUrl}"
+            val result = OperationResult.success(
+                logs = listOf(evidence),
+                artifacts = listOf(pr.htmlUrl),
+                verificationEvidence = evidence,
+                startedAt = startedAt,
+            )
+            _state.update {
+                it.copy(
+                    currentStage = WorkflowStage.COMPLETED,
+                    prUrl = pr.htmlUrl,
+                    isRunning = false,
+                    lastResult = result,
+                )
+            }
+            return result
         } catch (e: Exception) {
-            failWorkflow("Workflow exception: ${e.message}")
-            return false
+            return failWorkflow("Workflow exception: ${e.message}", startedAt = startedAt)
         }
     }
+
+    /**
+     * Checks whether the working tree (unstaged + staged) contains any real changes.
+     */
+    private fun workingTreeDiff(workingDir: File): DiffCheck {
+        val status: GitCommandResult = try {
+            gitController.status(workingDir)
+        } catch (e: Exception) {
+            return DiffCheck(hasChanges = false, detail = "git status failed: ${e.message}")
+        }
+        if (!status.success) {
+            return DiffCheck(hasChanges = false, detail = "git status failed: ${status.errorMessage ?: status.output}")
+        }
+        val shortStatus = status.output.trim()
+        if (shortStatus.isNotEmpty()) {
+            return DiffCheck(hasChanges = true, detail = shortStatus.lineSequence().take(10).joinToString("\n"))
+        }
+        val staged: GitCommandResult = try {
+            gitController.rawDiff(workingDir, staged = true)
+        } catch (e: Exception) {
+            return DiffCheck(hasChanges = false, detail = "git diff --staged failed: ${e.message}")
+        }
+        return DiffCheck(
+            hasChanges = staged.success && staged.output.trim().isNotEmpty(),
+            detail = staged.output.trim().lineSequence().take(10).joinToString("\n"),
+        )
+    }
+
+    private data class DiffCheck(val hasChanges: Boolean, val detail: String)
 
     private fun updateStep(stage: WorkflowStage, status: WorkflowStepStatus, detail: String) {
         _state.update { curr ->
@@ -230,21 +336,24 @@ class GitHubWorkflowEngine(
                 if (step.stage == stage) {
                     step.copy(status = status, detail = detail, timestamp = System.currentTimeMillis())
                 } else {
-                    step
+                    step.copy()
                 }
             }
             curr.copy(currentStage = stage, steps = updatedSteps)
         }
     }
 
-    private fun failWorkflow(errorMessage: String) {
+    private fun failWorkflow(errorMessage: String, startedAt: Long): OperationResult {
+        val result = OperationResult.failure(error = errorMessage, startedAt = startedAt)
         _state.update {
             it.copy(
                 currentStage = WorkflowStage.FAILED,
                 errorMessage = errorMessage,
-                isRunning = false
+                isRunning = false,
+                lastResult = result,
             )
         }
+        return result
     }
 
     private fun generateBranchName(issue: GitHubIssue): String {

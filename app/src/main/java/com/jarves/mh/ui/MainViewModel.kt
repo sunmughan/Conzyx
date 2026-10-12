@@ -17,6 +17,8 @@ import com.jarves.mh.AppCrashLogger
 import com.jarves.mh.data.ApiKeyVault
 import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.data.AppPreferences
+import com.jarves.mh.core.result.OperationResult
+import com.jarves.mh.core.result.OperationStatus
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
@@ -6581,25 +6583,192 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         }
     }
 
+    /**
+     * Resolves the GitHub token for API calls from the authenticated GitHub CLI
+     * session. Returns "" when GitHub is not connected. Callers must treat a
+     * blank token as "not configured" and fail fast — never proceed silently.
+     */
+    private fun resolveGitHubToken(): String {
+        return try {
+            val (exit, output) = runGitHubCli(listOf("auth", "token"))
+            output.trim().takeIf { exit == 0 && it.isNotBlank() }.orEmpty()
+        } catch (e: Exception) {
+            AppCrashLogger.log("MainViewModel.resolveGitHubToken: ${e.message}")
+            ""
+        }
+    }
+
+    /**
+     * Sends a prompt through the real agent pipeline and suspends until that
+     * request genuinely ends (completed, failed, or timed out). This replaces the
+     * old fire-and-forget callback: the returned [OperationResult] completes only
+     * when the agent request ends, and it is FAILED unless the run verifiably
+     * completed.
+     */
+    private suspend fun runAgentPromptAwaitingResult(prompt: String): OperationResult {
+        val startedAt = System.currentTimeMillis()
+        if (_state.value.activeProject == null) {
+            return OperationResult.failure(
+                error = "No active project for the autonomous agent run.",
+                startedAt = startedAt,
+            )
+        }
+        if (_state.value.isRunning) {
+            return OperationResult.failure(
+                error = "Another agent task is already running; refusing to overlap autonomous runs.",
+                startedAt = startedAt,
+            )
+        }
+        sendPrompt(prompt)
+        // sendPrompt() silently no-ops when its guards fail; verify the task started.
+        delay(1500)
+        val launched = _state.value.isRunning || _state.value.currentTaskRequest != null
+        if (!launched) {
+            return OperationResult.failure(
+                error = "Agent task did not start (agent sign-in or provider key missing?).",
+                startedAt = startedAt,
+            )
+        }
+        val timeoutMs = 30L * 60L * 1000L
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val snapshot = _state.value
+            val finishedAt = snapshot.taskFinishedAtMillis
+            if (!snapshot.isRunning && finishedAt != null && finishedAt >= startedAt) break
+            val approval = snapshot.pendingApproval
+            if (approval != null) {
+                return OperationResult.failure(
+                    error = "Autonomous run paused for user approval (tool: ${approval.toolName}). " +
+                        "Autonomous mode cannot approve on its own.",
+                    startedAt = startedAt,
+                )
+            }
+            delay(2000)
+        }
+        val end = _state.value
+        val finishedAt = end.taskFinishedAtMillis
+        if (end.isRunning || finishedAt == null || finishedAt < startedAt) {
+            return OperationResult.failure(
+                error = "Agent task timed out after ${timeoutMs / 60000} minutes without completing.",
+                startedAt = startedAt,
+            )
+        }
+        val headline = end.activity.firstOrNull()
+        return if (headline != null && headline.title.equals("Task completed", ignoreCase = true)) {
+            OperationResult.success(
+                verificationEvidence = "Agent task finished (${headline.detail.ifBlank { "completed" }})",
+                startedAt = startedAt,
+            )
+        } else {
+            OperationResult.failure(
+                error = "Agent task ended without success: ${headline?.title ?: "unknown"} " +
+                    (headline?.detail?.take(300) ?: ""),
+                startedAt = startedAt,
+            )
+        }
+    }
+
+    /**
+     * Runs a REAL Gradle build + unit tests against the workspace using the
+     * installed Linux runtime. Returns the genuine exit code and captured logs —
+     * never a canned success.
+     */
+    private suspend fun runRealGradleBuildAndTest(
+        workingDir: File,
+        guestWorkspacePath: String,
+    ): OperationResult = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
+        if (!installer.isInstalled()) {
+            return@withContext OperationResult.notConfigured(
+                "Linux runtime is not installed; cannot run Gradle build/test."
+            )
+        }
+        if (!installer.isStackInstalled(DevStack.ANDROID)) {
+            return@withContext OperationResult.notConfigured(
+                "Android build tools are not installed (Settings -> Development stacks); cannot run Gradle build/test."
+            )
+        }
+        val gradleRoot = findAndroidGradleProjectRoot(workingDir)
+            ?: return@withContext OperationResult.failure(
+                error = "No Android Gradle project found under ${workingDir.path}; cannot validate build/test.",
+                startedAt = startedAt,
+            )
+        val installed = installer.installedRuntime()
+        val outputFile = File(
+            getApplication<Application>().cacheDir,
+            "workflow-build-${System.nanoTime()}.log"
+        )
+        try {
+            val command = "gradle --init-script /root/.gradle/init.d/pocketdev-android.gradle " +
+                "-Pandroid.aapt2FromMavenOverride=/root/android-sdk/build-tools/35.0.0/aapt2 " +
+                "--no-daemon assembleDebug testDebugUnitTest --console=plain"
+            val process = installer.process(
+                installed.proot,
+                installed.rootfs,
+                gradleRoot,
+                emptyMap(),
+                listOf("/usr/bin/bash", "-lc", command),
+                guestWorkspacePath = guestWorkspacePath,
+                outputFile = outputFile,
+            )
+            val exitCode = process.waitFor()
+            val rawOutput = (process as? com.jarves.mh.runtime.NativeSpawnProcess)
+                ?.outputFile?.readTailText(MAX_PROCESS_OUTPUT_BYTES).orEmpty()
+            val tail = truncateHeadAndTail(rawOutput, maxHeadLines = 10, maxTailLines = 40, maxTotalLines = 60)
+            val logs = listOf(
+                "Command: $command",
+                "Working dir: ${gradleRoot.path}",
+                "Exit code: $exitCode",
+                tail,
+            )
+            return@withContext if (exitCode == 0) {
+                OperationResult.success(
+                    exitCode = exitCode,
+                    logs = logs,
+                    verificationEvidence = "gradle assembleDebug testDebugUnitTest exit=0 in ${gradleRoot.path}",
+                    startedAt = startedAt,
+                )
+            } else {
+                OperationResult.failure(
+                    error = "Gradle build/test failed (exit code $exitCode). " +
+                        tail.trim().takeLast(2000).ifBlank { "See logs." },
+                    exitCode = exitCode,
+                    logs = logs,
+                    startedAt = startedAt,
+                )
+            }
+        } catch (e: Exception) {
+            return@withContext OperationResult.failure(
+                error = "Gradle invocation crashed: ${e.message}",
+                startedAt = startedAt,
+            )
+        } finally {
+            runCatching { outputFile.delete() }
+        }
+    }
+
     fun startAutonomousIssueWorkflow(issue: com.jarves.mh.network.GitHubIssue) {
         val project = _state.value.activeProject ?: return
         val dir = projectWorkspaceRoot(project)
         val repo = _state.value.gitConnectedRepo ?: project.name
+        val guestPath = projectGuestRoot(project)
 
         viewModelScope.launch {
-            gitWorkflowEngine.runAutonomousWorkflow(
+            // Explicit, validated token retrieval: blank token fails the workflow fast (engine-side).
+            val token = withContext(Dispatchers.IO) { resolveGitHubToken() }
+            val result = gitWorkflowEngine.runAutonomousWorkflow(
                 issue = issue,
-                token = "",
+                token = token,
                 repoFullName = repo,
                 workingDir = dir,
-                agentExecutor = { prompt ->
-                    sendPrompt(prompt)
-                    true
-                },
-                buildAndTestValidator = {
-                    true to "Tests compiled and passed"
-                }
+                agentExecutor = { prompt -> runAgentPromptAwaitingResult(prompt) },
+                buildAndTestValidator = { gradleDir -> runRealGradleBuildAndTest(gradleDir, guestPath) },
             )
+            if (!result.isSuccess) {
+                _state.update {
+                    it.copy(toastMessage = "Autonomous workflow failed: ${result.error ?: result.status}")
+                }
+            }
             refreshGitStudio(dir)
         }
     }
