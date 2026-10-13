@@ -49,6 +49,7 @@ import com.codeair.mhe.network.ProviderApiClient
 import com.codeair.mhe.network.GitHubRepository
 import com.codeair.mhe.runtime.ClaudeRuntimeBridge
 import com.codeair.mhe.runtime.CloudCodeRuntimeBridge
+import com.codeair.mhe.runtime.CustomAgentBridge
 import com.codeair.mhe.runtime.DshRuntimeBridge
 import com.codeair.mhe.runtime.AgentRegistry
 import com.codeair.mhe.runtime.AgentUpdateInfo

@@ -219,5 +219,5 @@ class CustomAgentBridge(
     override suspend fun acceptLastChanges(projectId: String) = Unit
     override suspend fun loadPendingChanges(projectId: String): List<ChangeItem> = emptyList()
     override suspend fun undoFileChange(projectId: String, path: String): Boolean = false
-    override suspend fun acceptFileChange(projectId: String, path: String) = Unit
+    override suspend fun acceptFileChange(projectId: String, path: String): Boolean = false
 }
