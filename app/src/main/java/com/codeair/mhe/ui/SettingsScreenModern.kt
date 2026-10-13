@@ -152,7 +152,7 @@ import com.codeair.mhe.auth.ui.ChangePasswordDialog
 import com.codeair.mhe.auth.ui.DeleteAccountDialog
 import com.codeair.mhe.auth.ui.EditDisplayNameDialog
 
-private enum class SettingsSection { ACCOUNT, APPEARANCE, GOOGLE_ACCOUNTS, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL, PERMISSIONS }
+private enum class SettingsSection { ACCOUNT, APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL, PERMISSIONS }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -372,39 +372,6 @@ fun SettingsScreen(
                         ModernThemeChoice("Light", Icons.Default.LightMode, state.themeMode == AppThemeMode.LIGHT, { onSetThemeMode(AppThemeMode.LIGHT) }, Modifier.weight(1f))
                         ModernThemeChoice("System", Icons.Default.PhoneAndroid, state.themeMode == AppThemeMode.SYSTEM, { onSetThemeMode(AppThemeMode.SYSTEM) }, Modifier.weight(1f))
                     }
-                }
-            }
-
-            item {
-                val accountCount = state.antigravityAuth.accounts.size
-                SettingsAccordion(
-                    title = "Google accounts (Antigravity)",
-                    subtitle = if (accountCount > 0) "$accountCount connected · ${if (state.antigravityAuth.autoRoundRobin) "Auto round-robin on" else "Manual switch"}"
-                    else if (state.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN) "1 account connected"
-                    else "Connect multiple Google accounts for quota round-robin",
-                    icon = Icons.Default.SmartToy,
-                    expanded = expanded == SettingsSection.GOOGLE_ACCOUNTS,
-                    onClick = { toggle(SettingsSection.GOOGLE_ACCOUNTS) },
-                ) {
-                    var antigravityCode by rememberSaveable { mutableStateOf("") }
-                    AntigravityConnectionSettings(
-                        state = state,
-                        code = antigravityCode,
-                        onCode = { antigravityCode = it },
-                        onStartLogin = onStartAntigravityLogin,
-                        onSubmitCode = {
-                            onSubmitAntigravityCode(antigravityCode)
-                            antigravityCode = ""
-                        },
-                        onLogout = onLogoutAntigravity,
-                        onRefreshModels = onRefreshAntigravityModels,
-                        onSetModel = onSetAntigravityModel,
-                        onSetEffort = onSetAntigravityEffort,
-                        onStartAddAccount = onStartAntigravityAddAccount,
-                        onSwitchAccount = onSwitchAntigravityAccount,
-                        onRemoveAccount = onRemoveAntigravityAccount,
-                        onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
-                    )
                 }
             }
 
