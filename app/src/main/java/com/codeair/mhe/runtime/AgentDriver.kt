@@ -46,6 +46,7 @@ class AgentRegistry(drivers: List<AgentDriver>) {
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
             custom: RuntimeBridge,
+            codex: RuntimeBridge,
         ) = AgentRegistry(
             listOf(
                 BuiltInAgentDriver(
@@ -79,6 +80,14 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.MODEL_PICKER,
                         AgentCapability.REASONING_EFFORT,
                         AgentCapability.RESUME,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.CODEX,
+                    codex,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.MODEL_PICKER,
                     ),
                 ),
                 // Custom is bring-your-own-API: no binary to install, direct API chat.

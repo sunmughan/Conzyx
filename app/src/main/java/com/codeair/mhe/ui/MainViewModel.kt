@@ -48,6 +48,7 @@ import com.codeair.mhe.network.ModelDiscoveryResult
 import com.codeair.mhe.network.ProviderApiClient
 import com.codeair.mhe.network.GitHubRepository
 import com.codeair.mhe.runtime.ClaudeRuntimeBridge
+import com.codeair.mhe.runtime.CodexRuntimeBridge
 import com.codeair.mhe.runtime.CustomAgentBridge
 import com.codeair.mhe.runtime.DshRuntimeBridge
 import com.codeair.mhe.runtime.AgentRegistry
@@ -355,7 +356,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         },
     )
     private val customRuntime = CustomAgentBridge { profile -> vault.get(profile.kind.name) }
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, customRuntime)
+    private val codexRuntime = CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, customRuntime, codexRuntime)
     private fun activeRuntime(): com.codeair.mhe.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
@@ -422,6 +424,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                     )
                     AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
+                    AgentKind.CODEX -> CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
                 }
             },
             installer = installer,
@@ -676,6 +679,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dshRuntime.events.collect(::onRuntimeEvent) }
         viewModelScope.launch { antigravityRuntime.events.collect(::onRuntimeEvent) }
         viewModelScope.launch { customRuntime.events.collect(::onRuntimeEvent) }
+        viewModelScope.launch { codexRuntime.events.collect(::onRuntimeEvent) }
         viewModelScope.launch {
             antigravityAuthController.state.collect { auth ->
                 _state.update { it.copy(antigravityAuth = auth) }
@@ -1132,6 +1136,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         claudeRuntime.configureProjectRoot(projectId, rootPath)
         dshRuntime.configureProjectRoot(projectId, rootPath)
         antigravityRuntime.configureProjectRoot(projectId, rootPath)
+        codexRuntime.configureProjectRoot(projectId, rootPath)
     }
 
     init {

@@ -1514,6 +1514,10 @@ private const val CORE_RUNTIME_DOWNLOAD_MB = 69
 private const val CLAUDE_RUNTIME_DOWNLOAD_MB = 72
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
 private const val AGY_RUNTIME_DOWNLOAD_MB = 40
+// Codex installs via npm: wrapper + @openai/codex-linux-arm64 platform
+// package (389 MB unpacked at 0.162.1 per the npm registry). ~150 MB is
+// the compressed download estimate for that platform tarball.
+private const val CODEX_RUNTIME_DOWNLOAD_MB = 150
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
 private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
 
@@ -1555,6 +1559,7 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
             AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
             AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
             AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
+            AgentKind.CODEX -> CODEX_RUNTIME_DOWNLOAD_MB
             // Custom is bring-your-own-API: zero download.
             AgentKind.CUSTOM -> 0
         } +
@@ -1643,12 +1648,14 @@ private fun AgentChoiceRow(
         AgentKind.CLAUDE_CODE -> Color(0xFFD97757)
         AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
         AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
+        AgentKind.CODEX -> Color(0xFF7C3AED)
         AgentKind.CUSTOM -> Color(0xFF9C6BFF)
     }
     val mark = when (agent) {
         AgentKind.CLAUDE_CODE -> "CC"
         AgentKind.DEEPSEEK_HARNESS -> "DS"
         AgentKind.ANTIGRAVITY -> "AG"
+        AgentKind.CODEX -> "CX"
         AgentKind.CUSTOM -> "CU"
     }
     Row(

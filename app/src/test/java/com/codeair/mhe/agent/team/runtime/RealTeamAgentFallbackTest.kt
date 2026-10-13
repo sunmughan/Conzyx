@@ -152,6 +152,31 @@ class RealTeamAgentFallbackTest {
     }
 
     @Test
+    fun testCodexWithSecretIsReady() {
+        // Codex is a full engine: installed + an API key makes it usable.
+        val reason = readinessReason(
+            kind = AgentKind.CODEX,
+            isInstalled = true,
+            sessionAuthAvailable = false,
+            provider = ProviderProfile(kind = ProviderKind.CUSTOM),
+            secret = "sk-key",
+        )
+        assertNull(reason)
+    }
+
+    @Test
+    fun testCodexFallbackWhenOtherEnginesNotReady() {
+        val resolution = resolveEffectiveKind(
+            requested = AgentKind.CLAUDE_CODE,
+            preferred = null,
+            readinessOf = { kind ->
+                if (kind == AgentKind.CODEX) null else "not usable"
+            },
+        )
+        assertEquals(AgentResolution.Ready(AgentKind.CODEX), resolution)
+    }
+
+    @Test
     fun testCustomAsRequestedKindIsNeverUsed() {
         // Even when CUSTOM is the requested engine and reports ready, it is
         // filtered out: the task falls back to a real engine, or fails when

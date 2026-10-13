@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,7 +41,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -51,10 +51,8 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -92,6 +90,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -102,6 +101,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.codeair.mhe.R
 import com.codeair.mhe.data.ApiKeyInfo
 import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.DSH_PROTOCOL_PROVIDERS
@@ -864,15 +864,15 @@ fun AgentScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        // Scrollable tab row with FULL agent names + a distinct icon per
-                        // agent. The old fixed row truncated names, which made two
-                        // agents look like the same agent twice. Full names + icons
-                        // make them unmistakable.
+                        // Square icon tabs, equal spacing: one 56.dp square
+                        // tile per agent with its official brand icon (Custom
+                        // keeps its word). The selected tab gets a white tile
+                        // behind its icon; unselected tabs are transparent.
                         Row(
                             modifier = Modifier
                                 .horizontalScroll(rememberScrollState())
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             orderedAgents.forEach { agent ->
                                 val isSelected = viewedAgent == agent
@@ -880,45 +880,42 @@ fun AgentScreen(
                                 val isInstalled = agent == AgentKind.CUSTOM ||
                                     agent == state.agentKind || state.installedAgentVersions.containsKey(agent)
                                 val updateAvailable = state.agentUpdates.containsKey(agent)
-                                val shortTitle = when (agent) {
-                                    AgentKind.ANTIGRAVITY -> "Antigravity"
-                                    AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
-                                    AgentKind.CLAUDE_CODE -> "Claude Code"
-                                    AgentKind.CUSTOM -> "Custom"
-                                }
-                                val tabIcon = when (agent) {
-                                    AgentKind.ANTIGRAVITY -> Icons.Default.RocketLaunch
-                                    AgentKind.DEEPSEEK_HARNESS -> Icons.Default.FlashOn
-                                    AgentKind.CLAUDE_CODE -> Icons.Default.AutoAwesome
-                                    AgentKind.CUSTOM -> Icons.Default.Tune
+                                val tabIconRes = when (agent) {
+                                    AgentKind.ANTIGRAVITY -> R.drawable.ic_agent_antigravity
+                                    AgentKind.CLAUDE_CODE -> R.drawable.ic_agent_claude
+                                    AgentKind.CODEX -> R.drawable.ic_agent_codex
+                                    AgentKind.DEEPSEEK_HARNESS -> R.drawable.ic_agent_deepseek
+                                    AgentKind.CUSTOM -> null
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
-                                    border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)) else null,
+                                    color = if (isSelected) Color.White else Color.Transparent,
                                     modifier = Modifier
+                                        .size(56.dp)
                                         .clickable(enabled = state.agentInstalling == null) {
                                             viewedAgent = agent
                                             if (isInstalled) onSelectAgent(agent)
                                         },
                                 ) {
                                     Box(
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 12.dp),
+                                        modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                tabIcon,
-                                                contentDescription = null,
-                                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(15.dp),
+                                        if (tabIconRes != null) {
+                                            Image(
+                                                painter = painterResource(tabIconRes),
+                                                contentDescription = agent.title,
+                                                modifier = Modifier.size(32.dp),
                                             )
-                                            Spacer(Modifier.width(5.dp))
+                                        } else {
+                                            // Custom keeps its word, last in tab order.
+                                            // The selected tile is white, so the word
+                                            // is dark on it in either theme.
                                             Text(
-                                                shortTitle,
+                                                "Custom",
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                 fontSize = 11.sp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (isSelected) Color(0xFF111111) else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                             )
                                         }
@@ -926,7 +923,7 @@ fun AgentScreen(
                                             Box(
                                                 Modifier
                                                     .align(Alignment.TopEnd)
-                                                    .padding(top = 1.dp, end = 3.dp)
+                                                    .padding(top = 4.dp, end = 4.dp)
                                                     .size(6.dp)
                                                     .background(PocketOrange, CircleShape)
                                             )
@@ -1048,6 +1045,12 @@ fun AgentScreen(
                         onSwitchAccount = onSwitchAntigravityAccount,
                         onRemoveAccount = onRemoveAntigravityAccount,
                         onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
+                    )
+                } else if (viewedAgent == AgentKind.CODEX && viewedAgentInstalled) {
+                    AgentCodexCard(
+                        state = state,
+                        onSaveProvider = onSaveProvider,
+                        getSavedApiKey = getSavedApiKey,
                     )
                 } else if (viewedAgent == AgentKind.CUSTOM) {
                     AgentCustomCard(
@@ -2229,6 +2232,110 @@ private fun PremiumSummaryRow(
  * OpenAI-compatible or Claude-compatible endpoint (base URL + API key + model)
  * and the Custom agent chats directly via that API.
  */
+/**
+ * Codex CLI configuration card. Same save pattern as the Custom card: base
+ * URL + API key + model saved directly, with no provider-validation round
+ * trip (an Anthropic-style ping would fail against an OpenAI endpoint).
+ * Base URL and model are optional: blank means the OpenAI default and the
+ * Codex default respectively. Install / update live in the generic
+ * not-installed card and the per-tab Runtime updates block.
+ */
+@Composable
+private fun AgentCodexCard(
+    state: AppUiState,
+    onSaveProvider: (ProviderProfile, String) -> Unit,
+    getSavedApiKey: (ProviderKind) -> String,
+) {
+    val currentProfile = state.provider.takeIf { it.kind == ProviderKind.CUSTOM }
+    var baseUrl by rememberSaveable { mutableStateOf(currentProfile?.baseUrl.orEmpty()) }
+    var model by rememberSaveable { mutableStateOf(currentProfile?.model.orEmpty()) }
+    var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.CUSTOM)) }
+    var keyVisible by rememberSaveable { mutableStateOf(false) }
+    var savedTick by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Codex CLI", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(
+            "OpenAI Codex CLI — full agentic coding (file edits, terminal) via your OpenAI API key. Installed with npm in the Linux guest.",
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        OutlinedTextField(
+            value = baseUrl,
+            onValueChange = { baseUrl = it; savedTick = false },
+            label = { Text("Base URL (optional)") },
+            placeholder = { Text("https://api.openai.com/v1 (blank = OpenAI default)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        )
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = { apiKey = it; savedTick = false },
+            label = { Text("API key") },
+            singleLine = true,
+            visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { keyVisible = !keyVisible }) {
+                    Icon(
+                        if (keyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (keyVisible) "Hide key" else "Show key",
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        )
+        OutlinedTextField(
+            value = model,
+            onValueChange = { model = it; savedTick = false },
+            label = { Text("Model (optional)") },
+            placeholder = { Text("gpt-5-codex (blank = Codex default)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        )
+
+        Button(
+            onClick = {
+                val profile = ProviderProfile(
+                    kind = ProviderKind.CUSTOM,
+                    baseUrl = baseUrl.trim(),
+                    model = model.trim(),
+                    dshApi = "openai-completions",
+                )
+                if (apiKey.isNotBlank()) {
+                    onSaveProvider(profile, apiKey.trim())
+                }
+                savedTick = true
+            },
+            enabled = apiKey.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            if (savedTick) {
+                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(if (savedTick) "Saved" else "Save Codex API", fontWeight = FontWeight.Bold)
+        }
+
+        Text(
+            "Your key is stored encrypted in Android secure storage and passed to the CLI through its process environment. Codex runs the official codex exec CLI in the Linux guest.",
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+        )
+    }
+}
+
 @Composable
 private fun AgentCustomCard(
     state: AppUiState,

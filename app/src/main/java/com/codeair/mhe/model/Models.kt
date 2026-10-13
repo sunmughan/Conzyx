@@ -72,6 +72,12 @@ enum class AgentKind(
         "Google's official coding agent · Google account",
         "39.9 MB",
     ),
+    CODEX(
+        "codex",
+        "Codex CLI",
+        "OpenAI's coding agent · OpenAI API key",
+        "150 MB",
+    ),
     CUSTOM(
         "custom",
         "Custom",
@@ -143,6 +149,10 @@ fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
+    // Codex authenticates with an OpenAI-compatible API key. The Custom API
+    // provider carries its base URL + model; a blank base URL means the
+    // OpenAI default, a blank model means the Codex default.
+    AgentKind.CODEX -> listOf(ProviderKind.CUSTOM)
     // Custom agent is pure bring-your-own-API: OpenAI-compatible and Claude-compatible endpoints only.
     AgentKind.CUSTOM -> listOf(ProviderKind.CUSTOM, ProviderKind.ANTHROPIC, ProviderKind.LLM_ROUTER)
 }

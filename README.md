@@ -52,7 +52,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 | Change | Detail |
 |---|---|
-| Real agent execution | The Multi-Agent Engineering Studio now dispatches genuine agent runs through your installed runtimes (Claude Code, DeepSeek, Antigravity). The old simulated runs are gone. |
+| Real agent execution | The Multi-Agent Engineering Studio now dispatches genuine agent runs through your installed runtimes (Claude Code, DeepSeek, Antigravity, Codex). The old simulated runs are gone. |
 | Honest failure states | If a runtime is missing or a provider key is not configured, tasks report `NOT_CONFIGURED`. Nothing is ever faked as success. |
 | Live execution status | The "DEMO MODE" banner is removed. The studio header shows live status while agents work, and the DAG tab guides you when there are no tasks yet. |
 
@@ -98,6 +98,8 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Studios row + one-time studio onboarding (2026-10-13)**: the home screen no longer stacks three full-width studio cards. One "Studios" section now holds three small cards in a single row (App Factory, Multi Agent, Cloud Hybrid). Opening a studio the first time shows a one-time multi-page onboarding: one page per tab inside that studio (App Factory: Blueprint, Code & DB, Build & CI, Signing & Version, Play Store; Multi-Agent: Roster, Task DAG, Comms, Blackboard, Reviews; Cloud Hybrid: Telemetry & Stats, Workers Fleet, Job Pipeline, Routing Policies). Next/Back walk the pages, Got it / Skip opens the studio, Exit closes it, and any dismissal marks it seen so it never shows again for that studio.
 - **Instant agent switching (2026-10-14)**: tapping another agent's tab now activates it immediately. It used to refuse with "Stop the current agent before switching", and a stuck session meant the switch never happened until the app was closed and reopened. Switching now stops the current session first, and late events from the stopped session are dropped so they can never leak into the new agent's chat.
 - **Removed agent (2026-10-14)**: Google Cloud Code is gone entirely — its execution bridge never ran the binary (it only emitted a session-started event), so selecting it produced silence. Its enum entry, runtime bridge, auth controller, installer/update/check code, UI tabs, and tests are all deleted. The remaining agents are Claude Code, DeepSeek Harness, Antigravity, and Custom.
+- **Codex agent (2026-10-14)**: new 5th agent — OpenAI Codex CLI, driven headless via `codex exec --json` in the Linux guest. Installed with npm (`npm install -g @openai/codex`), API-key auth (your OpenAI key, optional custom base URL, optional model override), full file edits + tools like the other harness agents, and a fallback candidate for Multi-Agent Studio team tasks.
+- **Agent tabs are now icon-only (2026-10-14)**: square 56dp tabs with equal spacing and official brand icons (Antigravity, Claude Code, Codex, DeepSeek); Custom keeps its word, last in tab order. The selected tab gets a white background tile behind its icon; unselected tabs are transparent.
 
 ### 🛡️ Reliability
 

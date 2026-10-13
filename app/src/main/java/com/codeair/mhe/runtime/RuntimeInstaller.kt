@@ -75,6 +75,7 @@ class RuntimeInstaller(private val context: Context) {
     private val devStacksFile = File(rootfs, ".pocket-dev-stacks.json")
     private val dshMarker = File(rootfs, ".pocket-dsh-version")
     private val agyMarker = File(rootfs, ".pocket-agy-version")
+    private val codexMarker = File(rootfs, ".pocket-codex-version")
     private val githubCliMarker = File(rootfs, ".pocket-github-cli-version")
     private val dshAndroidCompatibilityMarker = File(rootfs, ".pocket-dsh-android-compat-version")
     private val macosMetadataRepairMarker = File(rootfs, ".pocket-macos-metadata-repair")
@@ -231,6 +232,7 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(proot, 0.985f, onProgress)
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
+            com.codeair.mhe.model.AgentKind.CODEX -> ensureCodexInstalled(proot, 0.985f, onProgress)
             // Custom is bring-your-own-API: nothing to install.
             com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
@@ -252,6 +254,7 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(runtime.proot, 0.05f, onProgress)
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(runtime.proot, 0.05f, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(runtime.proot, 0.05f, onProgress)
+            com.codeair.mhe.model.AgentKind.CODEX -> ensureCodexInstalled(runtime.proot, 0.05f, onProgress)
             // Custom is bring-your-own-API: nothing to install.
             com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
@@ -272,6 +275,9 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY ->
                 guestExecutableFile(AGY_GUEST_PATH) != null &&
                     !agyMarker.readTextOrNull().isNullOrBlank()
+            com.codeair.mhe.model.AgentKind.CODEX ->
+                guestExecutableFile(CODEX_GUEST_PATH) != null &&
+                    !codexMarker.readTextOrNull().isNullOrBlank()
             // Custom is bring-your-own-API: always available, nothing to install.
             com.codeair.mhe.model.AgentKind.CUSTOM -> true
         }
@@ -378,6 +384,7 @@ class RuntimeInstaller(private val context: Context) {
                     com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> "claude"
                     com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> "deepseek"
                     com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> "antigravity"
+                    com.codeair.mhe.model.AgentKind.CODEX -> "codex"
                     com.codeair.mhe.model.AgentKind.CUSTOM -> "custom"
                 },
                 version,
@@ -414,6 +421,8 @@ class RuntimeInstaller(private val context: Context) {
         runCatching { JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version") }
             .getOrNull()?.let { put("deepseek", it) }
         runCatching { fetchAgyManifest().getString("version") }.getOrNull()?.let { put("antigravity", it) }
+        runCatching { JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version") }
+            .getOrNull()?.let { put("codex", it) }
         runCatching { latestRuntimeBundle("core")?.version }.getOrNull()?.let { put("core", it) }
         runCatching { latestRuntimeBundle("python")?.version }.getOrNull()?.let { put("python", it) }
         runCatching { latestRuntimeBundle("android")?.version }.getOrNull()?.let { put("android", it) }
@@ -606,6 +615,11 @@ class RuntimeInstaller(private val context: Context) {
             ?.trim()
             ?.takeIf { it.isNotEmpty() && guestExecutableFile(AGY_GUEST_PATH) != null }
             ?.let { put(com.codeair.mhe.model.AgentKind.ANTIGRAVITY, it) }
+
+        codexMarker.readTextOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && guestExecutableFile(CODEX_GUEST_PATH) != null }
+            ?.let { put(com.codeair.mhe.model.AgentKind.CODEX, it) }
     }
 
     /** Checks each installed agent against its own authoritative release source. */
@@ -632,6 +646,13 @@ class RuntimeInstaller(private val context: Context) {
                         put(com.codeair.mhe.model.AgentKind.ANTIGRAVITY, AgentUpdateInfo(current, latest))
                     }
             }
+            installed[com.codeair.mhe.model.AgentKind.CODEX]?.let { current ->
+                runCatching {
+                    JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version")
+                }.getOrNull()?.takeIf { isVersionNewer(it, current) }?.let { latest ->
+                    put(com.codeair.mhe.model.AgentKind.CODEX, AgentUpdateInfo(current, latest))
+                }
+            }
         }
     }
 
@@ -645,6 +666,7 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLAUDE_CODE -> updateClaude(runtime, expectedVersion, onProgress)
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> updateDsh(runtime, expectedVersion, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> updateAgy(runtime, expectedVersion, onProgress)
+            com.codeair.mhe.model.AgentKind.CODEX -> updateCodex(runtime, expectedVersion, onProgress)
             // Custom has no binary to update.
             com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
@@ -741,6 +763,28 @@ class RuntimeInstaller(private val context: Context) {
         dshAndroidCompatibilityMarker.delete()
         ensureDshAndroidCompatibility()
         verifyGuest(runtime.proot, "/usr/local/bin/dsh --profile headless --help", "DeepSeek Harness update verification failed")
+    }
+
+    private suspend fun updateCodex(
+        runtime: InstalledRuntime,
+        expectedVersion: String,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        val latest = JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version")
+        check(latest == expectedVersion) { "A newer Codex CLI release appeared. Check again before updating." }
+        val quotedVersion = latest.replace(Regex("[^0-9A-Za-z.+-]"), "")
+        check(quotedVersion == latest) { "Invalid Codex CLI version" }
+        runGuestCommand(
+            proot = runtime.proot,
+            command = "npm install -g @openai/codex@$quotedVersion",
+            displayCommand = "npm install -g @openai/codex@$quotedVersion",
+            fraction = 0.55f,
+            timeoutMs = 20 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Codex CLI update failed; the installed version was preserved",
+        )
+        verifyGuest(runtime.proot, "$CODEX_GUEST_PATH --version", "Codex CLI update verification failed")
+        codexMarker.writeText(installedCodexVersion(runtime.proot))
     }
 
     private fun fetchAgyManifest(): JSONObject = JSONObject(
@@ -945,6 +989,49 @@ class RuntimeInstaller(private val context: Context) {
         require(isAgentInstalled(com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS)) {
             "The DeepSeek Harness runtime bundle is incomplete"
         }
+    }
+
+    /**
+     * Installs the official Codex CLI with npm. Node.js ships in the Core
+     * runtime, so npm is always available when an agent install runs. npm's
+     * global bin dir for the tarball Node install is /usr/local/lib/nodejs/bin,
+     * so the codex binary is symlinked to the stable [CODEX_GUEST_PATH].
+     */
+    private suspend fun ensureCodexInstalled(
+        proot: File,
+        fraction: Float,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        if (isAgentInstalled(com.codeair.mhe.model.AgentKind.CODEX)) return
+        runGuestCommand(
+            proot = proot,
+            command = "npm install -g @openai/codex",
+            displayCommand = "npm install -g @openai/codex",
+            fraction = fraction,
+            timeoutMs = 20 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Codex CLI installation failed",
+        )
+        val npmBin = File(rootfs, "usr/local/lib/nodejs/bin/codex")
+        check(npmBin.isFile) { "Codex CLI installation did not produce a codex binary" }
+        val destination = File(rootfs, CODEX_GUEST_PATH.removePrefix("/"))
+        destination.parentFile?.mkdirs()
+        if (destination.exists() || java.nio.file.Files.isSymbolicLink(destination.toPath())) destination.delete()
+        Os.symlink("../lib/nodejs/bin/codex", destination.absolutePath)
+        verifyGuest(proot, "$CODEX_GUEST_PATH --version", "Codex CLI verification failed")
+        codexMarker.writeText(installedCodexVersion(proot))
+        require(isAgentInstalled(com.codeair.mhe.model.AgentKind.CODEX)) {
+            "Codex CLI installation is incomplete"
+        }
+    }
+
+    /** Reads the actually installed @openai/codex version from npm, never the registry latest. */
+    private suspend fun installedCodexVersion(proot: File): String {
+        val output = runGuest(proot, "npm list -g @openai/codex --depth=0 --json")
+        return JSONObject(output)
+            .getJSONObject("dependencies")
+            .getJSONObject("@openai/codex")
+            .getString("version")
     }
 
     /**
@@ -2935,6 +3022,8 @@ main().catch((err) => {
 
     companion object {
         const val AGY_GUEST_PATH = "/root/.local/bin/agy"
+        /** Codex CLI binary, symlinked from npm's global bin dir after install. */
+        const val CODEX_GUEST_PATH = "/usr/local/bin/codex"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
