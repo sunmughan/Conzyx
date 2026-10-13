@@ -201,7 +201,7 @@ jobs:
 
 
       - name: Compile online release AAB (Play Store)
-        run: ./gradlew --no-daemon --stacktrace bundleOnlineRelease
+        run: ./gradlew --no-daemon --stacktrace bundleOnlineRelease -PplayBuild=true
 
 
       - name: Verify release APK signatures and alignment
