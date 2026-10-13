@@ -111,4 +111,49 @@ class MarketplaceListingValidatorTest {
         assertFalse(json.has("price"))
         assertFalse(json.has("sellerId"))
     }
+
+    // QA C8: publishing validates the item before persisting it.
+
+    private fun validItem() = MarketplaceItem(
+        name = "Postgres MCP",
+        category = MarketplaceCategory.MCP_SERVERS,
+        author = "Local Developer",
+        description = "A production-ready Postgres MCP server with pooling.",
+        installUrl = "npx -y @modelcontextprotocol/server-postgres",
+        isCustom = true,
+    )
+
+    @Test
+    fun validMarketplaceItemPasses() {
+        assertTrue(validateMarketplaceItem(validItem()).isValid)
+    }
+
+    @Test
+    fun shortMarketplaceItemNameFails() {
+        val result = validateMarketplaceItem(validItem().copy(name = "AB"))
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("name") })
+    }
+
+    @Test
+    fun shortMarketplaceItemDescriptionFails() {
+        val result = validateMarketplaceItem(validItem().copy(description = "Too short"))
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("description") })
+    }
+
+    @Test
+    fun blankMarketplaceItemInstallUrlFails() {
+        val result = validateMarketplaceItem(validItem().copy(installUrl = "  "))
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("install") })
+    }
+
+    @Test
+    fun commandInstallUrlPassesValidation() {
+        // An MCP item's install value is a command, not a URL: the
+        // ListingDraft http(s) artifactUrl rule must not apply here.
+        val result = validateMarketplaceItem(validItem().copy(installUrl = "npx -y some-mcp-server"))
+        assertTrue(result.isValid)
+    }
 }

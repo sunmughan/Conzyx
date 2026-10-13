@@ -263,6 +263,9 @@ object DeveloperMarketplaceCatalog {
     }
 
     fun addCustomItem(item: MarketplaceItem) {
+        // Dedupe by id: persisted items are reloaded into the catalog on
+        // every coordinator start, and must not duplicate on re-add.
+        customItems.removeAll { it.id == item.id }
         customItems.add(item.copy(isCustom = true))
     }
 

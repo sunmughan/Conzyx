@@ -443,6 +443,7 @@ fun PocketDevApp(
             onBack = { navigator.closeOverlay() },
             onInstallItem = { item -> viewModel.installMarketplaceItem(item) },
             onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
+            onPublishItem = { item -> viewModel.publishMarketplaceItem(item) },
             initiallyInstalledIds = marketplaceInstalledIds,
         )
         return
@@ -2574,6 +2575,7 @@ private fun RootScreenHost(
                     onBack = { screen = RootScreen.PROJECTS },
                     onInstallItem = { item -> viewModel.installMarketplaceItem(item) },
                     onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
+                    onPublishItem = { item -> viewModel.publishMarketplaceItem(item) },
                     initiallyInstalledIds = marketplaceInstalledIds,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(

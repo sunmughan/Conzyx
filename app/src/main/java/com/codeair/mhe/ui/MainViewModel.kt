@@ -427,6 +427,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitHubClient = com.codeair.mhe.network.GitHubClient()
     val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val marketplaceInstallManager = com.codeair.mhe.marketplace.MarketplaceInstallManager(application)
+    val marketplacePublishedItemsStore = com.codeair.mhe.marketplace.MarketplacePublishedItemsStore(application)
     val teamConcurrencyController = com.codeair.mhe.agent.team.runtime.AdaptiveConcurrencyController(application)
     val teamOrchestrator = com.codeair.mhe.agent.team.AgentTeamOrchestrator(
         teamExecutor = com.codeair.mhe.agent.team.runtime.RealTeamAgentExecutor(
@@ -796,7 +797,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Each coordinator owns one domain's operations and state machine;
     // MainViewModel keeps a stable public API by delegating to them.
     private val marketplaceCoordinator =
-        com.codeair.mhe.ui.coordinators.MarketplaceCoordinator(coordinatorHost, marketplaceInstallManager)
+        com.codeair.mhe.ui.coordinators.MarketplaceCoordinator(coordinatorHost, marketplaceInstallManager, marketplacePublishedItemsStore)
     private val teamCoordinator =
         com.codeair.mhe.ui.coordinators.TeamCoordinator(teamOrchestrator)
     private val cloudCoordinator =
@@ -4753,6 +4754,9 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
     // ---- Milestone 1: delegated to domain coordinators (public API unchanged). ----
     fun installMarketplaceItem(item: com.codeair.mhe.marketplace.MarketplaceItem) =
         marketplaceCoordinator.installMarketplaceItem(item)
+
+    fun publishMarketplaceItem(item: com.codeair.mhe.marketplace.MarketplaceItem) =
+        marketplaceCoordinator.publishMarketplaceItem(item)
 
     fun uninstallMarketplaceItem(item: com.codeair.mhe.marketplace.MarketplaceItem) =
         marketplaceCoordinator.uninstallMarketplaceItem(item)

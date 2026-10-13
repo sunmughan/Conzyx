@@ -76,6 +76,12 @@ fun MarketplaceScreen(
     onInstallItem: (MarketplaceItem) -> Unit = {},
     onUninstallItem: (MarketplaceItem) -> Unit = {},
     /**
+     * Publish handler: validates, persists durably, and adds to the catalog.
+     * Defaults to the in-memory catalog add (previews). Production passes
+     * the ViewModel's publish, which persists the item across restarts.
+     */
+    onPublishItem: (MarketplaceItem) -> Unit = { DeveloperMarketplaceCatalog.addCustomItem(it) },
+    /**
      * Installed package IDs from the real [MarketplaceInstallManager], so the
      * screen reflects durable install state (not just in-memory session state).
      */
@@ -119,7 +125,7 @@ fun MarketplaceScreen(
         PublishMarketplaceItemDialog(
             onDismiss = { showPublishDialog = false },
             onPublish = { newItem ->
-                DeveloperMarketplaceCatalog.addCustomItem(newItem)
+                onPublishItem(newItem)
                 catalogVersion++
                 showPublishDialog = false
             },
@@ -556,6 +562,12 @@ private fun PublishMarketplaceItemDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                 )
+
+                Text(
+                    "Saved on this device. No registry is configured, so this item is not shared with other devices.",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         confirmButton = {
@@ -578,7 +590,7 @@ private fun PublishMarketplaceItemDialog(
                 },
                 enabled = name.isNotBlank() && description.isNotBlank(),
             ) {
-                Text("Publish Item")
+                Text("Save Item")
             }
         },
         dismissButton = {

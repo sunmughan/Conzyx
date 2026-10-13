@@ -86,3 +86,24 @@ fun ListingDraft.toListingJson(): JSONObject = JSONObject().apply {
     put("sha256", sha256.trim().lowercase())
     put("tags", JSONArray(tags))
 }
+
+/**
+ * Validates a marketplace item the user publishes from the Marketplace
+ * screen. Same name/description thresholds as [validateListing]; the
+ * install command/URL must be non-blank. ListingDraft's artifactUrl
+ * http(s) rule does NOT apply here: an MCP item's install value is a
+ * command such as `npx -y ...`, not a URL.
+ */
+fun validateMarketplaceItem(item: MarketplaceItem): ListingValidationResult {
+    val errors = mutableListOf<String>()
+    if (item.name.trim().length < 3) {
+        errors += "name must be at least 3 characters"
+    }
+    if (item.description.trim().length < 20) {
+        errors += "description must be at least 20 characters"
+    }
+    if (item.installUrl.isBlank()) {
+        errors += "install command or URL is required"
+    }
+    return ListingValidationResult(isValid = errors.isEmpty(), errors = errors)
+}
