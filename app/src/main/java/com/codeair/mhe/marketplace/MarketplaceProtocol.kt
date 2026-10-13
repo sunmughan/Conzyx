@@ -6,23 +6,17 @@ import org.json.JSONObject
 /**
  * Wire protocol for the Mobile Harness Extended marketplace registry (Milestone 13).
  *
+ * Everything in the marketplace is free: there are no prices, no sellers,
+ * no orders, no entitlements and no payments anywhere in the app.
+ *
  * Base URL: the registry's `registryUrl` (e.g. https://marketplace.example.com).
- * Auth: buyer/seller calls use `Authorization: Bearer <token>`; discovery calls
- * are public. A blank registry URL is never contacted — the clients refuse with
- * NOT_CONFIGURED instead.
+ * Discovery calls are public. A blank registry URL is never contacted — the
+ * clients refuse with NOT_CONFIGURED instead.
  *
  * Endpoints (all JSON unless noted):
  * - GET    /api/v1/listings                          -> { "listings": [ {...} ] } (200)
- * - GET    /api/v1/listings/search?q=..&category=..&maxPriceCents=..&sort=.. -> { "listings": [ {...} ] } (200)
+ * - GET    /api/v1/listings/search?q=..&category=..&sort=.. -> { "listings": [ {...} ] } (200)
  * - GET    /api/v1/listings/{id}                     -> { "listing": {...} } (200 / 404)
- * - POST   /api/v1/sellers                           -> { "seller": {...}, "sellerToken": "..." } (201)
- * - POST   /api/v1/listings                          -> { "listing": {...} } (201, Bearer seller token)
- * - PATCH  /api/v1/listings/{id}                     -> { "listing": {...} } (200, Bearer seller token)
- * - POST   /api/v1/listings/{id}/unpublish           -> { "listing": {...} } (200, Bearer seller token)
- * - POST   /api/v1/orders                            -> { "order": {...} } (201, Bearer buyer token)
- * - GET    /api/v1/orders/{id}                       -> { "order": {...} } (200, Bearer buyer token)
- * - GET    /api/v1/entitlements/{token}              -> { "valid": true, "listingId": "...", "expiresAt": n } (200)
- * - GET    /api/v1/sellers/{id}/sales                -> { "sales": [ {...} ], "totalRevenueCents": n, "payoutPendingCents": n } (200, Bearer seller token)
  */
 
 /** Minimal HTTP request/response pair used by the injectable transport seam. */
@@ -80,32 +74,6 @@ class UrlConnectionMarketplaceTransport(
     }
 }
 
-/** Price of a marketplace listing in minor currency units. */
-data class MarketplacePrice(
-    val cents: Long,
-    val currency: String = "USD"
-) {
-    val isFree: Boolean get() = cents <= 0
-
-    fun format(): String {
-        if (isFree) return "Free"
-        val major = cents / 100
-        val minor = (cents % 100).toString().padStart(2, '0')
-        return "$currency $major.$minor"
-    }
-
-    fun toJson(): JSONObject = JSONObject()
-        .put("cents", cents)
-        .put("currency", currency)
-
-    companion object {
-        fun fromJson(json: JSONObject): MarketplacePrice = MarketplacePrice(
-            cents = json.optLong("cents", 0),
-            currency = json.optString("currency", "USD").ifBlank { "USD" }
-        )
-    }
-}
-
 enum class ListingStatus {
     DRAFT, PUBLISHED, UNPUBLISHED, REJECTED;
 
@@ -127,11 +95,9 @@ data class RemoteListing(
     val id: String,
     val name: String,
     val category: MarketplaceCategory,
-    val sellerId: String,
-    val sellerName: String,
+    val author: String,
     val description: String,
     val version: String,
-    val price: MarketplacePrice,
     val rating: Double = 0.0,
     val downloads: Int = 0,
     val artifactUrl: String = "",
@@ -144,24 +110,21 @@ data class RemoteListing(
         id = id,
         name = name,
         category = category,
-        author = sellerName,
+        author = author,
         description = description,
         rating = rating,
         downloads = downloads,
         installUrl = artifactUrl,
-        tags = tags,
-        priceCents = price.cents
+        tags = tags
     )
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
         put("category", category.name)
-        put("sellerId", sellerId)
-        put("sellerName", sellerName)
+        put("author", author)
         put("description", description)
         put("version", version)
-        put("price", price.toJson())
         put("rating", rating)
         put("downloads", downloads)
         put("artifactUrl", artifactUrl)
@@ -185,11 +148,9 @@ data class RemoteListing(
                 id = json.getString("id"),
                 name = json.optString("name"),
                 category = category,
-                sellerId = json.optString("sellerId"),
-                sellerName = json.optString("sellerName"),
+                author = json.optString("author").ifBlank { json.optString("sellerName") },
                 description = json.optString("description"),
                 version = json.optString("version", "1.0.0"),
-                price = MarketplacePrice.fromJson(json.optJSONObject("price") ?: JSONObject()),
                 rating = json.optDouble("rating", 0.0),
                 downloads = json.optInt("downloads", 0),
                 artifactUrl = json.optString("artifactUrl"),
@@ -210,123 +171,14 @@ data class RemoteListing(
     }
 }
 
-/** A seller account on the registry. */
-data class SellerProfile(
-    val sellerId: String,
-    val displayName: String,
-    val email: String,
-    val verified: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
-) {
-    fun toJson(): JSONObject = JSONObject()
-        .put("sellerId", sellerId)
-        .put("displayName", displayName)
-        .put("email", email)
-        .put("verified", verified)
-        .put("createdAt", createdAt)
-
-    companion object {
-        fun fromJson(json: JSONObject): SellerProfile = SellerProfile(
-            sellerId = json.getString("sellerId"),
-            displayName = json.optString("displayName"),
-            email = json.optString("email"),
-            verified = json.optBoolean("verified", false),
-            createdAt = json.optLong("createdAt", System.currentTimeMillis())
-        )
-    }
-}
-
-enum class OrderStatus {
-    PENDING, PAID, FAILED, REFUNDED;
-
-    val isTerminal: Boolean get() = this != PENDING
-
-    companion object {
-        fun parse(raw: String?): OrderStatus = when (raw?.uppercase()) {
-            "PAID", "COMPLETED", "SUCCEEDED" -> PAID
-            "FAILED", "CANCELLED", "CANCELED", "EXPIRED" -> FAILED
-            "REFUNDED" -> REFUNDED
-            else -> PENDING
-        }
-    }
-}
-
-/** A purchase order. Paid orders carry a checkout URL; completed orders a receipt token. */
-data class PurchaseOrder(
-    val orderId: String,
-    val listingId: String,
-    val buyerId: String,
-    val status: OrderStatus,
-    val priceCents: Long,
-    val currency: String,
-    val checkoutUrl: String = "",
-    val receiptToken: String = "",
-    val createdAt: Long = System.currentTimeMillis()
-) {
-    companion object {
-        fun fromJson(json: JSONObject): PurchaseOrder = PurchaseOrder(
-            orderId = json.getString("orderId"),
-            listingId = json.optString("listingId"),
-            buyerId = json.optString("buyerId"),
-            status = OrderStatus.parse(json.optString("status")),
-            priceCents = json.optLong("priceCents", 0),
-            currency = json.optString("currency", "USD").ifBlank { "USD" },
-            checkoutUrl = json.optString("checkoutUrl"),
-            receiptToken = json.optString("receiptToken"),
-            createdAt = json.optLong("createdAt", System.currentTimeMillis())
-        )
-    }
-}
-
-enum class EntitlementVerdict { VALID, INVALID, EXPIRED }
-
-/** Server-side verdict for an entitlement token. */
-data class EntitlementCheck(
-    val verdict: EntitlementVerdict,
-    val listingId: String = "",
-    val expiresAt: Long = 0
-)
-
-/** One completed sale from the seller's point of view. */
-data class SalesRecord(
-    val orderId: String,
-    val listingId: String,
-    val buyerId: String,
-    val priceCents: Long,
-    val currency: String,
-    val purchasedAt: Long,
-    val refunded: Boolean = false
-) {
-    companion object {
-        fun fromJson(json: JSONObject): SalesRecord = SalesRecord(
-            orderId = json.optString("orderId"),
-            listingId = json.optString("listingId"),
-            buyerId = json.optString("buyerId"),
-            priceCents = json.optLong("priceCents", 0),
-            currency = json.optString("currency", "USD").ifBlank { "USD" },
-            purchasedAt = json.optLong("purchasedAt", 0),
-            refunded = json.optBoolean("refunded", false)
-        )
-    }
-}
-
-/** Seller sales report: line items plus revenue and pending-payout totals. */
-data class SellerSalesReport(
-    val sellerId: String,
-    val sales: List<SalesRecord>,
-    val totalRevenueCents: Long,
-    val payoutPendingCents: Long
-)
-
-/** Discovery query: free text plus optional category / price-cap / sort filters. */
+/** Discovery query: free text plus optional category / sort filters. */
 data class MarketplaceSearchQuery(
     val query: String = "",
     val category: MarketplaceCategory? = null,
-    val maxPriceCents: Long? = null,
     val sortBy: SearchSort = SearchSort.RELEVANCE
 )
 
-enum class SearchSort { RELEVANCE, RATING, DOWNLOADS, PRICE_ASC, PRICE_DESC }
+enum class SearchSort { RELEVANCE, RATING, DOWNLOADS }
 
 /** URL-encodes a single query parameter value. */
 internal fun encodeParam(value: String): String =
@@ -337,7 +189,6 @@ fun buildSearchPath(query: MarketplaceSearchQuery): String {
     val params = mutableListOf<String>()
     if (query.query.isNotBlank()) params += "q=" + encodeParam(query.query.trim())
     query.category?.let { params += "category=" + encodeParam(it.name) }
-    query.maxPriceCents?.let { params += "maxPriceCents=$it" }
     params += "sort=" + encodeParam(query.sortBy.name)
     return "/api/v1/listings/search" + (if (params.isEmpty()) "" else "?" + params.joinToString("&"))
 }

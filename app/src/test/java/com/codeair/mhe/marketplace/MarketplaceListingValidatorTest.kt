@@ -12,12 +12,9 @@ class MarketplaceListingValidatorTest {
         category = MarketplaceCategory.MCP_SERVERS,
         description = "A production-ready Postgres MCP server with pooling.",
         version = "2.1.0",
-        priceCents = 999,
-        currency = "USD",
         artifactUrl = "https://example.com/postgres-pro.zip",
         sha256 = "b".repeat(64),
         tags = listOf("sql", "postgres", "mcp"),
-        sellerId = "seller-9"
     )
 
     @Test
@@ -25,12 +22,6 @@ class MarketplaceListingValidatorTest {
         val result = validateListing(validDraft())
         assertTrue(result.isValid)
         assertTrue(result.errors.isEmpty())
-    }
-
-    @Test
-    fun freeListingWithZeroPricePasses() {
-        val result = validateListing(validDraft().copy(priceCents = 0))
-        assertTrue(result.isValid)
     }
 
     @Test
@@ -66,21 +57,6 @@ class MarketplaceListingValidatorTest {
     fun prereleaseVersionPasses() {
         val result = validateListing(validDraft().copy(version = "2.0.0-beta.1"))
         assertTrue(result.isValid)
-    }
-
-    @Test
-    fun negativePriceFails() {
-        val result = validateListing(validDraft().copy(priceCents = -5))
-        assertFalse(result.isValid)
-        assertTrue(result.errors.any { it.contains("priceCents") })
-    }
-
-    @Test
-    fun badCurrencyFails() {
-        listOf("usd", "USDD", "US", "12A").forEach { c ->
-            val result = validateListing(validDraft().copy(currency = c))
-            assertFalse("currency '$c' should fail", result.isValid)
-        }
     }
 
     @Test
@@ -120,10 +96,10 @@ class MarketplaceListingValidatorTest {
     @Test
     fun multipleErrorsAreAllReported() {
         val result = validateListing(
-            validDraft().copy(name = "x", description = "y", priceCents = -1, currency = "zz")
+            validDraft().copy(name = "x", description = "y", artifactUrl = "ftp://example.com/x.zip")
         )
         assertFalse(result.isValid)
-        assertTrue(result.errors.size >= 4)
+        assertTrue(result.errors.size >= 3)
     }
 
     @Test
@@ -131,7 +107,8 @@ class MarketplaceListingValidatorTest {
         val json = validDraft().toListingJson()
         assertEquals("Postgres MCP Pro", json.getString("name"))
         assertEquals("MCP_SERVERS", json.getString("category"))
-        assertEquals(999L, json.getJSONObject("price").getLong("cents"))
-        assertEquals("seller-9", json.getString("sellerId"))
+        // No price, no seller: everything in the marketplace is free.
+        assertFalse(json.has("price"))
+        assertFalse(json.has("sellerId"))
     }
 }

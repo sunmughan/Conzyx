@@ -17,8 +17,8 @@ class MarketplaceDiscoveryClientTest {
 
     private fun listingJson(id: String, name: String) = RemoteListing(
         id = id, name = name, category = MarketplaceCategory.SKILLS,
-        sellerId = "s", sellerName = "S", description = "desc $name",
-        version = "1.0.0", price = MarketplacePrice(0)
+        author = "S", description = "desc $name",
+        version = "1.0.0"
     ).toJson()
 
     private fun indexBody(vararg ids: String): String {
