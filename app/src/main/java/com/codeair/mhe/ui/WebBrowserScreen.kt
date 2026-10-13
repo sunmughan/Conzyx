@@ -108,8 +108,8 @@ private fun restoreTabsFromJson(savedTabs: List<String>): List<BrowserTab> {
 }
 
 private val BrowserTabsSaver = listSaver<List<BrowserTab>, String>(
-    save = ::saveTabsToJson,
-    restore = ::restoreTabsFromJson,
+    save = { tabs -> saveTabsToJson(tabs) },
+    restore = { saved -> restoreTabsFromJson(saved) },
 )
 
 /**
