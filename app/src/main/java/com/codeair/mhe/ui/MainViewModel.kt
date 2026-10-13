@@ -454,6 +454,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastInterruptedRequest: RuntimeRetryRequest? = null
     private val failedApiKeyIds = mutableSetOf<String>()
     private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
+
+    // Runtime providers often emit many tiny text deltas. Coalesce them before
+    // updating Compose state or queuing a full transcript write; otherwise large
+    // answers can trigger quadratic Markdown work and an unbounded persistence backlog.
+    private val pendingAssistantDelta = StringBuilder()
+    private var pendingAssistantDeltaSessionId: String? = null
+    private var assistantDeltaFlushJob: Job? = null
     private val initialAgentKind = AgentKind.fromStored(preferences.agentKind)
     private val initialPrimaryAgentKind = preferences.primaryAgentKind
         .takeIf(String::isNotBlank)
@@ -3346,6 +3353,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun onRuntimeEvent(event: RuntimeEvent) {
+        if (event is RuntimeEvent.AssistantDelta) {
+            // Preserve event order across sessions while batching high-frequency token deltas.
+            if (pendingAssistantDelta.isNotEmpty() && pendingAssistantDeltaSessionId != event.sessionId) {
+                flushPendingAssistantDelta()
+            }
+            pendingAssistantDeltaSessionId = event.sessionId
+            pendingAssistantDelta.append(event.text)
+            if (assistantDeltaFlushJob == null) {
+                assistantDeltaFlushJob = viewModelScope.launch {
+                    delay(100)
+                    flushPendingAssistantDelta()
+                }
+            }
+            return
+        }
+
+        // A tool/session boundary must never overtake buffered assistant text.
+        flushPendingAssistantDelta()
+        processRuntimeEvent(event)
+    }
+
+    private fun flushPendingAssistantDelta() {
+        assistantDeltaFlushJob?.cancel()
+        assistantDeltaFlushJob = null
+        if (pendingAssistantDelta.isEmpty()) {
+            pendingAssistantDeltaSessionId = null
+            return
+        }
+        val sessionId = pendingAssistantDeltaSessionId ?: run {
+            pendingAssistantDelta.clear()
+            return
+        }
+        val text = pendingAssistantDelta.toString()
+        pendingAssistantDelta.clear()
+        pendingAssistantDeltaSessionId = null
+        processRuntimeEvent(RuntimeEvent.AssistantDelta(sessionId, text))
+    }
+
+    private fun processRuntimeEvent(event: RuntimeEvent) {
         val lastUserIdx = _state.value.messages.indexOfLast { it.fromUser }
         val hasResponseAlready = _state.value.messages.indices.any {
             it > lastUserIdx && !_state.value.messages[it].fromUser && _state.value.messages[it].text.isNotBlank()
