@@ -2570,12 +2570,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): List<ScratchpadItem> = agentChatController.deriveScratchpadItems(roadmap, liveProcess, isRunning)
 
     fun createChat() {
-        val project = _state.value.activeProject ?: return
-        if (_state.value.isRunning) return
-        persistMessages()
+        val current = _state.value
+        val project = current.activeProject ?: return
         val chat = ProjectChat()
-        val chats = listOf(chat) + _state.value.projectChats
+        val chats = listOf(chat) + current.projectChats
         preferences.saveProjectChats(project.id, chats)
+
+        if (current.isRunning) {
+            // Keep the running conversation attached to its active UI/session.
+            // The new conversation is persisted immediately and can be opened when
+            // the current task finishes, without mixing two chats' live output.
+            _state.update {
+                it.copy(
+                    projectChats = chats,
+                    toastMessage = "New conversation created. The running task will continue; switch chats when it finishes.",
+                )
+            }
+            return
+        }
+
+        persistMessages()
         preferences.setLastActiveChatId(project.id, chat.id)
         _state.update {
             it.copy(
