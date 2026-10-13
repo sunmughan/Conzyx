@@ -309,7 +309,9 @@ fun PreviewTab(
         webView?.goBack()
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    // The workspace Scaffold already applies system-bar insets to this tab's content.
+    // Applying statusBarsPadding() again adds a large blank strip above the browser toolbar.
+    Column(Modifier.fillMaxSize()) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             tonalElevation = 1.dp,
