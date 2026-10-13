@@ -247,7 +247,7 @@ class RealTeamAgentExecutor(
                 val customProvider = providerFor(AgentKind.CUSTOM)
                 val customConfigured = customProvider != null &&
                     customProvider.resolvedBaseUrl.isNotBlank() &&
-                    customProvider.let { secretFor(it) }.isNotBlank()
+                    !secretFor(customProvider).isNullOrBlank()
                 val customNote = if (customConfigured) {
                     " Your Custom API endpoint is chat-only (no file edits/tools) and cannot run engineering tasks. " +
                         "To use that endpoint for real engineering work, point DeepSeek Harness at it instead."
