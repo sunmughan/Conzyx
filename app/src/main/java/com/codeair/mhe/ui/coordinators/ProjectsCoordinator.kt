@@ -40,10 +40,7 @@ class ProjectsCoordinator(
     private val refreshProjectFiles: () -> Unit,
 ) {
     fun createQuickProject() {
-        if (host.state().isRunning || host.state().projectTerminalRunning) {
-            host.updateState { it.copy(toastMessage = "Stop the background task before creating another project") }
-            return
-        }
+        val busy = host.state().isRunning || host.state().projectTerminalRunning
         val identity = generateQuickChatIdentity(host.state().projects.mapTo(mutableSetOf()) { it.slug })
         val project = Project(
             name = identity.displayName,
@@ -57,6 +54,11 @@ class ProjectsCoordinator(
         preferences.saveProjectChats(project.id, listOf(firstChat))
         host.updateState { it.copy(projects = listOf(project) + it.projects) }
         preferences.saveProjects(host.state().projects)
+        if (busy) {
+            host.updateState {
+                it.copy(toastMessage = "${project.name} created. The current task continues in the background.")
+            }
+        }
         openProject(project)
     }
 
