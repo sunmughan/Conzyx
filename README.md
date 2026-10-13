@@ -92,6 +92,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Custom agent now streams (2026-10-13)**: the Custom agent used to make one blocking HTTP call and show only a "deciding the next useful step" line until the whole reply arrived. It now uses SSE streaming (OpenAI + Anthropic shapes) so the reply grows live in chat; endpoints that ignore `stream=true` fall back to the old single-response path.
 - **Browser URL bar back to 2.2.2 (2026-10-13)**: the tall 50dp URL bar is restored to the 2.2.2 slim 40dp pill (20dp radius) with the Reload button embedded on the left and the Go button inside on the right. The 3-dots menu moved out of the top row down to the end of the icon row, after the other icons.
 - **File open no longer fails silently (2026-10-13)**: tapping a file with no active project used to do nothing at all. It now shows "No project open. Open a project first, then tap the file again."
+- **App updates pill fix (2026-10-13)**: Settings > App updates no longer shows an "ONLINE EDITION" badge plus a separate version label plus an "Automatic background updates are enabled." line. One small fully-rounded pill now reads "v3.0.1 ONLINE" (or "v3.0.1 OFFLINE"), sitting on the left with the Check now button on the right, in the same pill shape as the button.
 
 ### 🛡️ Reliability
 

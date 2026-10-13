@@ -2119,7 +2119,7 @@ private fun AppUpdateChannelSection(
 
     SettingsAccordion(
         title = "App updates",
-        subtitle = "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE}) · ${if (isOnline) "Online Edition" else "Offline Edition"}",
+        subtitle = "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE}) · ${if (isOnline) "Online" else "Offline"}",
         icon = Icons.Default.CloudDownload,
         expanded = expanded,
         onClick = { expanded = !expanded },
@@ -2134,35 +2134,18 @@ private fun AppUpdateChannelSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = if (isOnline) Color(0xFF2874F0) else Color(0xFF2E7D32),
-                        ) {
-                            Text(
-                                text = if (isOnline) "ONLINE EDITION" else "OFFLINE EDITION",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
-                        Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
+                // Single pill: version first, then ONLINE / OFFLINE. Fully
+                // rounded like the button beside it, and smaller than before.
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = if (isOnline) Color(0xFF2874F0) else Color(0xFF2E7D32),
+                ) {
                     Text(
-                        text = "Automatic background updates are enabled.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 14.sp,
+                        text = "v${BuildConfig.VERSION_NAME} ${if (isOnline) "ONLINE" else "OFFLINE"}",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                     )
                 }
 
