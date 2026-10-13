@@ -5600,31 +5600,73 @@ private fun FilesTab(
                         Modifier.weight(1f),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
                     )
                     IconButton(onClick = { targetParentDir = null; showCreateFileDialog = true }) {
                         Icon(Icons.Default.Add, "New file")
-                    }
-                    IconButton(onClick = { targetParentDir = null; showCreateFolderDialog = true }) {
-                        Icon(Icons.Default.Folder, "New folder")
-                    }
-                    if (expandedDirectories.isNotEmpty()) {
-                        TextButton(onClick = { expandedDirectories = emptyList() }) {
-                            Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(17.dp))
-                            Spacer(Modifier.width(3.dp))
-                            Text("Collapse all", fontSize = 11.sp)
-                        }
-                    }
-                    IconButton(onClick = onBindFolder) { Icon(Icons.Default.Folder, "Bind folder from device") }
-                    if (!loading && files.any { !it.isDirectory }) {
-                        IconButton(onClick = onExport) { Icon(Icons.Default.Download, "Export project as ZIP") }
-                    }
-                    IconButton(onClick = { showGitDialog = true }) {
-                        Icon(Icons.Default.Code, "Git operations")
                     }
                     if (loading) {
                         CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
                     } else {
                         IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh files") }
+                    }
+                    // Overflow menu: the header row used to hold 7 action buttons, which
+                    // squeezed the title into a vertical wrap on narrow phones.
+                    var showFilesOverflow by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showFilesOverflow = true }) {
+                            Icon(Icons.Default.MoreVert, "More file actions")
+                        }
+                        DropdownMenu(
+                            expanded = showFilesOverflow,
+                            onDismissRequest = { showFilesOverflow = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("New folder") },
+                                leadingIcon = { Icon(Icons.Default.Folder, null) },
+                                onClick = {
+                                    showFilesOverflow = false
+                                    targetParentDir = null
+                                    showCreateFolderDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Bind folder from device") },
+                                leadingIcon = { Icon(Icons.Default.Folder, null) },
+                                onClick = {
+                                    showFilesOverflow = false
+                                    onBindFolder()
+                                },
+                            )
+                            if (!loading && files.any { !it.isDirectory }) {
+                                DropdownMenuItem(
+                                    text = { Text("Export project as ZIP") },
+                                    leadingIcon = { Icon(Icons.Default.Download, null) },
+                                    onClick = {
+                                        showFilesOverflow = false
+                                        onExport()
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Git operations") },
+                                leadingIcon = { Icon(Icons.Default.Code, null) },
+                                onClick = {
+                                    showFilesOverflow = false
+                                    showGitDialog = true
+                                },
+                            )
+                            if (expandedDirectories.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("Collapse all") },
+                                    leadingIcon = { Icon(Icons.Default.KeyboardArrowUp, null) },
+                                    onClick = {
+                                        showFilesOverflow = false
+                                        expandedDirectories = emptyList()
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
