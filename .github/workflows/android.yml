@@ -200,6 +200,10 @@ jobs:
         run: ./gradlew --no-daemon --stacktrace assembleOfflineRelease
 
 
+      - name: Compile online release AAB (Play Store)
+        run: ./gradlew --no-daemon --stacktrace bundleOnlineRelease
+
+
       - name: Verify release APK signatures and alignment
         shell: bash
         run: |
@@ -347,6 +351,7 @@ jobs:
           if-no-files-found: warn
           path: |
             app/build/outputs/apk/**/*.apk
+            app/build/outputs/bundle/**/*.aab
 
       # Every successful main-branch build publishes the freshly verified online/offline APKs to the current release.
       # Header layout release 1.0.12.
@@ -364,12 +369,16 @@ jobs:
           TAG="v$VERSION_NAME"
           ONLINE="app-online-release.apk"
           OFFLINE="app-offline-release.apk"
+          AAB="app-online-release.aab"
           cp app/build/outputs/apk/online/release/app-online-release.apk "$ONLINE"
           cp app/build/outputs/apk/offline/release/app-offline-release.apk "$OFFLINE"
+          cp app/build/outputs/bundle/onlineRelease/app-online-release.aab "$AAB"
           ONLINE_SHA=$(sha256sum "$ONLINE" | awk '{print $1}')
           OFFLINE_SHA=$(sha256sum "$OFFLINE" | awk '{print $1}')
+          AAB_SHA=$(sha256sum "$AAB" | awk '{print $1}')
           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
+          AAB_SIZE=$(stat -c '%s' "$AAB")
           export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
           cat > release-notes.md <<EOF
           ## Mobile Harness Extended $TAG
@@ -403,6 +412,7 @@ jobs:
           ### Release files
           - **Online Release:** app-online-release.apk
           - **Offline Release:** app-offline-release.apk
+          - **Play Store Bundle:** app-online-release.aab (signed, upload-ready for Google Play)
 
           The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
           EOF
@@ -482,7 +492,7 @@ jobs:
               handle.write("\n")
           PY
 
-          gh release upload "$TAG" "$ONLINE" "$OFFLINE" mobile-harness-update.json --clobber
+          gh release upload "$TAG" "$ONLINE" "$OFFLINE" "$AAB" mobile-harness-update.json --clobber
           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
 
