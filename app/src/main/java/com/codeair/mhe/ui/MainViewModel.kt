@@ -2888,7 +2888,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is com.codeair.mhe.runtime.StorageHealthResult.Critical -> storage.totalBytes
         }
         val rootfs = com.codeair.mhe.runtime.RootfsIntegrityVerifier.verify(
-            java.io.File(application.filesDir, "runtime/ubuntu")
+            java.io.File(getApplication<Application>().filesDir, "runtime/ubuntu")
         )
         val rootfsStatus = if (rootfs.isValid) {
             "Intact"

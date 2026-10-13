@@ -172,13 +172,6 @@ fun CodeEditorScreen(
             onContentChanged(value.text)
         }
     }
-    // QA H3: same file in both panes = one shared buffer. Programmatic
-    // state sets do not fire EditorPane's onValueChange, so this cannot loop.
-    LaunchedEffect(value.text) {
-        if (splitScreenOpen && secondaryFilePath == filePath && secondaryValue.text != value.text) {
-            secondaryValue = TextFieldValue(value.text, value.selection)
-        }
-    }
     LaunchedEffect(value.selection) {
         if (!readOnly) {
             onViewStateChanged(
@@ -258,6 +251,14 @@ fun CodeEditorScreen(
     // while enabled; when clean it stays disabled and the parent closes.
     BackHandler(enabled = (dirty || secondaryDirty) && !readOnly) {
         showDiscardDialog = true
+    }
+
+    // QA H3: same file in both panes = one shared buffer. Programmatic
+    // state sets do not fire EditorPane's onValueChange, so this cannot loop.
+    LaunchedEffect(value.text) {
+        if (splitScreenOpen && secondaryFilePath == filePath && secondaryValue.text != value.text) {
+            secondaryValue = TextFieldValue(value.text, value.selection)
+        }
     }
     val lines = remember(value.text) { value.text.split('\n') }
     val lineNumbers = remember(lines.size) { (1..max(1, lines.size)).joinToString("\n") }
