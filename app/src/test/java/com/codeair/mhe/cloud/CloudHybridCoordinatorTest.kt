@@ -175,12 +175,11 @@ class CloudHybridCoordinatorTest {
         val newMetrics = DeviceResourceMetrics(
             availableRamMb = 1200L,
             batteryLevelPercent = 45,
-            isCharging = false,
-            thermalThrottling = true
+            isCharging = false
         )
         coordinator.updateDeviceMetrics(newMetrics)
 
         assertEquals(1200L, coordinator.state.value.deviceMetrics.availableRamMb)
-        assertTrue(coordinator.state.value.deviceMetrics.thermalThrottling)
+        assertEquals(45, coordinator.state.value.deviceMetrics.batteryLevelPercent)
     }
 }

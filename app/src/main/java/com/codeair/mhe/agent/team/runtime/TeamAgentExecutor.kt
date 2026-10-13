@@ -61,10 +61,9 @@ data class TeamExecutionResult(
 /**
  * Real per-role agent executor (Milestone 10).
  *
- * This is the seam that makes `isDemoMode = false` legal: each team role is
- * wired to a genuine agent execution instead of the demo-mode simulation.
- * Implementations must never fabricate output — when the underlying agent did
- * not really run, the result must be FAILED or NOT_CONFIGURED, never SUCCESS.
+ * Each team role is wired to a genuine agent execution. Implementations must
+ * never fabricate output — when the underlying agent did not really run, the
+ * result must be FAILED or NOT_CONFIGURED, never SUCCESS.
  */
 fun interface TeamAgentExecutor {
     suspend fun execute(task: TeamTask, context: TeamExecutionContext): TeamExecutionResult

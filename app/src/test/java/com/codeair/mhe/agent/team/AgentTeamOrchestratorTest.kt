@@ -63,48 +63,20 @@ class AgentTeamOrchestratorTest {
     }
 
     @Test
-    fun testRunNextReadyTaskProgression() {
+    fun testPlanProjectRecordsNoFabricatedBudget() {
+        // Planning must not invent usage: no 1250-token / $0.003 entries appear
+        // before any real agent has run.
         orchestrator.planProject("Build sample feature")
 
-        // First ready task should be Manager's planning task
-        val task1 = orchestrator.runNextReadyTask()
-        assertNotNull(task1)
-        assertEquals(TeamRole.MANAGER, task1?.assignedRole)
-
-        // Next ready task should be Architect's architecture task
-        val task2 = orchestrator.runNextReadyTask()
-        assertNotNull(task2)
-        assertEquals(TeamRole.ARCHITECT, task2?.assignedRole)
-
-        // Verify artifacts published
-        val artifacts = orchestrator.blackboard.getAllArtifacts()
-        assertTrue(artifacts.any { it.type == ArtifactType.API_CONTRACT })
-    }
-
-    @Test
-    fun testAutoRunAllExecutesPipelineToCompletion() {
-        orchestrator.planProject("Build complete mobile app")
-
-        val completedCount = orchestrator.autoRunAll()
-        assertEquals(10, completedCount)
-
         val sessionState = orchestrator.sessionState.value
-        assertFalse(sessionState.isRunning)
-        assertTrue(sessionState.tasks.all { it.status == TeamTaskStatus.COMPLETED })
-
-        // Check budget tracked tokens
-        assertTrue(sessionState.budget.totalTokensUsed > 0L)
-        assertTrue(sessionState.budget.totalCostUsd > 0.0)
-
-        // Demo-mode integrity (Milestone 0): simulated reviews are NEVER recorded
-        // as gatekeeper approvals. No review verdicts may exist in demo mode.
-        assertTrue(sessionState.reviews.none { it.reviewerRole == TeamRole.SECURITY_REVIEWER })
-        assertTrue(sessionState.reviews.none { it.reviewerRole == TeamRole.CODE_REVIEWER })
+        assertEquals(0L, sessionState.budget.totalTokensUsed)
+        assertEquals(0.0, sessionState.budget.totalCostUsd, 0.0)
+        assertTrue(sessionState.tasks.isNotEmpty())
     }
 
     @Test
-    fun testNonDemoModeRecordsReviewsThroughGatekeeper() = runBlocking {
-        // M10: non-demo mode is only legal with a real executor wired. The review
+    fun testRealModeRecordsReviewsThroughGatekeeper() = runBlocking {
+        // Real mode is only legal with a real executor wired. The review
         // pipeline records genuine approvals through the gatekeeper.
         val executor = TeamAgentExecutor { task, context ->
             // Faithfully simulates PromptBasedTeamAgentExecutor: the VERDICT marker
@@ -123,7 +95,6 @@ class AgentTeamOrchestratorTest {
             securityScanner = SecurityScanner { SecurityScanResult(filesScanned = 10) },
         )
         val realModeOrchestrator = AgentTeamOrchestrator(
-            isDemoMode = false,
             teamExecutor = executor,
             teamValidator = validator,
             projectDir = tempFolder.root,

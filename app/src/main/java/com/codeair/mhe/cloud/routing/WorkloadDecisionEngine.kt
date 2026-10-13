@@ -114,12 +114,7 @@ class WorkloadDecisionEngine {
             scores["ram_low"] = 0.30
         }
 
-        // Battery & Thermal Health Check
-        if (deviceMetrics.thermalThrottling && workloadType.defaultHeavy) {
-            cloudScore += 0.35
-            scores["thermal_throttling"] = 0.35
-        }
-
+        // Battery Health Check
         if (deviceMetrics.batteryLevelPercent < 20 && !deviceMetrics.isCharging && workloadType.defaultHeavy) {
             cloudScore += 0.30
             scores["battery_critical"] = 0.30

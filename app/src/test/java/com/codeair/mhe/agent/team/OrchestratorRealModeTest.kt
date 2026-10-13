@@ -54,7 +54,7 @@ class OrchestratorRealModeTest {
 
     @Test
     fun testRealModeWithoutExecutorFailsLoudly() {
-        val orchestrator = AgentTeamOrchestrator(isDemoMode = false)
+        val orchestrator = AgentTeamOrchestrator()
         try {
             orchestrator.requireRealExecution()
             fail("expected IllegalStateException")
@@ -65,32 +65,26 @@ class OrchestratorRealModeTest {
 
     @Test
     fun testRealModeWithExecutorPassesGuard() {
-        val orchestrator = AgentTeamOrchestrator(isDemoMode = false, teamExecutor = fakeExecutor())
+        val orchestrator = AgentTeamOrchestrator(teamExecutor = fakeExecutor())
         orchestrator.requireRealExecution() // must not throw
     }
 
     @Test
-    fun testDemoModeNeedsNoExecutor() {
-        val orchestrator = AgentTeamOrchestrator(isDemoMode = true)
-        orchestrator.requireRealExecution() // must not throw
-    }
-
-    @Test
-    fun testSyncSteppingRefusesInRealMode() {
-        val orchestrator = AgentTeamOrchestrator(isDemoMode = false, teamExecutor = fakeExecutor())
+    fun testExecuteWithoutExecutorRefuses() = runBlocking {
+        // No executor wired: execution refuses loudly instead of simulating.
+        val orchestrator = AgentTeamOrchestrator()
         orchestrator.planProject("goal")
         try {
-            orchestrator.runNextReadyTask()
+            orchestrator.executeNextReadyTask()
             fail("expected IllegalStateException")
         } catch (e: IllegalStateException) {
-            assertTrue(e.message!!.contains("executeNextReadyTask"))
+            assertTrue(e.message!!.contains("TeamAgentExecutor"))
         }
     }
 
     @Test
     fun testExecuteNextReadyTaskRunsGenuinely() = runBlocking {
         val orchestrator = AgentTeamOrchestrator(
-            isDemoMode = false,
             teamExecutor = fakeExecutor(),
             teamValidator = approvingValidator(),
             projectDir = tempFolder.root,
@@ -112,7 +106,6 @@ class OrchestratorRealModeTest {
     @Test
     fun testAutoRunAllRealCompletesFullDagWithRealReviews() = runBlocking {
         val orchestrator = AgentTeamOrchestrator(
-            isDemoMode = false,
             teamExecutor = fakeExecutor(),
             teamValidator = approvingValidator(),
             projectDir = tempFolder.root,
@@ -133,7 +126,6 @@ class OrchestratorRealModeTest {
         assertTrue(reviews.all { it.verdict == ReviewVerdict.APPROVED })
         // Session state reflects completion.
         assertFalse(orchestrator.sessionState.value.isRunning)
-        assertFalse(orchestrator.sessionState.value.isDemoMode)
     }
 
     @Test
@@ -145,7 +137,6 @@ class OrchestratorRealModeTest {
             )
         }
         val orchestrator = AgentTeamOrchestrator(
-            isDemoMode = false,
             teamExecutor = failing,
             teamValidator = approvingValidator(),
         )

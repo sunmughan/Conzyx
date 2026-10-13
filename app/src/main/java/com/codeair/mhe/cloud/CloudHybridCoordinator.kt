@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.PowerManager
 import com.codeair.mhe.cloud.model.CloudArtifact
 import com.codeair.mhe.cloud.model.CloudHybridState
 import com.codeair.mhe.cloud.model.CloudWorkerSpec
@@ -125,16 +126,21 @@ class CloudHybridCoordinator(
             false
         }
 
+        val powerManager = app.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val isLowPowerMode = try {
+            powerManager.isPowerSaveMode
+        } catch (e: Exception) {
+            false
+        }
+
         return DeviceResourceMetrics(
             availableRamMb = (memInfo.availMem / (1024L * 1024L)),
             totalRamMb = (memInfo.totalMem / (1024L * 1024L)),
             batteryLevelPercent = batteryLevel,
             isCharging = isCharging,
-            isLowPowerMode = false,
+            isLowPowerMode = isLowPowerMode,
             isWifiConnected = isWifi,
             isMeteredNetwork = isMetered,
-            cpuTemperatureCelsius = null,
-            thermalThrottling = false,
             collected = true
         )
     }

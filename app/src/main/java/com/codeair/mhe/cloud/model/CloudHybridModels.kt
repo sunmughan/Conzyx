@@ -93,10 +93,10 @@ data class CloudWorkerSpec(
  * Real-time device physical and hardware telemetry.
  *
  * Values are ONLY real readings collected from ActivityManager / BatteryManager /
- * ConnectivityManager. [cpuTemperatureCelsius] is null because Android exposes no
- * public CPU-temperature API: the UI must show "Not available", never a made-up
- * number. [collected] is false until a real collection has run, so the UI can
- * show placeholders instead of plausible-looking defaults.
+ * ConnectivityManager. There is NO CPU-temperature / thermal field: Android
+ * exposes no public API for CPU temperature or thermal throttling, and the app
+ * must not display what it cannot measure. [collected] is false until a real
+ * collection has run, so the UI can show placeholders instead of plausible-looking defaults.
  */
 data class DeviceResourceMetrics(
     val availableRamMb: Long = 0L,
@@ -106,8 +106,6 @@ data class DeviceResourceMetrics(
     val isLowPowerMode: Boolean = false,
     val isWifiConnected: Boolean = false,
     val isMeteredNetwork: Boolean = false,
-    val cpuTemperatureCelsius: Double? = null,
-    val thermalThrottling: Boolean = false,
     val collected: Boolean = false
 ) {
     val ramUsagePercent: Int

@@ -224,10 +224,9 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.6-9@aar")
 
     // Firebase Auth and Identity libraries are shared across both online and offline builds
-    // so account management, Google sign-in, and team collaboration work seamlessly with project credentials.
+    // so account management and Google sign-in work seamlessly with project credentials.
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")

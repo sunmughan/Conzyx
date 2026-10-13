@@ -334,7 +334,6 @@ data class AppUiState(
     val gitConnectedRepo: String? = null,
     val teamSessionState: com.codeair.mhe.agent.team.model.TeamSessionState = com.codeair.mhe.agent.team.model.TeamSessionState(),
     val cloudHybridState: com.codeair.mhe.cloud.model.CloudHybridState = com.codeair.mhe.cloud.model.CloudHybridState(),
-    val collaborationSessionState: com.codeair.mhe.collab.model.CollaborationSessionState = com.codeair.mhe.collab.model.CollaborationSessionState(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -431,11 +430,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             providerFor = { kind -> preferences.loadProvider(vault, kind) },
             secretFor = { profile -> vault.get(profile.kind.name) },
         ),
-        isDemoMode = false,
         concurrencyController = teamConcurrencyController,
     )
     val cloudHybridCoordinator = com.codeair.mhe.cloud.CloudHybridCoordinator(application = application)
-    val workspaceCollaborationManager = com.codeair.mhe.collab.WorkspaceCollaborationManager()
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -636,11 +633,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(cloudHybridState = chState) }
             }
         }
-        viewModelScope.launch {
-            workspaceCollaborationManager.sessionState.collect { collabState ->
-                _state.update { it.copy(collaborationSessionState = collabState) }
-            }
-        }
         runCatching { RuntimeSetupController.restore(application) }
         val storageHealth = runtimeHealthController.checkStorageHealth()
         if (storageHealth is com.codeair.mhe.runtime.StorageHealthResult.Critical) {
@@ -765,8 +757,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         com.codeair.mhe.ui.coordinators.TeamCoordinator(teamOrchestrator)
     private val cloudCoordinator =
         com.codeair.mhe.ui.coordinators.CloudCoordinator(cloudHybridCoordinator)
-    private val collaborationCoordinator =
-        com.codeair.mhe.ui.coordinators.CollaborationCoordinator(workspaceCollaborationManager)
     private val visualCoordinator =
         com.codeair.mhe.ui.coordinators.VisualCoordinator(
             host = coordinatorHost,
@@ -4699,12 +4689,6 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
     fun planTeamProject(goal: String) =
         teamCoordinator.planTeamProject(goal)
 
-    fun stepTeamTask(): com.codeair.mhe.agent.team.model.TeamTask? =
-        teamCoordinator.stepTeamTask()
-
-    fun autoRunTeamTasks(): Int =
-        teamCoordinator.autoRunTeamTasks()
-
     fun cancelTeamSession() =
         teamCoordinator.cancelTeamSession()
 
@@ -4713,12 +4697,6 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun submitHybridWorkload(title: String, type: com.codeair.mhe.cloud.model.WorkloadType): com.codeair.mhe.cloud.model.HybridExecutionJob =
         cloudCoordinator.submitHybridWorkload(title, type)
-
-    fun createCollaborationSession(projectId: String, projectName: String): com.codeair.mhe.collab.model.SharedProjectSession =
-        collaborationCoordinator.createCollaborationSession(projectId, projectName)
-
-    fun joinCollaborationSession(shareToken: String, name: String, email: String): com.codeair.mhe.collab.model.SharedProjectSession? =
-        collaborationCoordinator.joinCollaborationSession(shareToken, name, email)
 
     override fun onCleared() {
         super.onCleared()

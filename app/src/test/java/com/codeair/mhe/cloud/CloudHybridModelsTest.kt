@@ -83,8 +83,7 @@ class CloudHybridModelsTest {
             availableRamMb = 2048L,
             totalRamMb = 8192L,
             batteryLevelPercent = 75,
-            isCharging = false,
-            thermalThrottling = false
+            isCharging = false
         )
         // (8192 - 2048) / 8192 * 100 = 75%
         assertEquals(75, metrics.ramUsagePercent)

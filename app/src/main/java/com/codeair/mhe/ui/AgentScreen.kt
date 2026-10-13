@@ -193,10 +193,9 @@ fun AgentScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var showTeamDialog by rememberSaveable { mutableStateOf(false) }
-    // NO silent demo fallback: if the caller did not wire the real orchestrator
-    // (isDemoMode=false + RealTeamAgentExecutor), the Team Studio must not open
-    // in demo mode showing simulated tasks/tokens. It stays closed and the
-    // button below reports "not configured" instead.
+    // NO silent fallback: if the caller did not wire the real orchestrator
+    // (RealTeamAgentExecutor), the Team Studio must not open. It stays closed
+    // and the button below reports "not configured" instead.
     val teamOrchestratorResolved = teamOrchestrator
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
     var baseUrl by rememberSaveable(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }

@@ -394,17 +394,6 @@ fun PocketDevApp(
         return
     }
 
-    if (navigator.showCollaborationScreen) {
-        BackHandler(onBack = { navigator.closeOverlay() })
-        com.codeair.mhe.collab.ui.CollaborationStudioScreen(
-            manager = viewModel.workspaceCollaborationManager,
-            projectName = state.activeProject?.name ?: "Mobile-Harness-Project",
-            projectId = state.activeProject?.id ?: "project-current",
-            onClose = { navigator.closeOverlay() }
-        )
-        return
-    }
-
     if (navigator.showMarketplaceScreen) {
         BackHandler(onBack = { navigator.closeOverlay() })
         MarketplaceScreen(
@@ -572,7 +561,6 @@ fun PocketDevApp(
             onOpenAppFactory = { navigator.openAppFactory() },
             onOpenTeamStudio = { navigator.openTeamStudio() },
             onOpenCloudHybrid = { navigator.openCloudHybrid() },
-            onOpenCollaboration = { navigator.openCollaboration() },
             onOpenMarketplace = { navigator.openMarketplace() },
         )
         else -> RootScreenHost(
@@ -584,7 +572,6 @@ fun PocketDevApp(
             onOpenAppFactory = { navigator.openAppFactory() },
             onOpenTeamStudio = { navigator.openTeamStudio() },
             onOpenCloudHybrid = { navigator.openCloudHybrid() },
-            onOpenCollaboration = { navigator.openCollaboration() },
         )
     }
 }
@@ -2394,7 +2381,6 @@ private fun RootScreenHost(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
-    onOpenCollaboration: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2480,7 +2466,6 @@ private fun RootScreenHost(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
-                    onOpenCollaboration = onOpenCollaboration,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3517,7 +3502,6 @@ private fun StudioCardsSection(
     onOpenAppFactory: () -> Unit,
     onOpenTeamStudio: () -> Unit,
     onOpenCloudHybrid: () -> Unit,
-    onOpenCollaboration: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(
@@ -3672,57 +3656,6 @@ private fun StudioCardsSection(
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenCollaboration() },
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                        modifier = Modifier.size(38.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Groups,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Team Collaboration Studio",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "Multi-User Sharing, Code Reviews, Milestones & Shared Agents",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Open Collaboration Studio",
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
     }
 }
 
@@ -3752,7 +3685,6 @@ private fun ProjectsScreen(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
-    onOpenCollaboration: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -4086,7 +4018,6 @@ private fun ProjectsScreen(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
-                    onOpenCollaboration = onOpenCollaboration,
                 )
             }
         }
@@ -4736,7 +4667,6 @@ private fun WorkspaceScreen(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
-    onOpenCollaboration: () -> Unit = {},
     onOpenMarketplace: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
@@ -4910,7 +4840,6 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.APP_FACTORY -> onOpenAppFactory()
                     WorkspaceCommand.MULTI_AGENT_TEAM -> onOpenTeamStudio()
                     WorkspaceCommand.CLOUD_HYBRID -> onOpenCloudHybrid()
-                    WorkspaceCommand.COLLABORATION -> onOpenCollaboration()
                     WorkspaceCommand.MARKETPLACE -> onOpenMarketplace()
                 }
             },
@@ -5327,7 +5256,6 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     APP_FACTORY("Android App Factory", "app factory blueprint scaffold build create generator"),
     MULTI_AGENT_TEAM("Multi-Agent Engineering Team", "agent team manager architect qa devops multi-agent studio"),
     CLOUD_HYBRID("Cloud + Phone Hybrid", "cloud worker offload remote build gpu runner hybrid"),
-    COLLABORATION("Team Collaboration", "share collab team comments review invite organization"),
     MARKETPLACE("AI Developer Marketplace", "marketplace agents mcp skills templates catalog install store"),
 }
 

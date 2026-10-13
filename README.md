@@ -75,7 +75,8 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Agent screen fixes (2026-10-13)**: agent tab names are now centered in their own columns; the Runtime updates card shows only the currently viewed tab's agent updates (Antigravity/DeepSeek/Claude/Cloud each get their own checker); new **Custom** agent tab — bring your own OpenAI-compatible or Claude-compatible API key (base URL + key + model), no binary download or install needed, chats directly via your API.
 - **Status bar icons fix (2026-10-13)**: system status/navigation bar icons now follow the actual app theme — white icons in dark mode, dark icons in light mode. Previously the light XML theme forced dark icons even when the app rendered dark, making them invisible on the dark background.
 - **Compile fixes (2026-10-13)**: fixed the build breakage from the latest UI/functional changes — stray closing brace left after removing the chat kill-switch Row, FilterChip `contentPadding` argument that does not exist in Material3, BrowserTab saveable-state saver wrapped for MutableState, and a missing `offset` import in the YouTube dialog.
-- **No-fake-data cleanup (2026-10-13)**: every screen now shows only real data. Cloud Hybrid: telemetry reads real ActivityManager/BatteryManager/ConnectivityManager values (CPU temperature shows "Not available" — Android has no public API for it), the fake pocketdev.io preset runners are gone (fleet starts empty, add your own), Ping All performs a real /health probe and marks dead workers OFFLINE. Collaboration: no fabricated share link or fake owner email — sessions are honestly on-device only. Team Studio: the silent demo-mode fallback is removed; without the real wired orchestrator the studio reports "not configured" instead of showing simulated tasks/tokens.
+- **No-fake-data cleanup (2026-10-13)**: every screen now shows only real data. Cloud Hybrid: telemetry reads real ActivityManager/BatteryManager/ConnectivityManager/PowerManager values, the fake pocketdev.io preset runners are gone (fleet starts empty, add your own), Ping All performs a real /health probe and marks dead workers OFFLINE.
+- **Removed, not faked (2026-10-13)**: anything the app cannot back with a real API is gone instead of showing a placeholder. CPU temperature / thermal throttling are removed entirely (Android exposes no public API for them). Team Collaboration Studio and its whole Firebase collaboration package are removed (no collaboration server exists; a local-only "collaboration" session was useless). The Team orchestrator's demo/simulation stepping API is deleted — execution is real-only, and planning no longer records fabricated 1250-token / $0.003 budget entries.
 
 ### 🛡️ Reliability
 
@@ -96,7 +97,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 ## 📖 What is Mobile Harness Extended?
 
-Mobile Harness Extended is an AI-powered software engineering environment that runs natively on Android. It combines a rootless Linux userspace (Ubuntu 20.04 on ARM64 via PRoot) with a full mobile IDE, multi-agent AI engineering teams, autonomous GitHub workflows, an Android app factory, hybrid cloud execution, and real-time team collaboration backed by Firebase.
+Mobile Harness Extended is an AI-powered software engineering environment that runs natively on Android. It combines a rootless Linux userspace (Ubuntu 20.04 on ARM64 via PRoot) with a full mobile IDE, multi-agent AI engineering teams, autonomous GitHub workflows, an Android app factory, and hybrid cloud execution.
 
 The app ships in two editions:
 
@@ -180,13 +181,6 @@ Both editions share the same application ID (`com.codeair.mhe`) and the same fea
 - Authenticated cloud worker protocol: submit jobs, stream logs, poll status, cancel
 - Delta payload uploads (only changed files, SHA-256 verified), artifact download verification
 - Cost controls: per-job estimates and rolling 30-day budget caps enforced before dispatch
-
-### 👥 Team Collaboration (Firebase)
-
-- Firebase Auth identity (email, Google, and GitHub sign-in)
-- Multi-tenant workspaces with role-based access (Owner, Maintainer, Contributor, Viewer)
-- Invites, presence heartbeats, and version-vector document sync with conflict resolution
-- Auth-anchored Firestore security rules (shipped as `firestore.rules`)
 
 ### 🛒 AI Developer Marketplace
 
@@ -333,7 +327,7 @@ The offline flavor bundles Linux runtime archives (`pocketdev-*-arm64-*.tar.zst`
 <details>
 <summary><b>Firebase setup</b></summary>
 
-The project uses Firebase for authentication, team collaboration (Firestore), push notifications, and crash reporting.
+The project uses Firebase for authentication, push notifications, and crash reporting.
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com/).
 2. Add an Android app with package name `com.codeair.mhe`.
@@ -349,31 +343,11 @@ The repository ships with a `google-services.json` for the `codeair-apps` Fireba
 
 Enable the sign-in methods you want in **Firebase console > Authentication > Sign-in method**:
 
-- **Email/Password** - used for workspace accounts
+- **Email/Password** - used for app accounts
 - **Google** - one-tap Google sign-in via the AndroidX Credentials API (`androidx.credentials`, `googleid` libraries are already wired)
 - **GitHub** - OAuth sign-in via `OAuthProvider("github.com")`; add your GitHub OAuth client ID and secret in the Firebase console, with the authorized callback URL `https://<your-project>.firebaseapp.com/__/auth/handler`
 
-No client-side configuration beyond `google-services.json` is required. Auth state gates all collaboration writes: unauthenticated users get `NOT_CONFIGURED`, never anonymous writes.
-
-</details>
-
-<details>
-<summary><b>Firestore rules</b></summary>
-
-The collaboration data model (`workspaces/{ws}/members|invites|presence|sync`) is protected by the rules in **`firestore.rules`** at the repository root:
-
-- Reads require workspace membership; writes require appropriate roles
-- Only `OWNER` can change roles or remove members
-- Presence documents are writable only by the owning UID
-- Invites gate write access for new members
-
-Deploy them with the Firebase CLI:
-
-```bash
-firebase deploy --only firestore:rules
-```
-
-Or paste the file contents into **Firebase console > Firestore Database > Rules**.
+No client-side configuration beyond `google-services.json` is required.
 
 </details>
 
@@ -426,7 +400,6 @@ Mobile-Harness-Extended/
 │       │   ├── agent/            # Multi-agent team runtime, DAG dispatch, roles
 │       │   ├── auth/             # Firebase Auth identity, Google/GitHub sign-in
 │       │   ├── cloud/            # Cloud hybrid execution client and orchestration
-│       │   ├── collab/           # Firebase collaboration: invites, presence, sync
 │       │   ├── context/          # AI context engine: ranking, budgets, memory
 │       │   ├── core/             # OperationResult integrity contract, utilities
 │       │   ├── editor/           # Code editor, tabs, search, command palette
@@ -444,7 +417,6 @@ Mobile-Harness-Extended/
 │       │   ├── visual/           # Visual dev loop, DOM tools, screenshot diffing
 │       │   └── workflow/         # Autonomous agent workflow engine
 │       └── res/                  # Android resources
-├── firestore.rules               # Firestore security rules for collaboration
 ├── .github/workflows/android.yml # CI: build, test, sign, verify, release
 ├── V3_PROGRESS.md                # Engineering milestone log
 ├── PRIVACY.md                    # Privacy policy
@@ -489,8 +461,8 @@ Mobile-Harness-Extended/
 |  +--------------------------------------------------------------+  |
 |                                                                    |
 |  +--------------------------------------------------------------+  |
-|  |     Firebase (Auth + Firestore + FCM + Crashlytics)          |  |
-|  |  Identity - Workspaces - Presence - Sync - Notifications     |  |
+|  |     Firebase (Auth + FCM + Crashlytics)          |  |
+|  |  Identity - Notifications - Crash Reporting     |  |
 |  +--------------------------------------------------------------+  |
 +-------------------------------------------------------------------+
 ```

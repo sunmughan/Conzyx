@@ -139,24 +139,6 @@ class WorkloadDecisionEngineTest {
     }
 
     @Test
-    fun testThermalThrottlingOffloadsHeavyWorkload() {
-        val deviceMetrics = DeviceResourceMetrics(
-            availableRamMb = 3000L,
-            thermalThrottling = true
-        )
-
-        val decision = engine.evaluate(
-            workloadType = WorkloadType.HEAVY_GRADLE_BUILD,
-            policy = WorkloadRoutingPolicy.HYBRID_AUTO,
-            deviceMetrics = deviceMetrics,
-            availableWorkers = sampleWorkers
-        )
-
-        assertEquals(ExecutionTarget.CLOUD, decision.target)
-        assertTrue(decision.scoreBreakdown.containsKey("thermal_throttling"))
-    }
-
-    @Test
     fun testCriticalBatteryUnpluggedOffloadsHeavyWorkload() {
         val deviceMetrics = DeviceResourceMetrics(
             availableRamMb = 3000L,
@@ -200,8 +182,7 @@ class WorkloadDecisionEngineTest {
         val deviceMetrics = DeviceResourceMetrics(
             availableRamMb = 4096L,
             batteryLevelPercent = 85,
-            isCharging = true,
-            thermalThrottling = false
+            isCharging = true
         )
 
         val decision = engine.evaluate(

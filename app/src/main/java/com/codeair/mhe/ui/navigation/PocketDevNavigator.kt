@@ -44,10 +44,6 @@ class PocketDevNavigator {
         openOverlay = OverlayScreen.CLOUD_HYBRID
     }
 
-    fun openCollaboration() {
-        openOverlay = OverlayScreen.COLLABORATION
-    }
-
     fun openMarketplace() {
         openOverlay = OverlayScreen.MARKETPLACE
     }
@@ -60,7 +56,6 @@ class PocketDevNavigator {
     val showAppFactoryScreen: Boolean get() = openOverlay == OverlayScreen.APP_FACTORY
     val showTeamStudioScreen: Boolean get() = openOverlay == OverlayScreen.TEAM_STUDIO
     val showCloudHybridScreen: Boolean get() = openOverlay == OverlayScreen.CLOUD_HYBRID
-    val showCollaborationScreen: Boolean get() = openOverlay == OverlayScreen.COLLABORATION
     val showMarketplaceScreen: Boolean get() = openOverlay == OverlayScreen.MARKETPLACE
 }
 
@@ -69,6 +64,5 @@ enum class OverlayScreen {
     APP_FACTORY,
     TEAM_STUDIO,
     CLOUD_HYBRID,
-    COLLABORATION,
     MARKETPLACE,
 }

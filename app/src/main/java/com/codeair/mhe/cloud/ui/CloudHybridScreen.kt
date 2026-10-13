@@ -258,11 +258,6 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                         color = if (metrics.collected && metrics.batteryLevelPercent > 20) Color(0xFF2E7D32) else if (metrics.collected) Color(0xFFD32F2F) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     TelemetryChip(
-                        icon = Icons.Default.Speed,
-                        label = if (metrics.thermalThrottling) "Throttled" else metrics.cpuTemperatureCelsius?.let { "Thermals: ${it}°C" } ?: "Thermals: Not available",
-                        color = if (metrics.thermalThrottling) Color(0xFFD32F2F) else Color(0xFF2E7D32)
-                    )
-                    TelemetryChip(
                         icon = Icons.Default.Wifi,
                         label = if (!metrics.collected) "Network: Collecting..." else if (metrics.isWifiConnected) "Wi-Fi" else "Cellular",
                         color = MaterialTheme.colorScheme.primary

@@ -280,7 +280,5 @@ data class TeamSessionState(
     val budget: TeamBudget = TeamBudget(),
     val reviews: List<ReviewRecord> = emptyList(),
     val conflictWarnings: List<String> = emptyList(),
-    val executionLog: List<String> = emptyList(),
-    /** True while the orchestrator runs in demo/simulation mode (Milestone 0). */
-    val isDemoMode: Boolean = true
+    val executionLog: List<String> = emptyList()
 )
