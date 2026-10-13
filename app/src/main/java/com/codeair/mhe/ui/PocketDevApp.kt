@@ -3538,8 +3538,6 @@ private fun ClaudeSubscriptionCredentialsStep(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 /**
  * One-time explainer shown on the first open of each studio. One page per
  * tab/screen inside that studio, so the user learns every screen before
@@ -3547,6 +3545,7 @@ private fun ClaudeSubscriptionCredentialsStep(
  * seen; the caller decides whether to proceed into the studio (Got it /
  * Skip) or stay put (exit).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StudioOnboardingDialog(
     studio: OverlayScreen,
@@ -3627,6 +3626,7 @@ private fun StudioOnboardingDialog(
     )
 }
 
+@Composable
 private fun StudioCardsSection(
     onOpenAppFactory: () -> Unit,
     onOpenTeamStudio: () -> Unit,
