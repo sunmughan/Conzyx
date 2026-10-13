@@ -3851,8 +3851,8 @@ private fun ProjectsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("Your pocket dev setup", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Chat, review changes, and preview your project.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Build Apps Anywhere", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("Plan, code, test, and ship projects right from your phone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
