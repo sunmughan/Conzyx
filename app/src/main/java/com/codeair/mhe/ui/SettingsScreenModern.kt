@@ -459,11 +459,12 @@ fun SettingsScreen(
                         val versionBadge = if (installed) {
                             when (stack) {
                                 DevStack.WEB -> "v24"
-                                DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "v2026.09.2"
-                                DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
-                                DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
-                                DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
-                                DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "v1.0"
+                                // Lookup miss = unknown, never an invented version.
+                                DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "Unknown version"
+                                DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "Unknown version"
+                                DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "Unknown version"
+                                DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "Unknown version"
+                                DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "Unknown version"
                             }
                         } else null
 
