@@ -127,6 +127,9 @@ class SkillsCoordinator(
         host.scope.launch {
             host.updateState { it.copy(autoUpdatingToolsOrSkills = true, toolsAutoUpdateMessage = "Checking for tool and skill updates…") }
             val updatedItems = mutableListOf<String>()
+            // Failures are surfaced in the final message: a failed update must
+            // never be reported as "up to date".
+            val failures = mutableListOf<String>()
             withContext(Dispatchers.IO) {
                 // 1. Universal Skills auto-update
                 runCatching {
@@ -138,11 +141,11 @@ class SkillsCoordinator(
                                 runCatching {
                                     skillManager.update(skill)
                                     updatedItems.add("Skill ${skill.name}")
-                                }
+                                }.onFailure { failures.add("Skill ${skill.name}: ${it.message ?: "update failed"}") }
                             }
                         }
                     }
-                }
+                }.onFailure { failures.add("Skill update check failed: ${it.message ?: "unknown error"}") }
 
                 // 2. Agents / Coding CLI Tools auto-update
                 runCatching {
@@ -152,10 +155,10 @@ class SkillsCoordinator(
                             runCatching {
                                 installer.updateAgent(kind, updateInfo.latestVersion) {}
                                 updatedItems.add("${kind.title} ${updateInfo.latestVersion}")
-                            }
+                            }.onFailure { failures.add("${kind.title}: ${it.message ?: "update failed"}") }
                         }
                     }
-                }
+                }.onFailure { failures.add("Agent update check failed: ${it.message ?: "unknown error"}") }
 
                 // 3. Installed Development Toolchains auto-update
                 runCatching {
@@ -174,17 +177,20 @@ class SkillsCoordinator(
                                 if (didUpdate) {
                                     updatedItems.add(stack.label)
                                 }
-                            }
+                            }.onFailure { failures.add("${stack.label}: ${it.message ?: "update failed"}") }
                         }
                     }
-                }
+                }.onFailure { failures.add("Toolchain update check failed: ${it.message ?: "unknown error"}") }
             }
 
             preferences.lastToolsAutoUpdateCheckMillis = System.currentTimeMillis()
-            val message = if (updatedItems.isEmpty()) {
-                "Tools, toolchains, and skills are up to date"
-            } else {
-                "Updated: ${updatedItems.joinToString(", ")}"
+            val message = buildString {
+                if (updatedItems.isNotEmpty()) append("Updated: ${updatedItems.joinToString(", ")}")
+                if (failures.isNotEmpty()) {
+                    if (isNotEmpty()) append("; ")
+                    append("Failed: ${failures.joinToString("; ")}")
+                }
+                if (isEmpty()) append("Tools, toolchains, and skills are up to date")
             }
             host.updateState {
                 it.copy(

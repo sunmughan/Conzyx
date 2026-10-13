@@ -175,7 +175,7 @@ class AppPreferences(private val context: Context) {
         }
 
     var autoUpdateToolsAndSkills: Boolean
-        get() = preferences.getBoolean("auto_update_tools_and_skills", true)
+        get() = preferences.getBoolean("auto_update_tools_and_skills", false)
         set(value) { preferences.edit().putBoolean("auto_update_tools_and_skills", value).apply() }
 
     var lastToolsAutoUpdateCheckMillis: Long

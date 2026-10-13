@@ -693,9 +693,20 @@ class RuntimeInstaller(private val context: Context) {
         val staged = File(claude.parentFile, ".claude-$latest.installing")
         downloaded.copyTo(staged, overwrite = true)
         Os.chmod(staged.absolutePath, 0b111101101)
-        Os.rename(staged.absolutePath, claude.absolutePath)
-        downloaded.delete()
-        verifyGuest(runtime.proot, "$CLAUDE_GUEST_PATH --version", "Claude Code update verification failed")
+        // Back up the live binary BEFORE replacing it: if verification fails
+        // after the swap, the previous binary is restored instead of leaving
+        // a broken agent behind.
+        val backup = File(claude.parentFile, ".claude.previous")
+        if (claude.exists()) claude.copyTo(backup, overwrite = true)
+        try {
+            Os.rename(staged.absolutePath, claude.absolutePath)
+            downloaded.delete()
+            verifyGuest(runtime.proot, "$CLAUDE_GUEST_PATH --version", "Claude Code update verification failed")
+            backup.delete()
+        } catch (e: Exception) {
+            if (backup.exists()) runCatching { backup.copyTo(claude, overwrite = true) }
+            throw e
+        }
         claudeMarker.writeText(latest)
     }
 
@@ -715,6 +726,7 @@ class RuntimeInstaller(private val context: Context) {
         val destination = File(rootfs, AGY_GUEST_PATH.removePrefix("/"))
         destination.parentFile?.mkdirs()
         var found = false
+        var backup: File? = null
         TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(downloaded.inputStream()))).use { archive ->
             var entry = archive.nextEntry
             while (entry != null) {
@@ -722,7 +734,18 @@ class RuntimeInstaller(private val context: Context) {
                     val staged = File(destination.parentFile, ".agy-$latest.installing")
                     FileOutputStream(staged).use { archive.copyTo(it) }
                     Os.chmod(staged.absolutePath, 0b111101101)
-                    Os.rename(staged.absolutePath, destination.absolutePath)
+                    // Back up the live binary BEFORE replacing it (same
+                    // reason as updateClaude: a failed verify must restore).
+                    backup = File(destination.parentFile, ".agy.previous").also {
+                        if (destination.exists()) destination.copyTo(it, overwrite = true)
+                    }
+                    try {
+                        Os.rename(staged.absolutePath, destination.absolutePath)
+                    } catch (e: Exception) {
+                        val b = backup
+                        if (b != null && b.exists()) runCatching { b.copyTo(destination, overwrite = true) }
+                        throw e
+                    }
                     found = true
                     break
                 }
@@ -731,7 +754,14 @@ class RuntimeInstaller(private val context: Context) {
         }
         downloaded.delete()
         check(found) { "Antigravity update archive is incomplete" }
-        verifyGuest(runtime.proot, "$AGY_GUEST_PATH --version", "Antigravity update verification failed")
+        try {
+            verifyGuest(runtime.proot, "$AGY_GUEST_PATH --version", "Antigravity update verification failed")
+            backup?.delete()
+        } catch (e: Exception) {
+            val b = backup
+            if (b != null && b.exists()) runCatching { b.copyTo(destination, overwrite = true) }
+            throw e
+        }
         agyMarker.writeText(latest)
     }
 
@@ -774,16 +804,38 @@ class RuntimeInstaller(private val context: Context) {
         check(latest == expectedVersion) { "A newer Codex CLI release appeared. Check again before updating." }
         val quotedVersion = latest.replace(Regex("[^0-9A-Za-z.+-]"), "")
         check(quotedVersion == latest) { "Invalid Codex CLI version" }
-        runGuestCommand(
-            proot = runtime.proot,
-            command = "npm install -g @openai/codex@$quotedVersion",
-            displayCommand = "npm install -g @openai/codex@$quotedVersion",
-            fraction = 0.55f,
-            timeoutMs = 20 * 60 * 1_000L,
-            onProgress = onProgress,
-            failureMessage = "Codex CLI update failed; the installed version was preserved",
-        )
-        verifyGuest(runtime.proot, "$CODEX_GUEST_PATH --version", "Codex CLI update verification failed")
+        // npm replaces in place: a failed install or a failed verify does NOT
+        // preserve the old version, so remember it for an explicit rollback.
+        val previousVersion = runCatching { installedCodexVersion(runtime.proot) }.getOrNull().orEmpty()
+        try {
+            runGuestCommand(
+                proot = runtime.proot,
+                command = "npm install -g @openai/codex@$quotedVersion",
+                displayCommand = "npm install -g @openai/codex@$quotedVersion",
+                fraction = 0.55f,
+                timeoutMs = 20 * 60 * 1_000L,
+                onProgress = onProgress,
+                failureMessage = "Codex CLI update failed",
+            )
+            verifyGuest(runtime.proot, "$CODEX_GUEST_PATH --version", "Codex CLI update verification failed")
+        } catch (e: Exception) {
+            if (previousVersion.isNotBlank()) {
+                // Best effort: the original error is what surfaces even if
+                // the rollback itself fails.
+                runCatching {
+                    runGuestCommand(
+                        proot = runtime.proot,
+                        command = "npm install -g @openai/codex@$previousVersion",
+                        displayCommand = "npm install -g @openai/codex@$previousVersion",
+                        fraction = 0.9f,
+                        timeoutMs = 20 * 60 * 1_000L,
+                        onProgress = onProgress,
+                        failureMessage = "Codex CLI rollback failed",
+                    )
+                }
+            }
+            throw e
+        }
         codexMarker.writeText(installedCodexVersion(runtime.proot))
     }
 
