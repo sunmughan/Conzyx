@@ -76,36 +76,40 @@ private data class BrowserTab(
  * into Android's saved-instance-state Parcel. Persist each tab as a saveable JSON
  * string and restore defensively if Android restores a partially stale state.
  */
+private fun saveTabsToJson(tabs: List<BrowserTab>): List<String> {
+    return tabs.map { tab ->
+        org.json.JSONObject()
+            .put("id", tab.id)
+            .put("title", tab.title)
+            .put("url", tab.url)
+            .put("activeUrl", tab.activeUrl ?: "")
+            .put("isDesktopMode", tab.isDesktopMode)
+            .put("canGoBack", tab.canGoBack)
+            .put("canGoForward", tab.canGoForward)
+            .toString()
+    }
+}
+
+private fun restoreTabsFromJson(savedTabs: List<String>): List<BrowserTab> {
+    return savedTabs.mapNotNull { encoded ->
+        runCatching {
+            val json = org.json.JSONObject(encoded)
+            BrowserTab(
+                id = json.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+                title = json.optString("title", "New Tab"),
+                url = json.optString("url"),
+                activeUrl = json.optString("activeUrl").takeIf { it.isNotBlank() },
+                isDesktopMode = json.optBoolean("isDesktopMode", false),
+                canGoBack = json.optBoolean("canGoBack", false),
+                canGoForward = json.optBoolean("canGoForward", false),
+            )
+        }.getOrNull()
+    }.ifEmpty { listOf(BrowserTab(id = "tab_initial")) }
+}
+
 private val BrowserTabsSaver = listSaver<List<BrowserTab>, String>(
-    save = { tabs ->
-        tabs.map { tab ->
-            org.json.JSONObject()
-                .put("id", tab.id)
-                .put("title", tab.title)
-                .put("url", tab.url)
-                .put("activeUrl", tab.activeUrl ?: "")
-                .put("isDesktopMode", tab.isDesktopMode)
-                .put("canGoBack", tab.canGoBack)
-                .put("canGoForward", tab.canGoForward)
-                .toString()
-        }
-    },
-    restore = { savedTabs ->
-        savedTabs.mapNotNull { encoded ->
-            runCatching {
-                val json = org.json.JSONObject(encoded)
-                BrowserTab(
-                    id = json.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
-                    title = json.optString("title", "New Tab"),
-                    url = json.optString("url"),
-                    activeUrl = json.optString("activeUrl").takeIf { it.isNotBlank() },
-                    isDesktopMode = json.optBoolean("isDesktopMode", false),
-                    canGoBack = json.optBoolean("canGoBack", false),
-                    canGoForward = json.optBoolean("canGoForward", false),
-                )
-            }.getOrNull()
-        }.ifEmpty { listOf(BrowserTab(id = "tab_initial")) }
-    },
+    save = ::saveTabsToJson,
+    restore = ::restoreTabsFromJson,
 )
 
 /**
@@ -115,8 +119,8 @@ private val BrowserTabsSaver = listSaver<List<BrowserTab>, String>(
  * This saver persists the MutableState itself, keeping `by` delegation working.
  */
 private val BrowserTabsStateSaver = Saver<MutableState<List<BrowserTab>>, List<String>>(
-    save = { state -> BrowserTabsSaver.save(state.value) },
-    restore = { saved -> mutableStateOf(BrowserTabsSaver.restore(saved) ?: listOf(BrowserTab(id = "tab_initial"))) },
+    save = { state -> saveTabsToJson(state.value) },
+    restore = { saved -> mutableStateOf(restoreTabsFromJson(saved)) },
 )
 
 private data class BrowserHistoryItem(
