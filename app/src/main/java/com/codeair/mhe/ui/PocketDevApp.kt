@@ -5000,16 +5000,6 @@ private fun WorkspaceScreen(
                                         }
                                     }
                                     if (state.isRunning) {
-                                        val analysisMotion = rememberInfiniteTransition(label = "requirements-analysis")
-                                        val magnifierRotation by analysisMotion.animateFloat(
-                                            initialValue = -12f,
-                                            targetValue = 12f,
-                                            animationSpec = infiniteRepeatable(
-                                                animation = tween(550),
-                                                repeatMode = RepeatMode.Reverse,
-                                            ),
-                                            label = "magnifier-rotation",
-                                        )
                                         Surface(
                                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                                             shape = RoundedCornerShape(12.dp),
@@ -5020,14 +5010,6 @@ private fun WorkspaceScreen(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                             ) {
-                                                Icon(
-                                                    Icons.Default.Search,
-                                                    contentDescription = "Analyzing requirements",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(16.dp).graphicsLayer {
-                                                        rotationZ = magnifierRotation
-                                                    },
-                                                )
                                                 Text(
                                                     "Analyzing…",
                                                     color = MaterialTheme.colorScheme.primary,
@@ -5239,7 +5221,6 @@ private fun WorkspaceScreen(
                     orchestratorSnapshot = state.orchestratorSnapshot,
                     onRollbackToBaseline = onRollbackToBaseline,
                     emergencyKillSwitchActive = state.emergencyKillSwitchActive,
-                    onEngageEmergencyKillSwitch = onEngageEmergencyKillSwitch,
                     onResetEmergencyKillSwitch = onResetEmergencyKillSwitch,
                     onApprovalWithLevel = onApprovalWithLevel,
                 )
@@ -5957,7 +5938,6 @@ private fun ChatTab(
     orchestratorSnapshot: com.codeair.mhe.session.OrchestratorSnapshot? = null,
     onRollbackToBaseline: () -> Unit = {},
     emergencyKillSwitchActive: Boolean = false,
-    onEngageEmergencyKillSwitch: () -> Unit = {},
     onResetEmergencyKillSwitch: () -> Unit = {},
     onApprovalWithLevel: (com.codeair.mhe.security.PermissionLevel, Boolean) -> Unit = { _, _ -> },
 ) {
@@ -6480,20 +6460,7 @@ private fun ChatTab(
                             }
 
                             if (isRunning) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = onEngageEmergencyKillSwitch,
-                                        modifier = Modifier.size(34.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Warning,
-                                            contentDescription = "Emergency Kill Switch",
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                    Spacer(Modifier.width(4.dp))
-                                    Box(
+                                Box(
                                         modifier = Modifier
                                             .size(36.dp)
                                             .background(
