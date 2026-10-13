@@ -103,10 +103,13 @@ fun YouTubeVideoDialog(
                 // Header with YouTube brand icon
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(34.dp)
@@ -137,7 +140,9 @@ fun YouTubeVideoDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(48.dp),
+                        // Align the close target with the card's top/right inset while keeping
+                        // a comfortable touch target and a full-size, consistent close glyph.
+                        modifier = Modifier.size(40.dp).offset(x = 8.dp, y = (-8).dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
