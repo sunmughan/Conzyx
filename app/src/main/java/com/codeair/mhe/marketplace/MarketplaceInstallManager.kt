@@ -29,7 +29,25 @@ data class InstalledPackage(
     val installedAt: Long = System.currentTimeMillis(),
     val sourceUrl: String = "",
     val packageDir: String = "",
+    /** Expected SHA-256 the download was verified against ("" = none provided). */
+    val sha256: String = "",
 )
+
+/** SHA-256 hex of [bytes]. Pure, unit-tested. */
+internal fun sha256Hex(bytes: ByteArray): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    return digest.digest(bytes).joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * True when [bytes] hash to [expectedSha256] (case-insensitive), or when
+ * the listing provides no hash (blank = nothing to verify). Pure,
+ * unit-tested.
+ */
+internal fun verifyPackageHash(expectedSha256: String, bytes: ByteArray): Boolean {
+    if (expectedSha256.isBlank()) return true
+    return sha256Hex(bytes).equals(expectedSha256.trim(), ignoreCase = true)
+}
 
 /**
  * Real installation manager for the AI Developer Marketplace (Phase 14).
@@ -67,6 +85,11 @@ class MarketplaceInstallManager(private val context: Context) {
             val sourceNote: String
             if (source.startsWith("http://") || source.startsWith("https://")) {
                 val payload = downloadBytes(source)
+                // A listing hash is a hard gate: a mismatch fails the
+                // install instead of writing unverified bytes.
+                check(verifyPackageHash(item.sha256, payload)) {
+                    "Downloaded package hash does not match the listing (expected ${item.sha256})"
+                }
                 File(targetDir, "package.bin").writeBytes(payload)
                 sourceNote = "downloaded from $source (${payload.size} bytes)"
             } else if (source.isNotBlank()) {
@@ -81,6 +104,7 @@ class MarketplaceInstallManager(private val context: Context) {
                 .put("category", item.category.name)
                 .put("version", DEFAULT_VERSION)
                 .put("source", sourceNote)
+                .put("sha256", item.sha256)
                 .put("installedAt", System.currentTimeMillis())
             File(targetDir, "manifest.json").writeText(manifest.toString(2))
 
@@ -90,6 +114,7 @@ class MarketplaceInstallManager(private val context: Context) {
                 version = DEFAULT_VERSION,
                 sourceUrl = source,
                 packageDir = targetDir.absolutePath,
+                sha256 = item.sha256,
             )
             prefs.edit().putString(keyFor(item.id), toJson(record)).apply()
             _installedPackages.value = _installedPackages.value + (item.id to record)
@@ -133,6 +158,7 @@ class MarketplaceInstallManager(private val context: Context) {
         .put("installedAt", record.installedAt)
         .put("sourceUrl", record.sourceUrl)
         .put("packageDir", record.packageDir)
+        .put("sha256", record.sha256)
         .toString()
 
     private fun fromJson(json: String): InstalledPackage {
@@ -144,6 +170,7 @@ class MarketplaceInstallManager(private val context: Context) {
             installedAt = o.optLong("installedAt", System.currentTimeMillis()),
             sourceUrl = o.optString("sourceUrl"),
             packageDir = o.optString("packageDir"),
+            sha256 = o.optString("sha256"),
         )
     }
 

@@ -115,7 +115,8 @@ data class RemoteListing(
         rating = rating,
         downloads = downloads,
         installUrl = artifactUrl,
-        tags = tags
+        tags = tags,
+        sha256 = sha256
     )
 
     fun toJson(): JSONObject = JSONObject().apply {

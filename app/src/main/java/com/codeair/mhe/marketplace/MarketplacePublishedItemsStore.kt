@@ -55,6 +55,7 @@ class MarketplacePublishedItemsStore(context: Context) {
         .put("installUrl", item.installUrl)
         .put("isCustom", item.isCustom)
         .put("tags", JSONArray(item.tags))
+        .put("sha256", item.sha256)
 
     private fun fromJson(json: JSONObject): MarketplaceItem = MarketplaceItem(
         id = json.getString("id"),
@@ -68,6 +69,7 @@ class MarketplacePublishedItemsStore(context: Context) {
         downloads = json.optInt("downloads", 0),
         installUrl = json.optString("installUrl"),
         isCustom = json.optBoolean("isCustom", true),
+        sha256 = json.optString("sha256"),
         tags = mutableListOf<String>().also { tags ->
             val arr = json.optJSONArray("tags")
             if (arr != null) {

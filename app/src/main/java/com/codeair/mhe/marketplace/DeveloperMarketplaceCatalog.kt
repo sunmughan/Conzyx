@@ -33,6 +33,13 @@ data class MarketplaceItem(
     val isInstalled: Boolean = false,
     val isCustom: Boolean = false,
     val tags: List<String> = emptyList(),
+    /**
+     * Expected SHA-256 of the downloadable artifact (hex, lowercase).
+     * Blank = the listing provides no hash, so nothing is verified.
+     * When non-blank, [MarketplaceInstallManager] refuses a download
+     * whose bytes do not hash to this value.
+     */
+    val sha256: String = "",
 )
 
 /**
