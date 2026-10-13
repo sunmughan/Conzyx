@@ -29,12 +29,12 @@ class SkillsScreenEnvParsingTest {
 
     @Test
     fun `entries without equals are ignored`() {
+        // NOEQUALS is dropped (no `=`), B= is kept with an empty value:
+        // an empty env value is a real value.
         assertEquals(
-            mapOf("A" to "1"),
+            mapOf("A" to "1", "B" to ""),
             parseKeyValueList("A=1, NOEQUALS, B=")
         )
-        // B= (empty value) is kept: an empty env value is a real value.
-        assertEquals("", parseKeyValueList("A=1, NOEQUALS, B=")["B"])
     }
 
     @Test
