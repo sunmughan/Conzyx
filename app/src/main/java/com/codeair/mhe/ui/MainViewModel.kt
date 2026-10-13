@@ -429,6 +429,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             installer = installer,
             providerFor = { kind -> preferences.loadProvider(vault, kind) },
             secretFor = { profile -> vault.get(profile.kind.name) },
+            // Antigravity authenticates with its own signed-in session
+            // (e.g. Gemini), never with a vault API key. A signed-in session
+            // counts as auth, so team tasks can run on it when the role's
+            // wired engine (e.g. Claude Code) has no saved key.
+            isSessionAuthAvailable = { kind ->
+                kind == AgentKind.ANTIGRAVITY &&
+                    _state.value.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN
+            },
+            preferredKind = { _state.value.agentKind },
         ),
         concurrencyController = teamConcurrencyController,
     )

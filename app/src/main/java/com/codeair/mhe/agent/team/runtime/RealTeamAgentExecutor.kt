@@ -45,10 +45,74 @@ data class LiveTaskInfo(
     val tokensUsed: Long? = null,
     val startedAtMs: Long = System.currentTimeMillis(),
     val durationMs: Long = 0L,
+    /**
+     * Engine that actually ran this task. Equals the role's wired engine
+     * unless that engine was unusable and a fallback (e.g. Antigravity)
+     * ran it instead. Null for entries recorded before this field existed.
+     */
+    val agentKind: AgentKind? = null,
 )
 
 /** Maximum live-task entries retained (running entries are never pruned). */
 private const val MAX_LIVE_TASKS = 30
+
+/** Outcome of resolving which agent engine runs a team task. */
+sealed interface AgentResolution {
+    /** [kind] is installed and authenticated: run on it. */
+    data class Ready(val kind: AgentKind) : AgentResolution
+    /** Nothing is usable; [reasons] names every engine tried and why it failed. */
+    data class Unusable(val reasons: String) : AgentResolution
+}
+
+/**
+ * Pure readiness check for one agent engine. Returns null when [kind] can
+ * run, otherwise the plain reason it cannot. Session-based auth (a signed-in
+ * Antigravity session) counts as auth: the Antigravity CLI never reads a
+ * vault API key, so demanding one would reject a usable signed-in session.
+ */
+internal fun readinessReason(
+    kind: AgentKind,
+    isInstalled: Boolean,
+    sessionAuthAvailable: Boolean,
+    provider: ProviderProfile?,
+    secret: String?,
+): String? {
+    if (!isInstalled) return "'${kind.title}' runtime is not installed"
+    if (sessionAuthAvailable) return null
+    if (provider == null) return "No provider configured for ${kind.title}."
+    if (secret.isNullOrBlank()) return "No API key or token saved for ${provider.kind.title}."
+    return null
+}
+
+/**
+ * Resolves the engine a team task runs on. The role's wired engine wins when
+ * it is usable; otherwise the user's currently selected agent is tried, then
+ * every remaining engine in a fixed order. A signed-in Antigravity session
+ * therefore backs a task whose wired engine (e.g. Claude Code) has no saved
+ * API key, instead of failing the whole run.
+ */
+internal fun resolveEffectiveKind(
+    requested: AgentKind,
+    preferred: AgentKind?,
+    readinessOf: (AgentKind) -> String?,
+): AgentResolution {
+    val order = listOfNotNull(
+        requested,
+        preferred,
+        AgentKind.ANTIGRAVITY,
+        AgentKind.CLAUDE_CODE,
+        AgentKind.DEEPSEEK_HARNESS,
+        AgentKind.CLOUD_CODE,
+        AgentKind.CUSTOM,
+    ).distinct()
+    val reasons = mutableListOf<String>()
+    for (kind in order) {
+        val reason = readinessOf(kind)
+        if (reason == null) return AgentResolution.Ready(kind)
+        reasons += "${kind.title} ($reason)"
+    }
+    return AgentResolution.Unusable(reasons.joinToString("; "))
+}
 
 /** How much streamed output is kept per live task for the drill-down view. */
 private const val OUTPUT_TAIL_CHARS = 2000
@@ -74,6 +138,15 @@ private const val LIVE_EMIT_THROTTLE_MS = 400L
  * captured, and the outcome is mapped from the real terminal events
  * ([RuntimeEvent.SessionCompleted] / [RuntimeEvent.SessionFailed]).
  *
+ * Engine resolution: the role's wired engine runs when it is installed and
+ * authenticated. Otherwise the user's currently selected agent is tried,
+ * then every remaining engine. A signed-in Antigravity session counts as
+ * auth (the Antigravity CLI never reads a vault API key), so a task wired
+ * to Claude Code runs on Antigravity when no Claude key is saved, and the
+ * live task + artifact metadata record the engine that actually ran it.
+ * Only when NO engine is usable does the task fail with NOT_CONFIGURED
+ * naming every engine tried and why.
+ *
  * Integrity contract (hard): SUCCESS is reported only when the agent genuinely
  * ran and the bridge emitted [RuntimeEvent.SessionCompleted]. Missing runtime,
  * missing provider/secret, failures and timeouts surface as FAILED or
@@ -97,6 +170,17 @@ class RealTeamAgentExecutor(
     private val installer: RuntimeInstaller,
     private val providerFor: (AgentKind) -> ProviderProfile?,
     private val secretFor: (ProviderProfile) -> String?,
+    /**
+     * True when [kind] authenticates via a signed-in session instead of a
+     * vault API key (Antigravity's Gemini session). The Antigravity CLI
+     * never reads a vault key, so a signed-in session must count as auth.
+     */
+    private val isSessionAuthAvailable: (AgentKind) -> Boolean = { false },
+    /**
+     * The user's currently selected agent, tried right after the role's
+     * wired engine when that engine is not usable.
+     */
+    private val preferredKind: () -> AgentKind? = { null },
 ) : TeamAgentExecutor {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -108,7 +192,7 @@ class RealTeamAgentExecutor(
 
     override suspend fun execute(task: TeamTask, context: TeamExecutionContext): TeamExecutionResult {
         val startedAt = System.currentTimeMillis()
-        val kind = context.agentKind
+        val requestedKind = context.agentKind
 
         fun failFast(reason: String): TeamExecutionResult {
             val result = TeamExecutionResult(
@@ -116,22 +200,42 @@ class RealTeamAgentExecutor(
                 outputText = "",
                 durationMs = System.currentTimeMillis() - startedAt,
             )
-            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, reason, 0L, null)
+            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, reason, 0L, null, requestedKind)
             return result
         }
 
-        if (!installer.isAgentInstalled(kind)) {
-            return failFast("The '${kind.title}' runtime is not installed. Install it from Agent settings first.")
+        // Resolve the engine: the role's wired engine when usable, else the
+        // user's selected agent, else any usable engine. A Manager task
+        // wired to Claude Code therefore runs on a signed-in Antigravity
+        // session instead of failing for a missing Claude API key.
+        val effectiveKind = when (val resolution = resolveEffectiveKind(
+            requested = requestedKind,
+            preferred = preferredKind(),
+            readinessOf = { kind ->
+                val provider = providerFor(kind)
+                readinessReason(
+                    kind = kind,
+                    isInstalled = installer.isAgentInstalled(kind),
+                    sessionAuthAvailable = isSessionAuthAvailable(kind),
+                    provider = provider,
+                    secret = provider?.let { secretFor(it) },
+                )
+            }
+        )) {
+            is AgentResolution.Ready -> resolution.kind
+            is AgentResolution.Unusable -> return failFast(
+                "No usable agent runtime for '${context.role.title}'. Tried: ${resolution.reasons}. " +
+                    "Install a runtime from Agent settings or sign in."
+            )
         }
-        val provider = providerFor(kind)
-            ?: return failFast("No provider configured for ${kind.title}.")
-        if (secretFor(provider).isNullOrBlank()) {
-            return failFast("No API key or token saved for ${provider.kind.title}. Add one from Agent settings first.")
-        }
+        // For session-auth engines the provider is passed to the bridge but
+        // unused: the Antigravity CLI authenticates with its own session.
+        val provider = providerFor(effectiveKind)
+            ?: return failFast("No provider configured for ${effectiveKind.title}.")
 
         // Fresh bridge per execution: separate instance = separate OS process =
         // true parallelism with the other agents running right now.
-        val bridge = bridgeFactory(kind)
+        val bridge = bridgeFactory(effectiveKind)
 
         val goalHash = sha1Hex(context.goal).take(12)
         val projectId = "team-$goalHash"
@@ -139,7 +243,7 @@ class RealTeamAgentExecutor(
         val workspace = File(workspaceBaseDir, projectId).apply { mkdirs() }
         val prompt = buildPrompt(task, context)
 
-        registerLive(task, context, startedAt, LiveTaskStatus.RUNNING, "", 0L, null)
+        registerLive(task, context, startedAt, LiveTaskStatus.RUNNING, "", 0L, null, effectiveKind)
 
         return runSession(
             bridge = bridge,
@@ -152,6 +256,7 @@ class RealTeamAgentExecutor(
             task = task,
             context = context,
             workspace = workspace,
+            effectiveKind = effectiveKind,
         )
     }
 
@@ -163,6 +268,7 @@ class RealTeamAgentExecutor(
         outputTail: String,
         durationMs: Long,
         tokensUsed: Long?,
+        agentKind: AgentKind? = null,
     ) {
         _liveTasks.update { map ->
             val pruned = if (map.size >= MAX_LIVE_TASKS) {
@@ -181,6 +287,7 @@ class RealTeamAgentExecutor(
                 tokensUsed = tokensUsed,
                 startedAtMs = startedAt,
                 durationMs = durationMs,
+                agentKind = agentKind,
             ))
         }
     }
@@ -202,6 +309,7 @@ class RealTeamAgentExecutor(
         task: TeamTask,
         context: TeamExecutionContext,
         workspace: File,
+        effectiveKind: AgentKind,
     ): TeamExecutionResult {
         val captured = ConcurrentLinkedQueue<RuntimeEvent>()
         val outputBuilder = StringBuilder()
@@ -252,7 +360,7 @@ class RealTeamAgentExecutor(
         } catch (e: Exception) {
             collector.cancel()
             val durationMs = System.currentTimeMillis() - startedAt
-            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, "Failed to start: ${e.message}", durationMs, null)
+            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, "Failed to start: ${e.message}", durationMs, null, effectiveKind)
             return TeamExecutionResult(
                 result = OperationResult.failure(
                     error = "Agent '${context.role.title}' failed to start: ${e.message}",
@@ -269,7 +377,7 @@ class RealTeamAgentExecutor(
             collector.cancel()
             val durationMs = System.currentTimeMillis() - startedAt
             val reason = "Timed out after ${timeoutMs / 1000}s."
-            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, reason, durationMs, null)
+            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, reason, durationMs, null, effectiveKind)
             return TeamExecutionResult(
                 result = OperationResult.failure(
                     error = "Agent '${context.role.title}' timed out after ${timeoutMs / 1000}s on '${task.title}'.",
@@ -295,7 +403,7 @@ class RealTeamAgentExecutor(
         val tokensUsed: Long? = null
 
         if (failed != null) {
-            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, outputText.takeLast(OUTPUT_TAIL_CHARS), durationMs, tokensUsed)
+            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, outputText.takeLast(OUTPUT_TAIL_CHARS), durationMs, tokensUsed, effectiveKind)
             return TeamExecutionResult(
                 result = OperationResult.failure(
                     error = "Agent '${context.role.title}' reported failure on '${task.title}': ${failed.reason}",
@@ -307,7 +415,7 @@ class RealTeamAgentExecutor(
             )
         }
         if (completed == null) {
-            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, outputText.takeLast(OUTPUT_TAIL_CHARS), durationMs, tokensUsed)
+            registerLive(task, context, startedAt, LiveTaskStatus.FAILED, outputText.takeLast(OUTPUT_TAIL_CHARS), durationMs, tokensUsed, effectiveKind)
             return TeamExecutionResult(
                 result = OperationResult.failure(
                     error = "Agent '${context.role.title}' ended without a completion signal on '${task.title}'.",
@@ -330,7 +438,10 @@ class RealTeamAgentExecutor(
                     tags = setOf("team-run", projectId),
                     metadata = mapOf(
                         "workspace" to workspace.canonicalPath,
-                        "agentKind" to context.agentKind.stableId,
+                        // The engine that actually ran it, not the wired one,
+                        // so a fallback (e.g. Antigravity for a Claude task)
+                        // is recorded truthfully.
+                        "agentKind" to effectiveKind.stableId,
                     ),
                     isSimulated = false,
                 )
@@ -339,7 +450,7 @@ class RealTeamAgentExecutor(
             emptyList()
         }
 
-        registerLive(task, context, startedAt, LiveTaskStatus.COMPLETED, outputText.takeLast(OUTPUT_TAIL_CHARS), durationMs, tokensUsed)
+        registerLive(task, context, startedAt, LiveTaskStatus.COMPLETED, outputText.takeLast(OUTPUT_TAIL_CHARS), durationMs, tokensUsed, effectiveKind)
 
         return TeamExecutionResult(
             result = OperationResult.success(

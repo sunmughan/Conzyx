@@ -664,6 +664,16 @@ private fun AgentDetailSheet(
                     color = if (isRunning) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Medium
                 )
+                // Which engine actually ran it: when the role's wired engine
+                // was unusable, a fallback (e.g. Antigravity for a Claude
+                // Code task) ran it instead. Shown so the fallback is visible.
+                live?.agentKind?.let { engine ->
+                    Text(
+                        text = "via ${engine.title}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
