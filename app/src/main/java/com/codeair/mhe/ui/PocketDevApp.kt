@@ -377,10 +377,7 @@ fun PocketDevApp(
         BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.agent.team.ui.TeamStudioScreen(
             orchestrator = viewModel.teamOrchestrator,
-            onClose = { navigator.closeOverlay() },
-            onDispatchToAgent = { goal ->
-                viewModel.sendPrompt("Multi-Agent Team Goal: $goal")
-            }
+            onClose = { navigator.closeOverlay() }
         )
         return
     }
@@ -2495,7 +2492,6 @@ private fun RootScreenHost(
                     onSwitchAntigravityAccount = viewModel::switchAntigravityAccount,
                     onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
                     onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
-                    onDispatchTeamTask = { prompt -> viewModel.sendPrompt(prompt) },
                     teamOrchestrator = viewModel.teamOrchestrator,
                 )
                 RootScreen.SKILLS -> SkillsScreen(

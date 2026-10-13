@@ -334,7 +334,7 @@ class AgentTeamOrchestrator(
             content = "Project goal accepted: '$userGoal'. Initialized 10 engineering tasks across team DAG."
         )
 
-        syncState(userGoal = userGoal, isRunning = true, activeRole = TeamRole.MANAGER)
+        syncState(userGoal = userGoal, isRunning = true, activeRole = TeamRole.MANAGER, lastError = null)
         return tasks
     }
 
@@ -364,15 +364,25 @@ class AgentTeamOrchestrator(
         if (readyTasks.isEmpty()) {
             if (scheduler.isAllCompleted()) {
                 _sessionState.value = _sessionState.value.copy(isRunning = false, activeRole = null)
+            } else if (scheduler.isStalled()) {
+                // Nothing can proceed: a failed task blocked the whole DAG.
+                // Say so plainly instead of leaving Step as a dead button.
+                _sessionState.update { it.copy(lastError = stalledErrorMessage()) }
             }
             return null
         }
 
         val task = readyTasks.first()
-        _sessionState.value = _sessionState.value.copy(activeRole = task.assignedRole)
+        _sessionState.value = _sessionState.value.copy(isRunning = true, activeRole = task.assignedRole)
         dispatcher.runReadyTask(task)
+        val finished = scheduler.getTask(task.id)
+        if (finished?.status == TeamTaskStatus.FAILED) {
+            _sessionState.update {
+                it.copy(lastError = "Task '${finished.title}' failed: ${finished.output.ifBlank { "no error detail" }.take(300)}")
+            }
+        }
         syncState()
-        return scheduler.getTask(task.id)
+        return finished
     }
 
     /**
@@ -383,9 +393,46 @@ class AgentTeamOrchestrator(
         requireRealExecution()
         val dispatcher = realDispatcher
             ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
+        _sessionState.update { it.copy(isRunning = true) }
         val report = dispatcher.runAll()
+        if (report.failed > 0 || scheduler.isStalled()) {
+            _sessionState.update { it.copy(lastError = stalledErrorMessage()) }
+        }
         syncState()
         return report
+    }
+
+    /**
+     * Re-queues every FAILED task as READY so a stalled run can be retried
+     * after the underlying cause (e.g. a missing agent runtime) is fixed.
+     * BLOCKED dependents stay blocked until their failed dependency completes.
+     */
+    fun retryFailedTasks() {
+        val failed = scheduler.getTasks().filter { it.status == TeamTaskStatus.FAILED }
+        if (failed.isEmpty()) return
+        failed.forEach { scheduler.updateTaskStatus(it.id, TeamTaskStatus.READY) }
+        _sessionState.update { it.copy(isRunning = true, lastError = null) }
+        syncState()
+    }
+
+    /** Dismisses the surfaced execution error banner. */
+    fun clearLastError() {
+        _sessionState.update { it.copy(lastError = null) }
+    }
+
+    /** Surfaces an unexpected execution error to the UI instead of dropping it. */
+    fun reportError(message: String) {
+        _sessionState.update { it.copy(lastError = message) }
+    }
+
+    /** Human-readable "run is stalled" message naming the failed tasks. */
+    private fun stalledErrorMessage(): String {
+        val failed = scheduler.getTasks().filter { it.status == TeamTaskStatus.FAILED }
+        if (failed.isEmpty()) return "Run stalled: no task is ready and the run is not complete."
+        val first = failed.first()
+        val detail = first.output.ifBlank { "no error detail" }.take(300)
+        val extra = if (failed.size > 1) " (+${failed.size - 1} more failed)" else ""
+        return "Run stalled: '${first.title}' failed: $detail$extra. Fix the cause, then tap Retry failed."
     }
 
     /** Requests cancellation of a real run; in-flight agent runs finish rather than being killed. */
@@ -429,7 +476,8 @@ class AgentTeamOrchestrator(
     private fun syncState(
         userGoal: String = _sessionState.value.activeGoal,
         isRunning: Boolean = _sessionState.value.isRunning,
-        activeRole: TeamRole? = _sessionState.value.activeRole
+        activeRole: TeamRole? = _sessionState.value.activeRole,
+        lastError: String? = _sessionState.value.lastError
     ) {
         val allTasks = scheduler.getTasks()
         val allMessages = commBus.getMessages()
@@ -461,7 +509,9 @@ class AgentTeamOrchestrator(
 
         _sessionState.value = TeamSessionState(
             activeGoal = userGoal,
-            isRunning = isRunning && !allDone,
+            // A stalled run (failed task blocked the DAG) is not "running":
+            // the header must stop claiming "Executing" on a dead run.
+            isRunning = isRunning && !allDone && !scheduler.isStalled(),
             activeRole = nextActiveRole,
             tasks = allTasks,
             events = legacyEvents,
@@ -470,7 +520,8 @@ class AgentTeamOrchestrator(
             budget = budget,
             reviews = reviews,
             conflictWarnings = conflictWarnings,
-            executionLog = allMessages.map { "[${it.fromRole.name}] ${it.content}" }
+            executionLog = allMessages.map { "[${it.fromRole.name}] ${it.content}" },
+            lastError = lastError
         )
     }
 }

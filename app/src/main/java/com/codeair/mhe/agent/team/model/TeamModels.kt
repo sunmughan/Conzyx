@@ -280,5 +280,11 @@ data class TeamSessionState(
     val budget: TeamBudget = TeamBudget(),
     val reviews: List<ReviewRecord> = emptyList(),
     val conflictWarnings: List<String> = emptyList(),
-    val executionLog: List<String> = emptyList()
+    val executionLog: List<String> = emptyList(),
+    /**
+     * Last execution failure surfaced to the UI (e.g. a required agent
+     * runtime is not installed). Null when the last run had no error.
+     * The UI shows this as a banner instead of silently going dead.
+     */
+    val lastError: String? = null
 )

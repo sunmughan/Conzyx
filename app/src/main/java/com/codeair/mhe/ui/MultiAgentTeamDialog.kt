@@ -71,7 +71,6 @@ import kotlinx.coroutines.launch
 fun MultiAgentTeamBottomSheet(
     orchestrator: AgentTeamOrchestrator,
     onDismiss: () -> Unit,
-    onDispatchToAgent: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val sessionState by orchestrator.sessionState.collectAsState()
@@ -86,8 +85,7 @@ fun MultiAgentTeamBottomSheet(
         if (fullStudioMode) {
             com.codeair.mhe.agent.team.ui.TeamStudioScreen(
                 orchestrator = orchestrator,
-                onClose = { fullStudioMode = false },
-                onDispatchToAgent = onDispatchToAgent
+                onClose = { fullStudioMode = false }
             )
         } else {
             Column(
@@ -193,9 +191,10 @@ fun MultiAgentTeamBottomSheet(
                 ) {
                     Button(
                         onClick = {
+                            // Plan ONLY plans. It used to also fire the goal
+                            // into the single-agent chat as a hidden task.
                             if (inputGoal.isNotBlank()) {
                                 orchestrator.planProject(inputGoal)
-                                onDispatchToAgent("Multi-Agent Team Goal: $inputGoal")
                             }
                         },
                         modifier = Modifier.weight(1f),

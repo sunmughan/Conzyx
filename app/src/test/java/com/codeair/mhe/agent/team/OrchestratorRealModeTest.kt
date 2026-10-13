@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -144,5 +145,77 @@ class OrchestratorRealModeTest {
         val executed = orchestrator.executeNextReadyTask()
         assertNotNull(executed)
         assertEquals(TeamTaskStatus.FAILED, orchestrator.scheduler.getTask(executed!!.id)!!.status)
+    }
+
+    @Test
+    fun testFailedTaskSurfacesLastErrorAndStopsClaimingRunning() = runBlocking {
+        // Regression: a failed first task used to leave the UI claiming
+        // "Executing" with Step as a dead button and no visible cause.
+        // The real reason (here: runtime missing, carried in result.error
+        // with blank output) must reach sessionState.lastError, and the
+        // stalled run must stop claiming to be running.
+        val failing = TeamAgentExecutor { _, _ ->
+            TeamExecutionResult(
+                result = OperationResult.notConfigured("The 'Claude Code' runtime is not installed."),
+                outputText = "",
+            )
+        }
+        val orchestrator = AgentTeamOrchestrator(
+            teamExecutor = failing,
+            teamValidator = approvingValidator(),
+        )
+        orchestrator.planProject("goal")
+        val executed = orchestrator.executeNextReadyTask()
+        assertNotNull(executed)
+        assertEquals(TeamTaskStatus.FAILED, orchestrator.scheduler.getTask(executed!!.id)!!.status)
+        val state = orchestrator.sessionState.value
+        assertNotNull(state.lastError)
+        assertTrue(state.lastError!!.contains("Claude Code"))
+        assertFalse(state.isRunning)
+    }
+
+    @Test
+    fun testRetryFailedTasksRequeuesAfterStall() = runBlocking {
+        val failing = TeamAgentExecutor { _, _ ->
+            TeamExecutionResult(
+                result = OperationResult.failure(error = "agent exploded"),
+                outputText = "",
+            )
+        }
+        val orchestrator = AgentTeamOrchestrator(
+            teamExecutor = failing,
+            teamValidator = approvingValidator(),
+        )
+        orchestrator.planProject("goal")
+        orchestrator.executeNextReadyTask()
+        assertTrue(orchestrator.scheduler.isStalled())
+
+        orchestrator.retryFailedTasks()
+        val state = orchestrator.sessionState.value
+        assertNull(state.lastError)
+        assertTrue(state.isRunning)
+        val failed = orchestrator.scheduler.getTasks().filter { it.status == TeamTaskStatus.FAILED }
+        assertTrue(failed.isEmpty())
+        assertTrue(state.tasks.any { it.status == TeamTaskStatus.READY })
+    }
+
+    @Test
+    fun testPlanProjectClearsLastError() = runBlocking {
+        val failing = TeamAgentExecutor { _, _ ->
+            TeamExecutionResult(
+                result = OperationResult.failure(error = "agent exploded"),
+                outputText = "",
+            )
+        }
+        val orchestrator = AgentTeamOrchestrator(
+            teamExecutor = failing,
+            teamValidator = approvingValidator(),
+        )
+        orchestrator.planProject("goal")
+        orchestrator.executeNextReadyTask()
+        assertNotNull(orchestrator.sessionState.value.lastError)
+
+        orchestrator.planProject("fresh goal")
+        assertNull(orchestrator.sessionState.value.lastError)
     }
 }

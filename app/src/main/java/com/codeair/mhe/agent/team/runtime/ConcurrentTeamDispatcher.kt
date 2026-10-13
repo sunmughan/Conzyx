@@ -231,7 +231,12 @@ class ConcurrentTeamDispatcher(
             scheduler.updateTaskStatus(
                 taskId = task.id,
                 status = TeamTaskStatus.FAILED,
-                output = execResult.outputText,
+                // Preserve the real failure reason: fail-fast paths (e.g.
+                // "runtime not installed") carry it in result.error with
+                // empty outputText. Dropping it left the UI with no cause.
+                output = execResult.outputText.ifBlank {
+                    execResult.result.error ?: execResult.result.status.toString()
+                },
                 tokensUsed = execResult.tokensUsed ?: 0L,
                 executionTimeMs = durationMs,
                 isSimulated = false,

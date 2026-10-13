@@ -111,8 +111,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun TeamStudioScreen(
     orchestrator: AgentTeamOrchestrator,
-    onClose: () -> Unit = {},
-    onDispatchToAgent: (String) -> Unit = {}
+    onClose: () -> Unit = {}
 ) {
     val sessionState by orchestrator.sessionState.collectAsState()
     val liveTasks by orchestrator.liveTasks.collectAsState()
@@ -204,30 +203,37 @@ fun TeamStudioScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Goal Input & Action Bar
+                // Goal Input & Action Bar.
+                // Plan ONLY plans (creates the 10-task DAG + blueprint). It
+                // used to also fire the goal into the single-agent chat as a
+                // hidden background task with a doubled prefix, which is gone.
+                // The input gets its own full-width row: sharing one row with
+                // Plan/Step/Stop squeezed it to "Build robu..." on narrow phones.
+                OutlinedTextField(
+                    value = inputGoal,
+                    onValueChange = { inputGoal = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    singleLine = true,
+                    placeholder = { Text("Enter engineering goal...", fontSize = 12.sp) },
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = inputGoal,
-                        onValueChange = { inputGoal = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        singleLine = true,
-                        placeholder = { Text("Enter engineering goal...", fontSize = 12.sp) },
-                        shape = RoundedCornerShape(8.dp)
-                    )
                     Button(
                         onClick = {
                             if (inputGoal.isNotBlank()) {
                                 orchestrator.planProject(inputGoal)
-                                onDispatchToAgent("Multi-Agent Team Goal: $inputGoal")
                             }
                         },
-                        modifier = Modifier.height(52.dp),
+                        modifier = Modifier.height(48.dp),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp)
                     ) {
@@ -236,10 +242,19 @@ fun TeamStudioScreen(
                         Text("Plan", fontSize = 12.sp)
                     }
 
-                    if (sessionState.isRunning) {
+                    // Step runs the next READY task. It is shown whenever a
+                    // READY task exists, not only while isRunning: after a
+                    // failure the run stops (isRunning=false) but a retried
+                    // task becomes READY again and must stay runnable.
+                    if (sessionState.tasks.any { it.status == TeamTaskStatus.READY }) {
                         Button(
-                            onClick = { scope.launch { orchestrator.executeNextReadyTask() } },
-                            modifier = Modifier.height(52.dp),
+                            onClick = {
+                                scope.launch {
+                                    runCatching { orchestrator.executeNextReadyTask() }
+                                        .onFailure { orchestrator.reportError(it.message ?: "Step failed.") }
+                                }
+                            },
+                            modifier = Modifier.height(48.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -248,13 +263,69 @@ fun TeamStudioScreen(
                             Spacer(Modifier.width(4.dp))
                             Text("Step", fontSize = 12.sp)
                         }
+                    }
+                    if (sessionState.isRunning) {
                         OutlinedButton(
                             onClick = { orchestrator.cancelRealRun() },
-                            modifier = Modifier.height(52.dp),
+                            modifier = Modifier.height(48.dp),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                         ) {
                             Text("Stop", fontSize = 12.sp)
+                        }
+                    }
+                    // A failed task blocks the whole DAG (dependents stay
+                    // BLOCKED, Step becomes a dead button). Retry re-queues
+                    // the failed tasks so the run can continue after a fix.
+                    if (sessionState.tasks.any { it.status == TeamTaskStatus.FAILED }) {
+                        OutlinedButton(
+                            onClick = { orchestrator.retryFailedTasks() },
+                            modifier = Modifier.height(48.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Retry failed", fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                // Execution error banner: a failed run used to go completely
+                // silent (Roster showed no change, header kept "Executing").
+                sessionState.lastError?.let { error ->
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFFEBEE),
+                        border = BorderStroke(1.dp, Color(0xFFE57373)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = error,
+                                fontSize = 11.sp,
+                                color = Color(0xFFB71C1C)
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(top = 6.dp)
+                            ) {
+                                if (sessionState.tasks.any { it.status == TeamTaskStatus.FAILED }) {
+                                    OutlinedButton(
+                                        onClick = { orchestrator.retryFailedTasks() },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Retry failed", fontSize = 11.sp)
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { orchestrator.clearLastError() },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Dismiss", fontSize = 11.sp)
+                                }
+                            }
                         }
                     }
                 }
@@ -334,7 +405,13 @@ private fun TeamRosterTab(orchestrator: AgentTeamOrchestrator) {
                     color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 ),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (highlighted) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
+                    // Explicit content color: contentColorFor(primaryContainer)
+                    // resolves to onPrimaryContainer (dark in dark theme), so
+                    // the highlighted card's title rendered dark-on-dark and
+                    // was unreadable. The container here is 85% transparent,
+                    // so onSurface is the only readable choice.
+                    containerColor = if (highlighted) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Column(
@@ -762,7 +839,12 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
-                    onClick = { scope.launch { orchestrator.executeNextReadyTask() } },
+                    onClick = {
+                        scope.launch {
+                            runCatching { orchestrator.executeNextReadyTask() }
+                                .onFailure { orchestrator.reportError(it.message ?: "Next Ready failed.") }
+                        }
+                    },
                     modifier = Modifier.height(48.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -776,13 +858,27 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
                     Text("Next Ready", fontSize = 13.sp, maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(
-                    onClick = { scope.launch { orchestrator.autoRunAllReal() } },
+                    onClick = {
+                        scope.launch {
+                            runCatching { orchestrator.autoRunAllReal() }
+                                .onFailure { orchestrator.reportError(it.message ?: "Auto Run failed.") }
+                        }
+                    },
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Auto Run", fontSize = 11.sp)
+                }
+                if (sessionState.tasks.any { it.status == TeamTaskStatus.FAILED }) {
+                    OutlinedButton(
+                        onClick = { orchestrator.retryFailedTasks() },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text("Retry failed", fontSize = 11.sp)
+                    }
                 }
             }
         }
@@ -921,6 +1017,18 @@ private fun TaskDagCard(
             Spacer(Modifier.height(4.dp))
             Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(text = task.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            // FAILED tasks show their real failure reason inline: previously
+            // the cause (e.g. "runtime not installed") only existed in the
+            // Comms tab, so the DAG looked dead for no visible reason.
+            if (task.status == TeamTaskStatus.FAILED && task.output.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = task.output.take(400),
+                    fontSize = 11.sp,
+                    color = Color(0xFFB71C1C)
+                )
+            }
 
             if (task.affectedFiles.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))

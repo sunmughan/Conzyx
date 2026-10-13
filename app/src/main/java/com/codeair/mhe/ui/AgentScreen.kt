@@ -186,7 +186,6 @@ fun AgentScreen(
     onSwitchAntigravityAccount: (String) -> Unit = {},
     onRemoveAntigravityAccount: (String) -> Unit = {},
     onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
-    onDispatchTeamTask: ((String) -> Unit)? = null,
     teamOrchestrator: AgentTeamOrchestrator? = null,
 ) {
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
@@ -1215,9 +1214,6 @@ fun AgentScreen(
         MultiAgentTeamBottomSheet(
             orchestrator = teamOrchestratorResolved,
             onDismiss = { showTeamDialog = false },
-            onDispatchToAgent = { goal ->
-                onDispatchTeamTask?.invoke(goal)
-            },
         )
     }
 }
