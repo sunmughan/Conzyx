@@ -68,6 +68,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Studio cards relocated**: the four studio cards moved to the bottom of the home screen so your projects come first.
 - **Branding cleanup**: leftover PocketDev references removed, version pills removed from studio headers and onboarding, phase pills removed from the tour.
 - **Full rebrand to Mobile Harness Extended**: every user-facing "Mobile Harness" string is now "Mobile Harness Extended" (app name, install screen, launcher label, Play listing, privacy policy, in-app text, generated-app templates). The launcher icon and Play icon now carry an EXTENDED label under the mark, and the Play feature graphic reads "Mobile Harness Extended".
+- **Agent tabs no longer truncate names**: the fixed tab row cut names to "Claude ..." vs "Cloud C...", which made Claude Code and Cloud Code look like the same agent twice. Tabs are now a scrollable row with full names plus a distinct icon per agent (sparkles for Claude Code, cloud for Cloud Code).
 - **Status bar respected**: the app no longer overrides status bar or navigation bar colors; your device defaults are left alone.
 - **Browser redesigned**: bigger URL bar, top row reduced to URL bar + menu, ports strip and unused pills removed.
 - **Files header fixed**: the "Files" title shared one row with 7 action buttons and wrapped vertically on narrow phones. The title now sits on its own top-left line with the full icon row below it.

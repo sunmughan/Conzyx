@@ -11,6 +11,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -38,7 +39,9 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -49,8 +52,10 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -860,8 +865,15 @@ fun AgentScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
+                        // Scrollable tab row with FULL agent names + a distinct icon per
+                        // agent. The old fixed row truncated names ("Claude ..." vs
+                        // "Cloud C..."), which made Claude Code and Cloud Code look
+                        // like the same agent twice. Full names + icons make them
+                        // unmistakable.
                         Row(
-                            modifier = Modifier.padding(4.dp),
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .padding(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             orderedAgents.forEach { agent ->
@@ -877,31 +889,43 @@ fun AgentScreen(
                                     AgentKind.CLOUD_CODE -> "Cloud Code"
                                     AgentKind.CUSTOM -> "Custom"
                                 }
+                                val tabIcon = when (agent) {
+                                    AgentKind.ANTIGRAVITY -> Icons.Default.RocketLaunch
+                                    AgentKind.DEEPSEEK_HARNESS -> Icons.Default.FlashOn
+                                    AgentKind.CLAUDE_CODE -> Icons.Default.AutoAwesome
+                                    AgentKind.CLOUD_CODE -> Icons.Default.Cloud
+                                    AgentKind.CUSTOM -> Icons.Default.Tune
+                                }
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
                                     border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)) else null,
                                     modifier = Modifier
-                                        .weight(1f)
                                         .clickable(enabled = state.agentInstalling == null) {
                                             viewedAgent = agent
                                             if (isInstalled) onSelectAgent(agent)
                                         },
                                 ) {
                                     Box(
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 2.dp),
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 12.dp),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        Text(
-                                            shortTitle,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            textAlign = TextAlign.Center,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = 11.sp,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                tabIcon,
+                                                contentDescription = null,
+                                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(15.dp),
+                                            )
+                                            Spacer(Modifier.width(5.dp))
+                                            Text(
+                                                shortTitle,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 11.sp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                            )
+                                        }
                                         if (updateAvailable) {
                                             Box(
                                                 Modifier
