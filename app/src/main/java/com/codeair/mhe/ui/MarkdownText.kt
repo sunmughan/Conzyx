@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -57,8 +58,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.ui.theme.PocketOrange
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface MarkdownBlock {
     data class Header(val level: Int, val text: String) : MarkdownBlock
@@ -98,9 +101,20 @@ fun MarkdownText(
         }
     }
 
-    val blocks = remember(markdown) { parseMarkdown(markdown) }
+    // Large agent reports can contain hundreds of Markdown blocks. Parsing on the
+    // main thread can stall Compose long enough to show a black frame or ANR.
+    val blocks by produceState(initialValue = emptyList<MarkdownBlock>(), markdown) {
+        value = withContext(Dispatchers.Default) { parseMarkdown(markdown) }
+    }
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (blocks.isEmpty() && markdown.isNotBlank()) {
+        Text(
+            text = markdown.take(2_000),
+            modifier = modifier,
+            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+            color = color,
+        )
+    } else Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block ->
             when (block) {
                 is MarkdownBlock.Header -> HeaderBlock(block, effectiveOpenUri)
