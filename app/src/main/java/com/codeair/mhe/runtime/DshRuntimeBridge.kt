@@ -730,6 +730,7 @@ internal object DshRouteMapper {
                 custom = DshCustomRoute(profile.dshApi.ifBlank { "anthropic-messages" }, profile.resolvedBaseUrl),
             )
             ProviderKind.CLAUDE -> throw IllegalArgumentException("Claude subscription login is not supported by DeepSeek Harness")
+            ProviderKind.OPENAI -> throw IllegalArgumentException("OpenAI provider is not supported by DeepSeek Harness")
         }
     }
 }

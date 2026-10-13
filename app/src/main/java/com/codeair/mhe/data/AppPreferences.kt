@@ -234,7 +234,7 @@ class AppPreferences(private val context: Context) {
             agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyClaudeDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
             storedKind != null && storedKind in providersForAgent(agent) -> storedKind
             agent == AgentKind.DEEPSEEK_HARNESS -> ProviderKind.DEEPSEEK
-            agent == AgentKind.CODEX -> ProviderKind.CUSTOM
+            agent == AgentKind.CODEX -> ProviderKind.OPENAI
             // Fresh Custom agent opens on the Custom API provider (bring-your-own endpoint).
             agent == AgentKind.CUSTOM -> ProviderKind.CUSTOM
             else -> ProviderKind.ANTHROPIC

@@ -2246,10 +2246,9 @@ private fun AgentCodexCard(
     onSaveProvider: (ProviderProfile, String) -> Unit,
     getSavedApiKey: (ProviderKind) -> String,
 ) {
-    val currentProfile = state.provider.takeIf { it.kind == ProviderKind.CUSTOM }
-    var baseUrl by rememberSaveable { mutableStateOf(currentProfile?.baseUrl.orEmpty()) }
+    val currentProfile = state.provider.takeIf { it.kind == ProviderKind.OPENAI }
     var model by rememberSaveable { mutableStateOf(currentProfile?.model.orEmpty()) }
-    var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.CUSTOM)) }
+    var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.OPENAI)) }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var savedTick by remember { mutableStateOf(false) }
 
@@ -2267,15 +2266,6 @@ private fun AgentCodexCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it; savedTick = false },
-            label = { Text("Base URL (optional)") },
-            placeholder = { Text("https://api.openai.com/v1 (blank = OpenAI default)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-        )
         OutlinedTextField(
             value = apiKey,
             onValueChange = { apiKey = it; savedTick = false },
@@ -2306,8 +2296,7 @@ private fun AgentCodexCard(
         Button(
             onClick = {
                 val profile = ProviderProfile(
-                    kind = ProviderKind.CUSTOM,
-                    baseUrl = baseUrl.trim(),
+                    kind = ProviderKind.OPENAI,
                     model = model.trim(),
                     dshApi = "openai-completions",
                 )

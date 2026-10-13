@@ -41,6 +41,7 @@ enum class ProviderKind(
         fixedBaseUrl = true,
         fixedProtocol = true,
     ),
+    OPENAI("OpenAI API", "Use your OpenAI API key", ProviderProtocol.OPENAI_CHAT, "https://api.openai.com/v1", "gpt-5-codex"),
     CUSTOM("Custom API", "Anthropic-compatible endpoint", ProviderProtocol.ANTHROPIC_GATEWAY, "", "", true),
 }
 
@@ -147,12 +148,11 @@ fun providerProtocolForAgent(profile: ProviderProfile, agent: AgentKind): Provid
 /** Provider choices shown for the selected coding agent. */
 fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
-    AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
+    AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN || it == ProviderKind.OPENAI }
     AgentKind.ANTIGRAVITY -> emptyList()
-    // Codex authenticates with an OpenAI-compatible API key. The Custom API
-    // provider carries its base URL + model; a blank base URL means the
-    // OpenAI default, a blank model means the Codex default.
-    AgentKind.CODEX -> listOf(ProviderKind.CUSTOM)
+    // Codex authenticates with an OpenAI API key, stored under its own vault
+    // slot ("OPENAI") so it can never overwrite the Custom agent's key.
+    AgentKind.CODEX -> listOf(ProviderKind.OPENAI)
     // Custom agent is pure bring-your-own-API: OpenAI-compatible and Claude-compatible endpoints only.
     AgentKind.CUSTOM -> listOf(ProviderKind.CUSTOM, ProviderKind.ANTHROPIC, ProviderKind.LLM_ROUTER)
 }

@@ -308,6 +308,20 @@ class AgentProviderPresetTest {
     }
 
     @Test
+    fun codexUsesDedicatedOpenAiVaultSlot() {
+        // Codex must never share the Custom agent's vault slot ("CUSTOM"):
+        // the vault is keyed by ProviderKind.name, so a shared kind meant
+        // saving one agent's key overwrote the other's.
+        assertEquals(listOf(ProviderKind.OPENAI), providersForAgent(AgentKind.CODEX))
+        assertFalse(ProviderKind.OPENAI in providersForAgent(AgentKind.CUSTOM))
+        assertFalse(ProviderKind.OPENAI in providersForAgent(AgentKind.CLAUDE_CODE))
+        assertFalse(ProviderKind.CUSTOM in providersForAgent(AgentKind.CODEX))
+        assertEquals("OPENAI", ProviderKind.OPENAI.name)
+        assertEquals("https://api.openai.com/v1", ProviderKind.OPENAI.defaultBaseUrl)
+        assertEquals("gpt-5-codex", ProviderKind.OPENAI.defaultModel)
+    }
+
+    @Test
     fun agentKindsAreStable() {
         assertEquals(AgentKind.CLAUDE_CODE, AgentKind.valueOf("CLAUDE_CODE"))
         assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.valueOf("DEEPSEEK_HARNESS"))
