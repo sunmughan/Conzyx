@@ -45,6 +45,14 @@ class GitHubAuthCoordinator(
     @Volatile private var githubAuthProcess: Process? = null
     private var githubAuthJob: Job? = null
 
+    // In-flight `git clone` / `gh repo clone` handles. Kept so the user can
+    // cancel a stalled clone from the dialogs instead of being trapped by a
+    // blocked dismiss (the clone keeps running detached when a dialog is
+    // merely dismissed — dismissing never cancels).
+    @Volatile private var cloneProcess: Process? = null
+    private var cloneJob: Job? = null
+    @Volatile private var cloneCancelled = false
+
     fun startGitHubLogin() {
         if (host.state().githubAuthStatus == GitHubAuthStatus.STARTING || host.state().githubAuthStatus == GitHubAuthStatus.AWAITING_USER) return
         host.updateState { it.copy(githubAuthStatus = GitHubAuthStatus.STARTING, githubMessage = "Preparing official GitHub sign-in…") }
@@ -250,14 +258,28 @@ class GitHubAuthCoordinator(
         cloneGitRepository(repository.cloneUrl, repository.fullName, repository.defaultBranch, useGitHubCli = true)
     }
 
+    /**
+     * Cancels an in-flight repository clone, if any. Destroys the git/gh
+     * child process and cancels the clone coroutine; the clone's failure
+     * path then reports "Clone cancelled" and deletes the partial
+     * workspace. No-op when no clone is running.
+     */
+    fun cancelGitClone() {
+        if (!host.state().gitCloneRunning) return
+        cloneCancelled = true
+        cloneProcess?.destroyForcibly()
+        cloneJob?.cancel()
+    }
+
     private fun cloneGitRepository(url: String, repositoryName: String?, branch: String?, useGitHubCli: Boolean) {
         if (host.state().gitCloneRunning || host.state().projectImporting || host.state().isRunning || host.state().projectTerminalRunning) return
         val normalized = runCatching { validateGitUrl(url) }.getOrElse { error ->
             host.updateState { it.copy(toastMessage = error.message ?: "Enter a valid public HTTPS Git URL") }
             return
         }
+        cloneCancelled = false
         host.updateState { it.copy(gitCloneRunning = true, gitCloneMessage = "Connecting to Git repository…") }
-        host.scope.launch {
+        cloneJob = host.scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val identity = generateQuickChatIdentity(host.state().projects.mapTo(mutableSetOf()) { it.slug })
@@ -295,6 +317,7 @@ class GitHubAuthCoordinator(
                             guestWorkspacePath = "/workspace/${identity.slug}",
                             outputFile = output,
                         )
+                        cloneProcess = process
                         val exit = process.waitFor()
                         val details = output.readText().trim()
                         check(exit == 0) { details.takeLast(600).ifBlank { "Git clone failed with exit code $exit" } }
@@ -311,6 +334,8 @@ class GitHubAuthCoordinator(
                         workspace.deleteRecursively()
                         throw error
                     } finally {
+                        cloneProcess = null
+                        cloneJob = null
                         output.delete()
                     }
                 }
@@ -323,11 +348,15 @@ class GitHubAuthCoordinator(
                 openProject(project)
                 host.updateState { it.copy(gitCloneRunning = false, gitCloneMessage = null, toastMessage = "Repository cloned successfully") }
             }.onFailure { error ->
+                // runCatching swallows CancellationException, so the flag —
+                // not the exception type — is what tells us the user cancelled.
+                val wasCancelled = cloneCancelled
+                cloneCancelled = false
                 host.updateState {
                     it.copy(
                         gitCloneRunning = false,
                         gitCloneMessage = null,
-                        toastMessage = "Clone failed: ${error.message?.lineSequence()?.lastOrNull()?.take(180) ?: "Unknown error"}",
+                        toastMessage = if (wasCancelled) "Clone cancelled" else "Clone failed: ${error.message?.lineSequence()?.lastOrNull()?.take(180) ?: "Unknown error"}",
                     )
                 }
             }

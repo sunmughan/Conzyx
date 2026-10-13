@@ -2499,6 +2499,7 @@ private fun RootScreenHost(
                     onImportZip = viewModel::importZipProject,
                     onImportFolder = viewModel::importFolderProject,
                     onCloneGit = viewModel::clonePublicGitRepository,
+                    onCancelGitClone = viewModel::cancelGitClone,
                     onStartGitHubLogin = viewModel::startGitHubLogin,
                     onGenerateNewGitHubCode = viewModel::generateNewGitHubCode,
                     onRefreshGitHub = viewModel::refreshGitHubRepositories,
@@ -3792,6 +3793,7 @@ private fun ProjectsScreen(
     onImportZip: (Uri) -> Unit,
     onImportFolder: (Uri) -> Unit = {},
     onCloneGit: (String) -> Unit,
+    onCancelGitClone: () -> Unit = {},
     onStartGitHubLogin: () -> Unit,
     onGenerateNewGitHubCode: () -> Unit,
     onRefreshGitHub: () -> Unit,
@@ -4261,7 +4263,10 @@ private fun ProjectsScreen(
         },
     )
     if (showGitDialog) AlertDialog(
-        onDismissRequest = { if (!state.gitCloneRunning) showGitDialog = false },
+        // Dismiss is always allowed: the clone runs detached in the
+        // ViewModel scope, so dismissing only hides this dialog and never
+        // stops or orphans the clone. "Cancel clone" below is the real stop.
+        onDismissRequest = { showGitDialog = false },
         icon = { Icon(Icons.Default.Code, null, tint = PocketOrange) },
         title = { Text("Clone Git repository") },
         text = {
@@ -4283,7 +4288,14 @@ private fun ProjectsScreen(
                 onClick = { onCloneGit(gitUrl); showGitDialog = false; gitUrl = "" },
             ) { Text(if (state.gitCloneRunning) "Cloning…" else "Clone project") }
         },
-        dismissButton = { TextButton(onClick = { showGitDialog = false }, enabled = !state.gitCloneRunning) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    if (state.gitCloneRunning) onCancelGitClone()
+                    showGitDialog = false
+                },
+            ) { Text(if (state.gitCloneRunning) "Cancel clone" else "Cancel") }
+        },
     )
     if (showGitHubDialog) {
         val clipboard = LocalClipboardManager.current
@@ -4291,7 +4303,9 @@ private fun ProjectsScreen(
             repositorySearch.isBlank() || repository.fullName.contains(repositorySearch, ignoreCase = true)
         }
         AlertDialog(
-            onDismissRequest = { if (!state.gitCloneRunning) showGitHubDialog = false },
+            // Dismiss is always allowed (see the clone dialog above): the
+            // clone runs detached, dismissing only hides this dialog.
+            onDismissRequest = { showGitHubDialog = false },
             icon = { Icon(Icons.Default.Code, null, tint = PocketOrange) },
             title = { Text(state.githubLogin?.let { "GitHub · @$it" } ?: "Connect GitHub") },
             text = {
@@ -4377,15 +4391,21 @@ private fun ProjectsScreen(
                 }
             },
             confirmButton = {
-                if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
+                if (state.gitCloneRunning) {
+                    TextButton(onClick = { onCancelGitClone(); showGitHubDialog = false }) { Text("Cancel clone") }
+                } else if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
                     TextButton(onClick = { showGitHubDialog = false }) { Text("Close") }
                 }
             },
             dismissButton = {
-                if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
-                    TextButton(onClick = { onDisconnectGitHub(); showGitHubDialog = false }) { Text("Disconnect") }
-                } else if (state.githubAuthStatus != GitHubAuthStatus.STARTING) {
-                    TextButton(onClick = { showGitHubDialog = false }) { Text("Cancel") }
+                // While a clone runs, the only action is "Cancel clone" above:
+                // Disconnect/Cancel here would leave the clone's fate unclear.
+                if (!state.gitCloneRunning) {
+                    if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
+                        TextButton(onClick = { onDisconnectGitHub(); showGitHubDialog = false }) { Text("Disconnect") }
+                    } else if (state.githubAuthStatus != GitHubAuthStatus.STARTING) {
+                        TextButton(onClick = { showGitHubDialog = false }) { Text("Cancel") }
+                    }
                 }
             },
         )
@@ -4399,7 +4419,10 @@ private fun ProjectsScreen(
         val downloaded = state.appUpdateDownloadedBytes
         val progress = if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
         AlertDialog(
-            onDismissRequest = { if (!installing) showUpdateDialog = false },
+            // Dismiss is always allowed: the download/install runs detached
+            // (the Android installer takes over at the end), so dismissing
+            // only hides this dialog. Reopen it from the update banner.
+            onDismissRequest = { showUpdateDialog = false },
             icon = { Icon(Icons.Default.Download, null, tint = PocketOrange, modifier = Modifier.size(34.dp)) },
             title = { Text("Update to ${update.versionName}", fontWeight = FontWeight.Bold) },
             text = {
@@ -4444,7 +4467,7 @@ private fun ProjectsScreen(
                     Text(when { !canInstall -> "Grant permission"; downloading -> "Downloading…"; installing -> "Installing…"; else -> "Download and install" })
                 }
             },
-            dismissButton = { if (!installing) TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } },
+            dismissButton = { TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } },
         )
     }
 }
@@ -4790,7 +4813,6 @@ private fun WorkspaceScreen(
     onOpenCloudHybrid: () -> Unit = {},
     onOpenMarketplace: () -> Unit = {},
 ) {
-    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val isAndroidProject = state.androidProjectDetected
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -4857,6 +4879,14 @@ private fun WorkspaceScreen(
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
+    // System back: from any tab other than Chat, back returns to Chat first;
+    // only on Chat does back leave the project. Declared AFTER selectedTab
+    // so the handler reads live tab state. Dialogs/sheets (chats, palette)
+    // register their own handlers later in this composition, so back still
+    // dismisses them before this handler runs.
+    BackHandler(onBack = {
+        if (selectedTab != WorkspaceTab.CHAT) selectedTab = WorkspaceTab.CHAT else onBack()
+    })
     var lastHandledPreviewUrl by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(state.previewUrl, state.previewReady) {
         if (!state.previewReady || state.previewUrl.isNullOrBlank()) {
@@ -5021,7 +5051,12 @@ private fun WorkspaceScreen(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.combinedClickable(
-                                        onClick = {},
+                                        // Tap shows the project name, same as
+                                        // long-press: a tap must do something
+                                        // real instead of silently no-op.
+                                        onClick = {
+                                            Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
+                                        },
                                         onLongClick = {
                                             Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
                                         },

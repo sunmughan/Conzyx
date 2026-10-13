@@ -2421,6 +2421,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cloneGitHubRepository(repository: GitHubRepository) =
         gitHubAuthCoordinator.cloneGitHubRepository(repository)
+
+    fun cancelGitClone() = gitHubAuthCoordinator.cancelGitClone()
     // ---- Milestone 1: GitHub auth moved to GitHubAuthCoordinator. ----
     fun startGitHubLogin() =
         gitHubAuthCoordinator.startGitHubLogin()
