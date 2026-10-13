@@ -324,7 +324,6 @@ private fun BlueprintTab(
                                 AppFramework.FULLSTACK_BACKEND -> 1.2f
                             }
                         ),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     )
                 }
             }

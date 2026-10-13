@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -107,7 +108,16 @@ private val BrowserTabsSaver = listSaver<List<BrowserTab>, String>(
     },
 )
 
-private data class BrowserHistoryItem(
+/**
+ * State wrapper around [BrowserTabsSaver]: rememberSaveable with a
+ * Saver<List<BrowserTab>, ...> returns the plain list, not a MutableState,
+ * so `var tabs by rememberSaveable(saver = BrowserTabsSaver)` does not compile.
+ * This saver persists the MutableState itself, keeping `by` delegation working.
+ */
+private val BrowserTabsStateSaver = Saver<MutableState<List<BrowserTab>>, List<String>>(
+    save = { state -> BrowserTabsSaver.save(state.value) },
+    restore = { saved -> mutableStateOf(BrowserTabsSaver.restore(saved) ?: listOf(BrowserTab(id = "tab_initial"))) },
+)
     val title: String,
     val url: String,
     val timestamp: Long = System.currentTimeMillis(),
@@ -207,7 +217,7 @@ fun PreviewTab(
     LaunchedEffect(Unit) { onScanPorts {} }
 
     // Multi-tab state
-    var tabs by rememberSaveable(saver = BrowserTabsSaver) {
+    var tabs by rememberSaveable(saver = BrowserTabsStateSaver) {
         mutableStateOf(
             listOf(
                 BrowserTab(

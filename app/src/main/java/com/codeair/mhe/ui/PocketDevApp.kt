@@ -6477,7 +6477,6 @@ private fun ChatTab(
                                             modifier = Modifier.size(18.dp),
                                         )
                                     }
-                                }
                             } else {
                                 Box(
                                     modifier = Modifier
