@@ -457,6 +457,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
     private var lastInterruptedRequest: RuntimeRetryRequest? = null
     private val failedApiKeyIds = mutableSetOf<String>()
+    // Sessions killed by Stop or by switching agents. Their bridges may still
+    // emit late events (a Custom HTTP stream finishing after the switch);
+    // those events must never leak into the new agent's chat.
+    private val ignoredSessionIds = mutableSetOf<String>()
     private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
 
     // Runtime providers often emit many tiny text deltas. Coalesce them before
@@ -1223,9 +1227,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectAgent(kind: AgentKind) {
         if (_state.value.agentKind == kind) return
+        // Switching agents is instant: tapping another agent stops the current
+        // session (if any) and activates the tapped one. No Stop-first step,
+        // no restart, no stuck flag.
         if (_state.value.isRunning) {
-            _state.update { it.copy(toastMessage = "Stop the current agent before switching.") }
-            return
+            stopTask()
         }
         val selectingInitialAgent = !preferences.runtimeSetupComplete
         preferences.agentKind = kind.stableId
@@ -3254,7 +3260,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runtimeRecoveryAttempt = 0
         activeRuntimeRequest = null
         lastInterruptedRequest = null
-        _state.update { it.copy(isRunning = false, runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
+        // The stopped session's late events must never reach the chat again.
+        _state.value.activeSessionId?.let {
+            ignoredSessionIds += it
+            if (ignoredSessionIds.size > 100) ignoredSessionIds.remove(ignoredSessionIds.first())
+        }
+        _state.update { it.copy(isRunning = false, activeSessionId = null, pendingApproval = null, runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
         MobileHarnessApplication.appScope.launch { activeRuntime().stopActiveSession() }
     }
 
@@ -3354,6 +3365,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun onRuntimeEvent(event: RuntimeEvent) {
+        // Late events from a stopped / switched-away session are dropped here,
+        // before any buffering or handling, so they can never leak into the
+        // new agent's chat.
+        if (event.sessionId in ignoredSessionIds) return
         if (event is RuntimeEvent.AssistantDelta) {
             // Preserve event order across sessions while batching high-frequency token deltas.
             if (pendingAssistantDelta.isNotEmpty() && pendingAssistantDeltaSessionId != event.sessionId) {
