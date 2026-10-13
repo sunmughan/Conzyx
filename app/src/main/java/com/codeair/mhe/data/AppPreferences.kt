@@ -33,6 +33,19 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("app_tour_completed_v3", false)
         set(value) { preferences.edit().putBoolean("app_tour_completed_v3", value).apply() }
 
+    /** One-time studio onboarding: shown on first open of each studio, never again after Skip/Exit. */
+    var appFactoryOnboardingSeen: Boolean
+        get() = preferences.getBoolean("app_factory_onboarding_seen", false)
+        set(value) { preferences.edit().putBoolean("app_factory_onboarding_seen", value).apply() }
+
+    var teamStudioOnboardingSeen: Boolean
+        get() = preferences.getBoolean("team_studio_onboarding_seen", false)
+        set(value) { preferences.edit().putBoolean("team_studio_onboarding_seen", value).apply() }
+
+    var cloudHybridOnboardingSeen: Boolean
+        get() = preferences.getBoolean("cloud_hybrid_onboarding_seen", false)
+        set(value) { preferences.edit().putBoolean("cloud_hybrid_onboarding_seen", value).apply() }
+
     var runtimeSetupComplete: Boolean
         get() = preferences.getBoolean("runtime_setup_complete", false)
         set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).apply() }

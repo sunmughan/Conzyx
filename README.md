@@ -93,6 +93,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Browser URL bar back to 2.2.2 (2026-10-13)**: the tall 50dp URL bar is restored to the 2.2.2 slim 40dp pill (20dp radius) with the Reload button embedded on the left and the Go button inside on the right. The 3-dots menu moved out of the top row down to the end of the icon row, after the other icons.
 - **File open no longer fails silently (2026-10-13)**: tapping a file with no active project used to do nothing at all. It now shows "No project open. Open a project first, then tap the file again."
 - **App updates pill fix (2026-10-13)**: Settings > App updates no longer shows an "ONLINE EDITION" badge plus a separate version label plus an "Automatic background updates are enabled." line. One small fully-rounded pill now reads "v3.0.1 ONLINE" (or "v3.0.1 OFFLINE"), sitting on the left with the Check now button on the right, in the same pill shape as the button.
+- **Studios row + one-time studio onboarding (2026-10-13)**: the home screen no longer stacks three full-width studio cards. One "Studios" section now holds three small cards in a single row (App Factory, Multi Agent, Cloud Hybrid). Opening a studio the first time shows a one-time explainer of what that studio does; Got it / Skip opens the studio, Exit closes it, and any dismissal marks it seen so it never shows again for that studio.
 
 ### 🛡️ Reliability
 

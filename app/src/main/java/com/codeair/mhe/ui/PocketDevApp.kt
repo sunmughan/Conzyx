@@ -21,6 +21,8 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import com.codeair.mhe.BuildConfig
 import com.codeair.mhe.R
+import com.codeair.mhe.data.AppPreferences
+import com.codeair.mhe.ui.navigation.OverlayScreen
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -313,6 +315,50 @@ fun PocketDevApp(
     var showAuthModal by rememberSaveable { mutableStateOf(false) }
     // Milestone 1: overlay navigation separated into PocketDevNavigator.
     val navigator = remember { com.codeair.mhe.ui.navigation.PocketDevNavigator() }
+    val appPreferences = remember { AppPreferences(context) }
+    // One-time per-studio onboarding: first open of a studio shows its
+    // explainer; Skip/Exit marks it seen so it never shows again.
+    var pendingStudioOnboarding by remember { mutableStateOf<OverlayScreen?>(null) }
+    val openStudio: (OverlayScreen) -> Unit = { studio ->
+        val seen = when (studio) {
+            OverlayScreen.APP_FACTORY -> appPreferences.appFactoryOnboardingSeen
+            OverlayScreen.TEAM_STUDIO -> appPreferences.teamStudioOnboardingSeen
+            OverlayScreen.CLOUD_HYBRID -> appPreferences.cloudHybridOnboardingSeen
+            else -> true
+        }
+        if (seen) {
+            when (studio) {
+                OverlayScreen.APP_FACTORY -> navigator.openAppFactory()
+                OverlayScreen.TEAM_STUDIO -> navigator.openTeamStudio()
+                OverlayScreen.CLOUD_HYBRID -> navigator.openCloudHybrid()
+                else -> Unit
+            }
+        } else {
+            pendingStudioOnboarding = studio
+        }
+    }
+    val markStudioOnboardingSeen: (OverlayScreen) -> Unit = { studio ->
+        when (studio) {
+            OverlayScreen.APP_FACTORY -> appPreferences.appFactoryOnboardingSeen = true
+            OverlayScreen.TEAM_STUDIO -> appPreferences.teamStudioOnboardingSeen = true
+            OverlayScreen.CLOUD_HYBRID -> appPreferences.cloudHybridOnboardingSeen = true
+            else -> Unit
+        }
+    }
+    pendingStudioOnboarding?.let { studio ->
+        StudioOnboardingDialog(
+            studio = studio,
+            onProceed = {
+                markStudioOnboardingSeen(studio)
+                pendingStudioOnboarding = null
+                openStudio(studio)
+            },
+            onExit = {
+                markStudioOnboardingSeen(studio)
+                pendingStudioOnboarding = null
+            },
+        )
+    }
 
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -555,9 +601,9 @@ fun PocketDevApp(
             onScanPorts = viewModel::scanActiveLocalhostPorts,
             onAttachVisualInspection = viewModel::attachVisualInspectionToAgent,
             viewModel = viewModel,
-            onOpenAppFactory = { navigator.openAppFactory() },
-            onOpenTeamStudio = { navigator.openTeamStudio() },
-            onOpenCloudHybrid = { navigator.openCloudHybrid() },
+            onOpenAppFactory = { openStudio(OverlayScreen.APP_FACTORY) },
+            onOpenTeamStudio = { openStudio(OverlayScreen.TEAM_STUDIO) },
+            onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
             onOpenMarketplace = { navigator.openMarketplace() },
         )
         else -> RootScreenHost(
@@ -566,9 +612,9 @@ fun PocketDevApp(
             projectsListState = projectsListState,
             authViewModel = authViewModel,
             onNavigateToAuth = { showAuthModal = true },
-            onOpenAppFactory = { navigator.openAppFactory() },
-            onOpenTeamStudio = { navigator.openTeamStudio() },
-            onOpenCloudHybrid = { navigator.openCloudHybrid() },
+            onOpenAppFactory = { openStudio(OverlayScreen.APP_FACTORY) },
+            onOpenTeamStudio = { openStudio(OverlayScreen.TEAM_STUDIO) },
+            onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
         )
     }
 }
@@ -3494,25 +3540,88 @@ private fun ClaudeSubscriptionCredentialsStep(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+/**
+ * One-time explainer shown on the first open of each studio. Any dismissal
+ * (Got it, Skip, back press, outside tap) marks it seen; the caller decides
+ * whether to proceed into the studio (Got it / Skip) or stay put (exit).
+ */
+@Composable
+private fun StudioOnboardingDialog(
+    studio: OverlayScreen,
+    onProceed: () -> Unit,
+    onExit: () -> Unit,
+) {
+    val (title, bullets) = when (studio) {
+        OverlayScreen.APP_FACTORY -> "What is App Factory?" to listOf(
+            "Describe your app idea, and AI builds the whole app for you: screens, logic, and database.",
+            "Build a real APK on your device or with CI, no laptop needed.",
+            "Get a Play Store-ready package, with listing and release built in.",
+        )
+        OverlayScreen.TEAM_STUDIO -> "What is Multi-Agent Studio?" to listOf(
+            "Give one goal, and a team of up to 10 AI engineering agents works on it together.",
+            "A DAG scheduler splits the work, and the Blackboard shows every agent's live progress.",
+            "Open any agent to see its tasks, output, and artifacts.",
+        )
+        OverlayScreen.CLOUD_HYBRID -> "What is Cloud Hybrid?" to listOf(
+            "Your phone and the cloud work as one team: heavy jobs move to fast cloud runners.",
+            "Live hardware telemetry shows battery, CPU, and network while work runs.",
+            "Your phone stays light and smooth, even on big builds.",
+        )
+        else -> "" to emptyList()
+    }
+    AlertDialog(
+        onDismissRequest = onExit,
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                bullets.forEach { bullet ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("•", color = MaterialTheme.colorScheme.primary)
+                        Text(bullet, fontSize = 14.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onProceed) { Text("Got it") }
+        },
+        dismissButton = {
+            TextButton(onClick = onProceed) { Text("Skip") }
+        },
+    )
+}
+
 private fun StudioCardsSection(
     onOpenAppFactory: () -> Unit,
     onOpenTeamStudio: () -> Unit,
     onOpenCloudHybrid: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "Studios",
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .weight(1f)
+                    .height(112.dp)
                     .clickable { onOpenAppFactory() },
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
             ) {
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -3528,47 +3637,38 @@ private fun StudioCardsSection(
                             )
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "App Factory Studio",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "AI Scaffolding, SQLite DB, On-Device/CI Build & Play Store",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Open App Factory",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "App Factory",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .weight(1f)
+                    .height(112.dp)
                     .clickable { onOpenTeamStudio() },
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)),
             ) {
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(36.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -3579,47 +3679,38 @@ private fun StudioCardsSection(
                             )
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Multi-Agent Studio",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "10 Autonomous Engineering Agents, DAG Scheduler & Blackboard",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Open Multi-Agent Studio",
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(18.dp),
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Multi Agent",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .weight(1f)
+                    .height(112.dp)
                     .clickable { onOpenCloudHybrid() },
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
             ) {
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(36.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -3630,28 +3721,19 @@ private fun StudioCardsSection(
                             )
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Cloud Hybrid Studio",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "Hardware Telemetry, FastBuild Remote Runners & GPU Offload",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Open Cloud Hybrid Studio",
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(18.dp),
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Cloud Hybrid",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
+        }
     }
 }
 
