@@ -47,7 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -165,16 +165,24 @@ fun CollaborationStudioScreen(
                 }
             }
 
-            // Tab Navigation
-            PrimaryTabRow(
+            // Horizontally scrollable single-line tabs keep labels readable on narrow screens.
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
+                edgePadding = 12.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 CollabTab.entries.forEachIndexed { index, tab ->
                     Tab(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        text = { Text(tab.title, fontSize = 13.sp) }
+                        text = {
+                            Text(
+                                text = tab.title,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     )
                 }
             }
@@ -474,14 +482,25 @@ private fun OverviewTabContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(onClick = { manager.createShareSession(projectId, projectName) }) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { manager.createShareSession(projectId, projectName) },
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
                                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Start Shared Session")
+                                Spacer(Modifier.width(8.dp))
+                                Text("Start Shared Session", maxLines = 1, softWrap = false)
                             }
-                            OutlinedButton(onClick = onOpenJoinDialog) {
-                                Text("Join with Token")
+                            OutlinedButton(
+                                onClick = onOpenJoinDialog,
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
+                                Text("Join with Token", maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -578,15 +597,24 @@ private fun TeamRbacTabContent(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column {
                             Text(org.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("Plan: ${org.plan.displayName} (Max ${org.plan.maxSeats} seats)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "Plan: ${org.plan.displayName} (Max ${org.plan.maxSeats} seats)",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        CompactActionButton("Invite Member", onClick = onOpenInviteDialog, icon = Icons.Default.Add)
+                        CompactActionButton(
+                            text = "Invite Member",
+                            onClick = onOpenInviteDialog,
+                            icon = Icons.Default.Add,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -693,17 +721,21 @@ private fun CodeReviewsTabContent(
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
         item {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     "Inline Code Review Threads (${comments.size})",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f)
+                    fontSize = 14.sp
                 )
-                CompactActionButton("Add Comment", onClick = onOpenNewComment, icon = Icons.Default.Add)
+                CompactActionButton(
+                    text = "Add Comment",
+                    onClick = onOpenNewComment,
+                    icon = Icons.Default.Add,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
@@ -805,17 +837,21 @@ private fun CheckpointsAndJobsTabContent(
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
         item {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     "Collaborative Checkpoints (${checkpoints.size})",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f)
+                    fontSize = 14.sp
                 )
-                CompactActionButton("New Checkpoint", onClick = onOpenNewCheckpoint, icon = Icons.Default.Add)
+                CompactActionButton(
+                    text = "New Checkpoint",
+                    onClick = onOpenNewCheckpoint,
+                    icon = Icons.Default.Add,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
@@ -853,17 +889,21 @@ private fun CheckpointsAndJobsTabContent(
 
         item {
             Spacer(Modifier.height(8.dp))
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     "Shared AI Agent Sessions (${agentJobs.size})",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f)
+                    fontSize = 14.sp
                 )
-                CompactActionButton("Dispatch Agent", onClick = onOpenNewAgentJob, icon = Icons.Default.SmartToy)
+                CompactActionButton(
+                    text = "Dispatch Agent",
+                    onClick = onOpenNewAgentJob,
+                    icon = Icons.Default.SmartToy,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
@@ -949,12 +989,13 @@ private fun CheckpointsAndJobsTabContent(
 private fun CompactActionButton(
     text: String,
     onClick: () -> Unit,
-    icon: ImageVector? = null
+    icon: ImageVector? = null,
+    modifier: Modifier = Modifier
 ) {
     Button(
         onClick = onClick,
-        modifier = Modifier.height(48.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        modifier = modifier.height(44.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     ) {
         if (icon != null) {
             Icon(icon, null, modifier = Modifier.size(15.dp))
