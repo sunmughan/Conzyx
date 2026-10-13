@@ -1406,7 +1406,10 @@ private fun TeamReviewBudgetTab(orchestrator: AgentTeamOrchestrator) {
                                     text = rev.verdict.name,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White,
+                                    color = when (rev.verdict) {
+                                        ReviewVerdict.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        else -> Color.White
+                                    },
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
