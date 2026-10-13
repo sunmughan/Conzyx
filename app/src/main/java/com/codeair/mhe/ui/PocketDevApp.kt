@@ -5444,14 +5444,14 @@ private fun ChatSwitcherDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (allowCreate) {
-                    Button(onClick = onCreate, enabled = switchingEnabled, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = onCreate, enabled = true, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Add, null)
                         Spacer(Modifier.width(8.dp))
                         Text("New chat")
                     }
                 }
                 if (!switchingEnabled) {
-                    Text("Finish the running task before switching chats.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("New conversations can be created now. Switch to them after the running task finishes.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(chats, key = { it.id }) { chat ->
