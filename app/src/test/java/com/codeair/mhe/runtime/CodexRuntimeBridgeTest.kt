@@ -122,7 +122,7 @@ class CodexRuntimeBridgeTest {
     fun `workspace prompt keeps generated files in the mounted project`() {
         val prompt = codexWorkspacePrompt("bold-kalam", "Create hello.py")
         assertTrue("/workspace/bold-kalam" in prompt)
-        assertTrue("Do not create project output" in prompt)
+        assertTrue("only inside this directory" in prompt)
         assertTrue(prompt.endsWith("Create hello.py"))
     }
 }
