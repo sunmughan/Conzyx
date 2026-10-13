@@ -5316,12 +5316,11 @@ private fun WorkspaceCommandPalette(
                                 Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                // No right-side label: it only repeated the enum
+                                // name in lowercase ("chat", "files", ...), the
+                                // same identity as the title, and stole width
+                                // from it. Search still matches on keywords.
                                 Text(command.title, Modifier.weight(1f))
-                                Text(
-                                    command.name.replace('_', ' ').lowercase(),
-                                    fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                             }
                         }
                     }
