@@ -784,7 +784,10 @@ fun EngineeringStateBanner(
     onRollbackToBaseline: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    if (snapshot == null || snapshot.state == EngineeringState.IDLE) return
+    // The Analyzing status pill is removed by user order: no "Analyzing Requirements"
+    // banner while the agent is analyzing. Other states (plan, build, fix, failure)
+    // still show.
+    if (snapshot == null || snapshot.state == EngineeringState.IDLE || snapshot.state == EngineeringState.ANALYZING) return
 
     val state = snapshot.state
     val (label, color, icon) = when (state) {

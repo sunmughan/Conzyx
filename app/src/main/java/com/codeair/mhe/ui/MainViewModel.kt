@@ -4263,8 +4263,16 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             current.messages
         } else {
             val startedAt = current.workSegmentStartedAtMillis ?: current.taskStartedAtMillis ?: System.currentTimeMillis()
+            // Crash fix (2026-10-13): never persist a second "interrupted-<session>"
+            // row. persistMessages runs from many places; if the transcript already
+            // holds one for this session, appending another gives the chat list two
+            // items with the same key, and LazyColumn throws on duplicate keys.
+            val interruptedId = "interrupted-${current.activeSessionId ?: chatId}"
+            if (current.messages.any { it.id == interruptedId }) {
+                current.messages
+            } else {
             current.messages + ChatMessage(
-                id = "interrupted-${current.activeSessionId ?: chatId}",
+                id = interruptedId,
                 fromUser = false,
                 text = "",
                 workItems = liveItems.map { it.copy(isComplete = true) } + ActivityItem(
@@ -4273,6 +4281,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 ),
                 workedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
             )
+            }
         }
         transcriptWrites.trySend(TranscriptWrite(project.id, chatId, messages))
     }

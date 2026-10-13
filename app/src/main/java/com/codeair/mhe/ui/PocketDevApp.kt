@@ -4924,28 +4924,6 @@ private fun WorkspaceScreen(
                                             else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
                                         }
                                     }
-                                    if (state.isRunning) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                            shape = RoundedCornerShape(12.dp),
-                                            modifier = Modifier.widthIn(max = 118.dp),
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                Text(
-                                                    "Analyzing…",
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                        }
-                                    }
                                     IconButton(
                                         onClick = { showChats = true },
                                         modifier = Modifier.size(36.dp),
@@ -6067,7 +6045,12 @@ private fun ChatTab(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(messages, key = { it.id }) { rawMessage ->
+                // Crash fix (2026-10-13): keys must be unique even if the message
+                // list ever holds two rows with the same id (duplicate ids used
+                // to throw IllegalArgumentException and kill the app). The index
+                // suffix guarantees uniqueness; the id prefix keeps item identity
+                // stable for the append-only chat list.
+                itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { _, rawMessage ->
                     val message = if (!isRunning && rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
                         val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
                         if (parsed != null) rawMessage.copy(roadmap = parsed) else rawMessage

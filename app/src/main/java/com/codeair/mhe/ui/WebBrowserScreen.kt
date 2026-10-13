@@ -371,15 +371,16 @@ fun PreviewTab(
             tonalElevation = 1.dp,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
-                // Top row: URL bar + 3-Dots Menu only
+                // Top row: URL bar only, restored to the 2.2.2 slim pill layout.
+                // The 3-dots menu lives in the second row, after the other icons.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    // Tall URL bar (height 50dp) with embedded Go button
+                    // Slim, modern pill URL bar (height 40dp) with embedded Reload and Go buttons (2.2.2 layout)
                     Surface(
-                        shape = RoundedCornerShape(25.dp),
+                        shape = RoundedCornerShape(20.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(
                             width = 1.dp,
@@ -388,7 +389,7 @@ fun PreviewTab(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(50.dp),
+                            .height(40.dp),
                     ) {
                         Row(
                             modifier = Modifier
@@ -396,6 +397,19 @@ fun PreviewTab(
                                 .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            // Embedded Reload button on the left (2.2.2 layout)
+                            IconButton(
+                                onClick = { webView?.reload() ?: navigate() },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Reload",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (currentTab.activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+
                             // Center URL input
                             Box(
                                 modifier = Modifier
@@ -473,7 +487,166 @@ fun PreviewTab(
                         }
                     }
 
-                    // 3-Dots Menu button (MoreVert)
+                }
+
+                // Second row: browser action buttons (refresh, tabs, viewport, AI, desktop, inspector, devtools)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // Refresh
+                    IconButton(
+                        onClick = { webView?.reload() ?: navigate() },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Reload",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (currentTab.activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    // Tab Counter
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (showTabsStrip) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, if (showTabsStrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showTabsStrip = !showTabsStrip },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "${tabs.size}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (showTabsStrip) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+
+                    // Viewport / Fullscreen Switcher
+                    Box {
+                        IconButton(
+                            onClick = { showViewportDropdown = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (activeViewportPreset.isMobile) Icons.Default.Smartphone else if (activeViewportPreset.id == "ipad") Icons.Default.Tablet else Icons.Default.Laptop,
+                                contentDescription = "Viewport: ${activeViewportPreset.name}",
+                                tint = if (activeViewportPreset.widthDp > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showViewportDropdown,
+                            onDismissRequest = { showViewportDropdown = false },
+                        ) {
+                            ViewportPreset.ALL.forEach { preset ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            if (preset == activeViewportPreset) {
+                                                Icon(Icons.Default.Check, null, Modifier.size(16.dp), tint = PocketGreen)
+                                            } else {
+                                                Spacer(Modifier.size(16.dp))
+                                            }
+                                            Text(preset.name, fontSize = 12.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        onSetViewportPreset(preset)
+                                        showViewportDropdown = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    // AI Visual Debugger
+                    IconButton(
+                        onClick = {
+                            val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
+                            val bmp = webView?.let { VisualCaptureEngine.captureWebView(it) }
+                            if (bmp != null) {
+                                onSaveVisualSnapshot(bmp, "Visual Bug Snapshot", targetUrl) { snap ->
+                                    aiDebuggerSnapshot = snap
+                                    showAiDebuggerDialog = true
+                                }
+                            } else {
+                                showAiDebuggerDialog = true
+                            }
+                        },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "Debug with AI",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+
+                    // Desktop site toggle
+                    IconButton(
+                        onClick = toggleDesktopSite,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DesktopWindows,
+                            contentDescription = "Desktop site",
+                            tint = if (currentTab.isDesktopMode) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+
+                    // DOM Touch Inspector Toggle
+                    IconButton(
+                        onClick = {
+                            isInspectorActive = !isInspectorActive
+                            webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(isInspectorActive), null)
+                            Toast.makeText(context, if (isInspectorActive) "DOM Inspector enabled: Tap element" else "DOM Inspector disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HighlightAlt,
+                            contentDescription = "Inspect Element",
+                            tint = if (isInspectorActive) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+
+                    // DevTools button with live error badge
+                    Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                        IconButton(
+                            onClick = { showDevToolsSheet = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeveloperMode,
+                                contentDescription = "Open DevTools",
+                                tint = if (visualConsoleLogs.any { it.level == LogLevel.ERROR } || visualNetworkLogs.any { it.isFailed }) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        val errCount = visualConsoleLogs.count { it.level == LogLevel.ERROR } + visualNetworkLogs.count { it.isFailed }
+                        if (errCount > 0) {
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
+                            ) {
+                                Text(errCount.coerceAtMost(99).toString(), fontSize = 8.sp)
+                            }
+                        }
+                    }
+                    // 3-Dots Menu button (MoreVert), after the other icons in this row
                     Box {
                         IconButton(
                             onClick = { showMoreMenu = true },
@@ -678,165 +851,6 @@ fun PreviewTab(
                                     Toast.makeText(context, "Attached visual preview context to Agent", Toast.LENGTH_SHORT).show()
                                 },
                             )
-                        }
-                    }
-                }
-
-                // Second row: browser action buttons (refresh, tabs, viewport, AI, desktop, inspector, devtools)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    // Refresh
-                    IconButton(
-                        onClick = { webView?.reload() ?: navigate() },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Reload",
-                            modifier = Modifier.size(18.dp),
-                            tint = if (currentTab.activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    // Tab Counter
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (showTabsStrip) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, if (showTabsStrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { showTabsStrip = !showTabsStrip },
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "${tabs.size}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (showTabsStrip) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-
-                    // Viewport / Fullscreen Switcher
-                    Box {
-                        IconButton(
-                            onClick = { showViewportDropdown = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (activeViewportPreset.isMobile) Icons.Default.Smartphone else if (activeViewportPreset.id == "ipad") Icons.Default.Tablet else Icons.Default.Laptop,
-                                contentDescription = "Viewport: ${activeViewportPreset.name}",
-                                tint = if (activeViewportPreset.widthDp > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showViewportDropdown,
-                            onDismissRequest = { showViewportDropdown = false },
-                        ) {
-                            ViewportPreset.ALL.forEach { preset ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            if (preset == activeViewportPreset) {
-                                                Icon(Icons.Default.Check, null, Modifier.size(16.dp), tint = PocketGreen)
-                                            } else {
-                                                Spacer(Modifier.size(16.dp))
-                                            }
-                                            Text(preset.name, fontSize = 12.sp)
-                                        }
-                                    },
-                                    onClick = {
-                                        onSetViewportPreset(preset)
-                                        showViewportDropdown = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    // AI Visual Debugger
-                    IconButton(
-                        onClick = {
-                            val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
-                            val bmp = webView?.let { VisualCaptureEngine.captureWebView(it) }
-                            if (bmp != null) {
-                                onSaveVisualSnapshot(bmp, "Visual Bug Snapshot", targetUrl) { snap ->
-                                    aiDebuggerSnapshot = snap
-                                    showAiDebuggerDialog = true
-                                }
-                            } else {
-                                showAiDebuggerDialog = true
-                            }
-                        },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "Debug with AI",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-
-                    // Desktop site toggle
-                    IconButton(
-                        onClick = toggleDesktopSite,
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DesktopWindows,
-                            contentDescription = "Desktop site",
-                            tint = if (currentTab.isDesktopMode) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-
-                    // DOM Touch Inspector Toggle
-                    IconButton(
-                        onClick = {
-                            isInspectorActive = !isInspectorActive
-                            webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(isInspectorActive), null)
-                            Toast.makeText(context, if (isInspectorActive) "DOM Inspector enabled: Tap element" else "DOM Inspector disabled", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.HighlightAlt,
-                            contentDescription = "Inspect Element",
-                            tint = if (isInspectorActive) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-
-                    // DevTools button with live error badge
-                    Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-                        IconButton(
-                            onClick = { showDevToolsSheet = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DeveloperMode,
-                                contentDescription = "Open DevTools",
-                                tint = if (visualConsoleLogs.any { it.level == LogLevel.ERROR } || visualNetworkLogs.any { it.isFailed }) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        val errCount = visualConsoleLogs.count { it.level == LogLevel.ERROR } + visualNetworkLogs.count { it.isFailed }
-                        if (errCount > 0) {
-                            Badge(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
-                            ) {
-                                Text(errCount.coerceAtMost(99).toString(), fontSize = 8.sp)
-                            }
                         }
                     }
                 }

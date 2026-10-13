@@ -81,7 +81,13 @@ class EditorCoordinator(
     }
 
     fun openFileByPath(path: String) {
-        val project = host.state().activeProject ?: return
+        // Never fail silently: a tap with no active project used to do nothing
+        // at all, which looks exactly like "file does not open".
+        val project = host.state().activeProject
+        if (project == null) {
+            host.updateState { it.copy(toastMessage = "No project open. Open a project first, then tap the file again.") }
+            return
+        }
         val currentTabs = host.state().openEditorTabs
         val updatedTabs = if (path in currentTabs) currentTabs else currentTabs + path
         preferences.setOpenEditorTabs(project.id, updatedTabs)

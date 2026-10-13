@@ -601,7 +601,12 @@ class AppPreferences(private val context: Context) {
                     } else null,
                 )
             }
-        }.getOrDefault(emptyList())
+        // Crash fix (2026-10-13): a persisted transcript could contain two messages
+        // with the same id (two "interrupted-<sessionId>" rows). The chat
+        // LazyColumn keys by message id, and a duplicate key throws
+        // IllegalArgumentException and kills the app on every launch. Drop
+        // duplicates here (keep first) so a poisoned transcript heals on load.
+        }.getOrDefault(emptyList()).distinctBy { it.id }
     }
 
     fun getOpenEditorTabs(projectId: String): List<String> {

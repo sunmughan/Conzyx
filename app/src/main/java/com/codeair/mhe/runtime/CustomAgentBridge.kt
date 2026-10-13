@@ -75,14 +75,20 @@ class CustomAgentBridge(
             return@withContext sessionId
         }
         try {
-            val text = when (resolveApiType(provider)) {
-                ApiType.ANTHROPIC -> callAnthropic(baseUrl, secret, model, prompt, conversationHistory)
-                ApiType.OPENAI -> callOpenAi(baseUrl, secret, model, prompt, conversationHistory)
+            // Streaming: deltas are emitted live as they arrive so the chat shows
+            // the reply growing instead of one silent "deciding" line until the
+            // whole response is done. Endpoints that ignore stream=true fall back
+            // to a single full response, which is then emitted chunked as before.
+            val (text, streamed) = when (resolveApiType(provider)) {
+                ApiType.ANTHROPIC -> callAnthropic(baseUrl, secret, model, prompt, conversationHistory, sessionId)
+                ApiType.OPENAI -> callOpenAi(baseUrl, secret, model, prompt, conversationHistory, sessionId)
             }
             if (text.isBlank()) {
                 eventBus.emit(RuntimeEvent.SessionFailed(sessionId, "The API returned an empty response."))
             } else {
-                text.chunked(600).forEach { eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, it)) }
+                if (!streamed) {
+                    text.chunked(600).forEach { eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, it)) }
+                }
                 eventBus.emit(RuntimeEvent.SessionCompleted(sessionId))
             }
         } catch (e: Exception) {
@@ -124,23 +130,36 @@ class CustomAgentBridge(
         model: String,
         prompt: String,
         history: List<ChatMessage>,
-    ): String {
+        sessionId: String,
+    ): Pair<String, Boolean> {
         val messages = historyMessages(history)
         messages.put(JSONObject().put("role", "user").put("content", prompt))
         val body = JSONObject()
             .put("model", model)
             .put("messages", messages)
             .put("max_tokens", 4096)
+            .put("stream", true)
             .toString()
-        val response = post("$baseUrl/chat/completions", secret, body, anthropic = false)
-        val json = JSONObject(response)
-        if (json.has("error")) {
-            throw IllegalStateException(json.getJSONObject("error").optString("message", "API error"))
+        val (response, streamed) = postStreaming(
+            "$baseUrl/chat/completions", secret, body, anthropic = false,
+            onDelta = { chunk -> eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, chunk)) },
+            extractDelta = { json ->
+                json.optJSONArray("choices")?.optJSONObject(0)
+                    ?.optJSONObject("delta")?.optString("content").orEmpty()
+            },
+        )
+        if (!streamed) {
+            val json = JSONObject(response)
+            if (json.has("error")) {
+                throw IllegalStateException(json.getJSONObject("error").optString("message", "API error"))
+            }
+            val content = json.getJSONArray("choices")
+                .getJSONObject(0)
+                .getJSONObject("message")
+                .getString("content")
+            return content to false
         }
-        return json.getJSONArray("choices")
-            .getJSONObject(0)
-            .getJSONObject("message")
-            .getString("content")
+        return response to true
     }
 
     private fun callAnthropic(
@@ -149,38 +168,69 @@ class CustomAgentBridge(
         model: String,
         prompt: String,
         history: List<ChatMessage>,
-    ): String {
+        sessionId: String,
+    ): Pair<String, Boolean> {
         val messages = historyMessages(history)
         messages.put(JSONObject().put("role", "user").put("content", prompt))
         val body = JSONObject()
             .put("model", model)
             .put("max_tokens", 4096)
             .put("messages", messages)
+            .put("stream", true)
             .toString()
-        val response = post("$baseUrl/messages", secret, body, anthropic = true)
-        val json = JSONObject(response)
-        if (json.has("error")) {
-            val error = json.optJSONObject("error")
-            throw IllegalStateException(error?.optString("message", "API error") ?: "API error")
-        }
-        val content = json.getJSONArray("content")
-        val sb = StringBuilder()
-        for (i in 0 until content.length()) {
-            val block = content.getJSONObject(i)
-            if (block.optString("type") == "text") {
-                sb.append(block.optString("text"))
+        val (response, streamed) = postStreaming(
+            "$baseUrl/messages", secret, body, anthropic = true,
+            onDelta = { chunk -> eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, chunk)) },
+            extractDelta = { json ->
+                if (json.optString("type") == "content_block_delta") {
+                    json.optJSONObject("delta")?.optString("text").orEmpty()
+                } else {
+                    ""
+                }
+            },
+        )
+        if (!streamed) {
+            val json = JSONObject(response)
+            if (json.has("error")) {
+                val error = json.optJSONObject("error")
+                throw IllegalStateException(error?.optString("message", "API error") ?: "API error")
             }
+            val content = json.getJSONArray("content")
+            val sb = StringBuilder()
+            for (i in 0 until content.length()) {
+                val block = content.getJSONObject(i)
+                if (block.optString("type") == "text") {
+                    sb.append(block.optString("text"))
+                }
+            }
+            return sb.toString() to false
         }
-        return sb.toString()
+        return response to true
     }
 
-    private fun post(url: String, secret: String, body: String, anthropic: Boolean): String {
+    /**
+     * POSTs [body] and returns the full response text plus whether it arrived as
+     * a live SSE stream. When the server answers with `text/event-stream`, each
+     * `data:` chunk is parsed with [extractDelta] and forwarded to [onDelta]
+     * immediately so the UI streams. When the server ignores `stream=true` and
+     * answers with plain JSON, the whole body is returned with streamed=false
+     * and the caller parses it the old way.
+     */
+    private fun postStreaming(
+        url: String,
+        secret: String,
+        body: String,
+        anthropic: Boolean,
+        onDelta: (String) -> Unit,
+        extractDelta: (JSONObject) -> String,
+    ): Pair<String, Boolean> {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 30_000
             readTimeout = 120_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "text/event-stream")
             if (anthropic) {
                 setRequestProperty("x-api-key", secret)
                 setRequestProperty("anthropic-version", "2023-06-01")
@@ -192,11 +242,31 @@ class CustomAgentBridge(
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val response = stream.bufferedReader().use { it.readText() }
             if (code !in 200..299) {
+                val response = stream.bufferedReader().use { it.readText() }
                 throw IllegalStateException(friendlyError(response, code).take(200))
             }
-            return response
+            val isEventStream = (conn.contentType ?: "").contains("text/event-stream")
+            if (!isEventStream) {
+                return stream.bufferedReader().use { it.readText() } to false
+            }
+            val accumulated = StringBuilder()
+            // Runs inside startSession's withContext(Dispatchers.IO), so these
+            // blocking reads stay off the main thread.
+            val reader = stream.bufferedReader()
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                val trimmed = line!!.trim()
+                if (!trimmed.startsWith("data:")) continue
+                val payload = trimmed.removePrefix("data:").trim()
+                if (payload.isEmpty() || payload == "[DONE]") continue
+                val delta = runCatching { extractDelta(JSONObject(payload)) }.getOrDefault("")
+                if (delta.isNotEmpty()) {
+                    accumulated.append(delta)
+                    runCatching { onDelta(delta) }
+                }
+            }
+            return accumulated.toString() to true
         } finally {
             conn.disconnect()
         }
