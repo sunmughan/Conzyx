@@ -133,4 +133,28 @@ class GitHubClientExpandedTest {
         assertEquals("failure", run.conclusion)
         assertEquals(5, run.runNumber)
     }
+
+    // QA H16: the PR-diff path and the JSON path share one error-message
+    // mapping. A 404/403/rate-limit must surface GitHub's own message,
+    // never a bare FileNotFoundException, and an empty/non-JSON body must
+    // fall back to the HTTP status.
+    @Test
+    fun githubErrorMessagePrefersGitHubMessage() {
+        assertEquals(
+            "Not Found",
+            githubErrorMessage(404, """{"message":"Not Found","documentation_url":"https://docs.github.com"}""")
+        )
+        assertEquals(
+            "API rate limit exceeded for user ID 1.",
+            githubErrorMessage(403, """{"message":"API rate limit exceeded for user ID 1."}""")
+        )
+    }
+
+    @Test
+    fun githubErrorMessageFallsBackToStatus() {
+        assertEquals("GitHub returned HTTP 403", githubErrorMessage(403, ""))
+        assertEquals("GitHub returned HTTP 500", githubErrorMessage(500, "<html>not json</html>"))
+        assertEquals("GitHub returned HTTP 404", githubErrorMessage(404, """{"message":"   "}"""))
+        assertEquals("GitHub returned HTTP 401", githubErrorMessage(401, """{"other":"no message key"}"""))
+    }
 }

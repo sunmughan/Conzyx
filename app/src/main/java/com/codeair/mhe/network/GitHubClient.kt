@@ -262,7 +262,19 @@ open class GitHubClient {
             if (token.isNotBlank()) setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("User-Agent", "PocketDev-Android")
         }
-        return connection.inputStream.bufferedReader().use { it.readText() }
+        try {
+            // Check the status BEFORE touching inputStream: on a 403/404/
+            // rate-limit response, inputStream throws a bare
+            // FileNotFoundException that hides the real GitHub error.
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                error(githubErrorMessage(status, errorBody))
+            }
+            return connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
     }
 
     fun submitReview(
@@ -771,9 +783,20 @@ open class GitHubClient {
         val text = (if (status in 200..299) connection.inputStream else connection.errorStream)
             ?.bufferedReader()?.use { it.readText() }.orEmpty()
         if (status !in 200..299) {
-            val message = runCatching { JSONObject(text).optString("message") }.getOrNull()
-            error(message?.takeIf(String::isNotBlank) ?: "GitHub returned HTTP $status")
+            error(githubErrorMessage(status, text))
         }
         return if (text.trimStart().startsWith("[")) JSONArray(text) else JSONObject(text)
     }
+}
+
+/**
+ * QA H16: the error message for a failed GitHub call, shared by the JSON
+ * response path and the PR-diff path. Prefers GitHub's own JSON `message` ("Not Found", "API rate limit
+ * exceeded…") and falls back to the bare HTTP status when the body is
+ * empty or is not JSON. Extracted (not inlined twice) so the mapping is
+ * unit-tested once.
+ */
+internal fun githubErrorMessage(status: Int, errorBody: String): String {
+    val message = runCatching { JSONObject(errorBody).optString("message") }.getOrNull()
+    return message?.takeIf(String::isNotBlank) ?: "GitHub returned HTTP $status"
 }
