@@ -639,6 +639,16 @@ class RuntimeInstaller(private val context: Context) {
                         put(com.codeair.mhe.model.AgentKind.ANTIGRAVITY, AgentUpdateInfo(current, latest))
                     }
             }
+            installed[com.codeair.mhe.model.AgentKind.CLOUD_CODE]?.let { current ->
+                // updateCloudCode only accepts the pinned CLOUDCODE_VERSION, so
+                // never offer a newer one it would refuse. Offer the pinned
+                // release when the installed build is older than it.
+                if (isVersionNewer(CLOUDCODE_VERSION, current)) {
+                    runCatching { fetchText("https://registry.npmjs.org/cloudcode-cli/$CLOUDCODE_VERSION") }
+                        .getOrNull()
+                        ?.let { put(com.codeair.mhe.model.AgentKind.CLOUD_CODE, AgentUpdateInfo(current, CLOUDCODE_VERSION)) }
+                }
+            }
         }
     }
 

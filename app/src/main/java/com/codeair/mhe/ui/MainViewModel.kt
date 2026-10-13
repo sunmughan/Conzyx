@@ -273,6 +273,8 @@ data class AppUiState(
     val agentBytesPerSecond: Long? = null,
     val agentUpdates: Map<AgentKind, AgentUpdateInfo> = emptyMap(),
     val agentUpdatesChecking: Boolean = false,
+    val agentUpdatesChecked: Boolean = false,
+    val agentUpdatesCheckError: String? = null,
     val agentUpdating: AgentKind? = null,
     val agentUpdateMessage: String? = null,
     val agentUpdateProgress: Float = 0f,
@@ -1318,13 +1320,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkAgentUpdates() {
         if (_state.value.agentUpdatesChecking || _state.value.agentUpdating != null || _state.value.isRunning) return
-        _state.update { it.copy(agentUpdatesChecking = true, agentUpdateMessage = "Checking official agent releases…") }
+        _state.update { it.copy(agentUpdatesChecking = true, agentUpdateMessage = "Checking official agent releases…", agentUpdatesCheckError = null) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { installer.checkAgentUpdates() } }
             _state.update {
                 it.copy(
                     agentUpdates = result.getOrDefault(emptyMap()),
                     agentUpdatesChecking = false,
+                    agentUpdatesChecked = true,
+                    agentUpdatesCheckError = result.exceptionOrNull()?.message?.take(200),
                     agentUpdateMessage = result.fold(
                         onSuccess = { updates -> if (updates.isEmpty()) "All installed agents are up to date" else "${updates.size} agent update${if (updates.size == 1) "" else "s"} available" },
                         onFailure = { error -> error.message?.take(200) ?: "Could not check agent updates" },

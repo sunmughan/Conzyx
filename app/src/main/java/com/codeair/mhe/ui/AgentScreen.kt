@@ -1032,9 +1032,11 @@ fun AgentScreen(
 
             // ── 2. Primary Configuration Card (Antigravity OR Custom OR Provider) ──
             item {
-                if (!viewedAgentInstalled || viewedAgent != state.agentKind) {
-                    // Installation/selection guidance is shown directly below the tabs.
-                } else if (state.agentKind == AgentKind.ANTIGRAVITY) {
+                // Cards are keyed on the VIEWED tab, not the active agent. The old
+                // gating (viewedAgent == state.agentKind) hid the Antigravity
+                // multi-account card whenever another agent was active, which
+                // looked like the feature had been removed. It was never removed.
+                if (viewedAgent == AgentKind.ANTIGRAVITY && viewedAgentInstalled) {
                     AgentAntigravityCard(
                         state = state,
                         code = antigravityCode,
@@ -1051,12 +1053,48 @@ fun AgentScreen(
                         onRemoveAccount = onRemoveAntigravityAccount,
                         onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
                     )
-                } else if (state.agentKind == AgentKind.CUSTOM) {
+                } else if (viewedAgent == AgentKind.CUSTOM) {
                     AgentCustomCard(
                         state = state,
                         onSaveProvider = onSaveProvider,
                         getSavedApiKey = getSavedApiKey,
                     )
+                } else if (viewedAgent != state.agentKind) {
+                    // Viewing an installed but inactive agent: its provider card
+                    // belongs to the active agent, so offer to make this one
+                    // active instead of showing a blank card. (If it is not
+                    // installed, the install card above already covers it.)
+                    if (viewedAgentInstalled) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    "${viewedAgent.title} is installed",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Make it your active agent to configure it here.",
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Button(
+                                    onClick = { onSelectAgent(viewedAgent) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                ) {
+                                    Text("Make ${viewedAgent.title} active", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 } else {
                     AgentProviderCard(
                         state = state,
@@ -2366,11 +2404,20 @@ private fun AgentUpdateBlock(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Runtime updates", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                // Never claim "up to date" without a check: agents that are not
+                // installed, or were never checked, used to show that same text,
+                // so Check updates looked like it did nothing.
+                val isInstalled = viewedAgent == AgentKind.CUSTOM ||
+                    viewedAgent == state.agentKind ||
+                    state.installedAgentVersions.containsKey(viewedAgent)
                 Text(
                     when {
                         viewedAgent == AgentKind.CUSTOM -> "Custom uses your API directly — no runtime to update"
                         update != null -> "1 update available for ${viewedAgent.title}"
-                        state.agentUpdateMessage != null && state.agentUpdatesChecking -> state.agentUpdateMessage.orEmpty()
+                        !isInstalled -> "${viewedAgent.title} is not installed — install it first, then check for updates"
+                        state.agentUpdatesChecking -> state.agentUpdateMessage.orEmpty()
+                        state.agentUpdatesCheckError != null -> "Could not check updates: ${state.agentUpdatesCheckError}"
+                        !state.agentUpdatesChecked -> "Tap Check updates to see if a newer version is available"
                         else -> "${viewedAgent.title} is up to date"
                     },
                     fontSize = 10.5.sp,
@@ -2380,7 +2427,9 @@ private fun AgentUpdateBlock(
                 )
             }
             if (viewedAgent != AgentKind.CUSTOM) {
-                val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null
+                // The ViewModel silently ignores a check while a task runs, so
+                // disable the button then instead of looking clickable-but-dead.
+                val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null && !state.isRunning
                 Row(
                     modifier = Modifier
                         .clickable(enabled = canCheck, onClick = onCheck)
