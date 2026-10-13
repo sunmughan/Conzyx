@@ -1,20 +1,27 @@
 package com.codeair.mhe.ui.coordinators
 
 import com.codeair.mhe.mcp.McpAuditLogger
+import com.codeair.mhe.mcp.McpDeniedException
 import com.codeair.mhe.mcp.McpPermissionManager
+import com.codeair.mhe.mcp.McpPromptRequiredException
 import com.codeair.mhe.mcp.McpRegistry
 import com.codeair.mhe.mcp.McpServerInfo
-import com.codeair.mhe.runtime.McpClientRunner
+import com.codeair.mhe.mcp.McpToolRegistry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
  * MCP (Model Context Protocol) domain coordinator (Milestone 1).
  *
  * Explicit owner of the MCP server state machine: install/toggle/remove,
- * tool discovery, permission-gated tool execution and the audit log. Tool
- * calls are denied before execution when the permission manager refuses
- * them, and every call is audit-logged.
+ * tool discovery, tool execution and the audit log. Discovery and calls go
+ * through [McpToolRegistry] (correct NDJSON wire protocol, permission
+ * gating, audit logging, caching, remote support, credential resolution);
+ * the registry owns permission evaluation and audit entries, so this
+ * coordinator only maps outcomes into UI state and the
+ * [com.codeair.mhe.runtime.McpToolCallResult] shape the callers use.
  *
  * Extracted from `MainViewModel`; the ViewModel delegates to this coordinator
  * so its public API is unchanged.
@@ -24,7 +31,7 @@ class McpCoordinator(
     private val mcpRegistry: McpRegistry,
     private val mcpAuditLogger: McpAuditLogger,
     private val mcpPermissionManager: McpPermissionManager,
-    private val mcpClientRunner: McpClientRunner,
+    private val toolRegistry: McpToolRegistry,
 ) {
     fun refreshMcpServers(projectId: String? = host.state().activeProject?.id) {
         val servers = mcpRegistry.listServers(projectId)
@@ -52,7 +59,7 @@ class McpCoordinator(
     }
 
     fun removeMcpServer(serverId: String) {
-        mcpClientRunner.stopServer(serverId)
+        toolRegistry.stopServer(serverId)
         mcpRegistry.removeServer(serverId)
         refreshMcpServers()
     }
@@ -65,8 +72,19 @@ class McpCoordinator(
     fun discoverMcpTools(server: McpServerInfo) {
         host.scope.launch {
             host.updateState { it.copy(mcpBusy = true, mcpSelectedServerId = server.id, mcpMessage = "Discovering tools for ${server.name}...") }
-            val res = mcpClientRunner.discoverTools(server)
-            res.onSuccess { tools ->
+            // Registry discovery does blocking process I/O: keep it off Main.
+            val res = withContext(Dispatchers.IO) {
+                runCatching { toolRegistry.discover(server.id, host.state().activeProject?.id) }
+            }
+            res.onSuccess { discovered ->
+                val tools = discovered.map { tool ->
+                    com.codeair.mhe.runtime.McpToolDefinition(
+                        name = tool.name,
+                        description = tool.description,
+                        inputSchemaJson = tool.inputSchema.toString(),
+                        serverId = server.id,
+                    )
+                }
                 host.updateState { it.copy(mcpBusy = false, mcpTools = tools, mcpMessage = "Found ${tools.size} tools") }
             }.onFailure { err ->
                 host.updateState { it.copy(mcpBusy = false, mcpMessage = "Tool discovery failed: ${err.message}") }
@@ -80,41 +98,46 @@ class McpCoordinator(
         arguments: JSONObject,
         projectId: String? = host.state().activeProject?.id
     ): com.codeair.mhe.runtime.McpToolCallResult {
-        val perm = mcpPermissionManager.evaluate(server, toolName, projectId)
-        if (!perm.allowed) {
-            val auditEntry = com.codeair.mhe.mcp.McpAuditEntry(
-                serverId = server.id,
-                toolName = toolName,
-                argumentsJson = arguments.toString(),
-                success = false,
-                projectId = projectId,
-                permissionDecision = if (perm.requiresPrompt) "PROMPT_REQUIRED" else "DENIED",
-                error = perm.reason
-            )
-            mcpAuditLogger.log(auditEntry)
+        // Permission evaluation + audit logging are owned by the registry;
+        // this coordinator only maps the outcome into the UI-facing shape.
+        val startedAt = System.currentTimeMillis()
+        val duration = { System.currentTimeMillis() - startedAt }
+        return try {
+            val outcome = withContext(Dispatchers.IO) {
+                toolRegistry.callTool(server.id, toolName, arguments, projectId)
+            }
             loadMcpAuditLogs()
-            return com.codeair.mhe.runtime.McpToolCallResult(
+            com.codeair.mhe.runtime.McpToolCallResult(
+                success = !outcome.isError,
+                content = outcome.text,
+                error = if (outcome.isError) outcome.text else null,
+                durationMs = duration(),
+            )
+        } catch (e: McpDeniedException) {
+            loadMcpAuditLogs()
+            com.codeair.mhe.runtime.McpToolCallResult(
                 success = false,
                 content = "",
-                error = "Permission check failed: ${perm.reason}"
+                error = "Permission check failed: ${e.decision.reason}",
+                durationMs = duration(),
+            )
+        } catch (e: McpPromptRequiredException) {
+            loadMcpAuditLogs()
+            com.codeair.mhe.runtime.McpToolCallResult(
+                success = false,
+                content = "",
+                error = "MCP tool requires confirmation: ${e.decision.reason}",
+                durationMs = duration(),
+            )
+        } catch (e: Exception) {
+            loadMcpAuditLogs()
+            com.codeair.mhe.runtime.McpToolCallResult(
+                success = false,
+                content = "",
+                error = e.message ?: "MCP tool call failed",
+                durationMs = duration(),
             )
         }
-
-        val result = mcpClientRunner.callTool(server, toolName, arguments)
-        val auditEntry = com.codeair.mhe.mcp.McpAuditEntry(
-            serverId = server.id,
-            toolName = toolName,
-            argumentsJson = arguments.toString(),
-            success = result.success,
-            resultPreview = result.content.take(200),
-            durationMs = result.durationMs,
-            projectId = projectId,
-            permissionDecision = "ALLOWED",
-            error = result.error
-        )
-        mcpAuditLogger.log(auditEntry)
-        loadMcpAuditLogs()
-        return result
     }
 
     fun setMcpProjectPermission(projectId: String, serverId: String, policy: com.codeair.mhe.mcp.McpPermissionPolicy) {

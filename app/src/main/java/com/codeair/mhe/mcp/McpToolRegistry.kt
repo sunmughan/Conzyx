@@ -197,6 +197,14 @@ class McpToolRegistry(
         synchronized(lock) { discoveryCache.remove(serverId) }
     }
 
+    /** Stops one server's stdio session and drops its cached discovery. */
+    fun stopServer(serverId: String) {
+        synchronized(lock) {
+            sessions.remove(serverId)?.let { runCatching { it.stop() } }
+            discoveryCache.remove(serverId)
+        }
+    }
+
     /** Stops all managed stdio sessions and clears the discovery cache. */
     fun shutdown() {
         synchronized(lock) {

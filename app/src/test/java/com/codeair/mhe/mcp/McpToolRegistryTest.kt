@@ -133,6 +133,22 @@ class McpToolRegistryTest {
     }
 
     @Test
+    fun `stopServer stops the session and drops cached discovery`() {
+        val tr = toolRegistry()
+        tr.discover("s1")
+        assertEquals(1, sessionFactoryCalls)
+        val fake = liveFakes.single()
+        assertTrue(fake.alive)
+        tr.stopServer("s1")
+        assertFalse(fake.alive)
+        assertTrue(fake.gracefulCalls >= 1)
+        // Rediscovery must start a fresh session, not reuse the stopped one.
+        tr.discover("s1")
+        assertEquals(2, sessionFactoryCalls)
+        assertEquals(2, toolsListRequests())
+    }
+
+    @Test
     fun `callTool on allowed server returns outcome and audits allowed`() {
         val tr = toolRegistry()
         val outcome = tr.callTool("s1", "echo", JSONObject().put("text", "hi"))

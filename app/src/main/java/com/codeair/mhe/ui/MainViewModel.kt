@@ -415,7 +415,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val fileOperationsController = com.codeair.mhe.workspace.FileOperationsController()
     val projectMemoryStore = com.codeair.mhe.runtime.ProjectMemoryStore(application.filesDir)
     val agentOrchestrator = com.codeair.mhe.session.AgentOrchestrator(checkpointManager, projectMemoryStore)
-    val mcpClientRunner = com.codeair.mhe.runtime.McpClientRunner()
+    val mcpCredentialStore = com.codeair.mhe.mcp.McpCredentialStore(File(application.filesDir, "mcp"))
+    // The live MCP implementation: NDJSON wire protocol, permission gating,
+    // audit logging, discovery cache, remote support, credential resolution.
+    val mcpToolRegistry = com.codeair.mhe.mcp.McpToolRegistry(
+        registry = mcpRegistry,
+        permissionManager = mcpPermissionManager,
+        auditLogger = mcpAuditLogger,
+        credentialStore = mcpCredentialStore,
+    )
     val gitHubClient = com.codeair.mhe.network.GitHubClient()
     val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
     val marketplaceInstallManager = com.codeair.mhe.marketplace.MarketplaceInstallManager(application)
@@ -644,7 +652,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mcpRegistry = mcpRegistry,
             mcpAuditLogger = mcpAuditLogger,
             mcpPermissionManager = mcpPermissionManager,
-            mcpClientRunner = mcpClientRunner,
+            toolRegistry = mcpToolRegistry,
         )
     init {
         AppCrashLogger.log("MainViewModel.init entered")
