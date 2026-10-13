@@ -66,14 +66,12 @@ class AppUpdaterTest {
         assertEquals("https://example.com/app-release.apk", resolved!!.getString("url"))
     }
 
-    @Test
-    fun testParseVersionFromTag() {
-        assertEquals(20200L, AppUpdater.parseVersionFromTag("v2.2.0"))
-        assertEquals(20100L, AppUpdater.parseVersionFromTag("2.1.0"))
-        assertEquals(10006L, AppUpdater.parseVersionFromTag("v1.0.6"))
-        assertEquals(10000L, AppUpdater.parseVersionFromTag("v1.0"))
-        assertEquals(0L, AppUpdater.parseVersionFromTag("invalid"))
-    }
+    // QA H20: there is intentionally NO test for parseVersionFromTag anymore.
+    // The tag -> versionCode mapping (v3.0.1 -> 30001) is deleted: real APK
+    // versionCodes are not semver-derived (34), so the mapping could never
+    // match and verifyApk always threw, while the fallback skipped SHA-256
+    // (sha256 = ""). A release without mobile-harness-update.json now
+    // offers no update instead of an unverifiable one.
 
     @Test
     fun testIsGitHubDomain() {

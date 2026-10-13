@@ -398,7 +398,11 @@ class RuntimeCoordinator(
     }
 
     fun dismissAppUpdateError() {
-        host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null) }
+        // Dismissing a FAILED update withdraws the offer entirely: resetting
+        // to AVAILABLE (the old behavior) re-offered the same update that
+        // just failed verification/download, looping the user back into
+        // the same failure. The offer returns on the next update check.
+        host.updateState { it.copy(appUpdate = null, appUpdateStatus = null, appUpdateError = null) }
     }
 
     private fun mergeStartupLog(

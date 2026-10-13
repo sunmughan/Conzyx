@@ -160,23 +160,15 @@ class AppUpdater(
             }
         }
 
-        // 2. Fallback: Parse release assets matching app-<variant>-release.apk
-        val tagName = releaseJson.optString("tag_name")
-        val parsedVersionCode = parseVersionFromTag(tagName)
-        if (parsedVersionCode <= BuildConfig.VERSION_CODE) return null
-
-        val apkAssetUrl = findAssetUrlForVariant(assets, BuildConfig.APP_VARIANT) ?: return null
-        val matchedAsset = findAssetForVariant(assets, BuildConfig.APP_VARIANT)
-
-        return AppUpdateInfo(
-            versionCode = parsedVersionCode,
-            versionName = tagName.removePrefix("v").ifBlank { releaseJson.optString("name") },
-            apkUrl = apkAssetUrl,
-            sha256 = "",
-            sizeBytes = matchedAsset?.optLong("size", -1L) ?: -1L,
-            notes = releaseJson.optString("body"),
-            variant = BuildConfig.APP_VARIANT,
-        )
+        // No manifest asset, no update: the tag-derived fallback that used to
+        // live here is DELETED (QA H20). It fabricated a versionCode from
+        // the tag (v3.0.1 -> 30001) that can never equal the real APK
+        // versionCode (34), so verifyApk always threw — and it set
+        // sha256 = "" (no hash verification). CI publishes
+        // mobile-harness-update.json with the true versionCode + SHA-256
+        // on every release, so a release without it offers no update
+        // rather than an unverifiable one.
+        return null
     }
 
     fun download(info: AppUpdateInfo, progress: (Long, Long) -> Unit): File {
@@ -297,17 +289,6 @@ class AppUpdater(
             return root.optJSONObject("artifacts")?.optJSONObject(variant)
                 ?: root.optJSONObject(variant)
                 ?: root.takeIf { it.has("url") || it.has("apkUrl") }
-        }
-
-        fun parseVersionFromTag(tag: String): Long {
-            val cleaned = tag.removePrefix("v").trim()
-            val parts = cleaned.split(".").mapNotNull { it.toLongOrNull() }
-            return when {
-                parts.size >= 3 -> parts[0] * 10000L + parts[1] * 100L + parts[2]
-                parts.size == 2 -> parts[0] * 10000L + parts[1] * 100L
-                parts.size == 1 -> parts[0]
-                else -> 0L
-            }
         }
 
         fun isGitHubDomain(url: String): Boolean {
