@@ -191,10 +191,18 @@ fun MultiAgentTeamBottomSheet(
                 ) {
                     Button(
                         onClick = {
-                            // Plan ONLY plans. It used to also fire the goal
+                            // Plan creates the DAG AND immediately runs the
+                            // whole team: one click must do the full
+                            // autonomous run, not just leave a task list
+                            // sitting at 0/10. It used to also fire the goal
                             // into the single-agent chat as a hidden task.
                             if (inputGoal.isNotBlank()) {
-                                orchestrator.planProject(inputGoal)
+                                scope.launch {
+                                    if (sessionState.isRunning) orchestrator.cancelRealRun()
+                                    orchestrator.planProject(inputGoal)
+                                    runCatching { orchestrator.autoRunAllReal() }
+                                        .onFailure { orchestrator.reportError(it.message ?: "Plan run failed.") }
+                                }
                             }
                         },
                         modifier = Modifier.weight(1f),

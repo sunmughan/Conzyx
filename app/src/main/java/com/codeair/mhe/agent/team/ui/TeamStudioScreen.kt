@@ -208,9 +208,12 @@ fun TeamStudioScreen(
                 Spacer(Modifier.height(10.dp))
 
                 // Goal Input & Action Bar.
-                // Plan ONLY plans (creates the 10-task DAG + blueprint). It
-                // used to also fire the goal into the single-agent chat as a
-                // hidden background task with a doubled prefix, which is gone.
+                // Plan creates the 10-task DAG + blueprint AND immediately
+                // runs the whole team: one click must do the full autonomous
+                // run (agents work, report, publish artifacts), not just
+                // leave a task list sitting at 0/10. It used to also fire the
+                // goal into the single-agent chat as a hidden background task
+                // with a doubled prefix, which is gone.
                 // The input gets its own full-width row: sharing one row with
                 // Plan/Step/Stop squeezed it to "Build robu..." on narrow phones.
                 OutlinedTextField(
@@ -234,7 +237,12 @@ fun TeamStudioScreen(
                     Button(
                         onClick = {
                             if (inputGoal.isNotBlank()) {
-                                orchestrator.planProject(inputGoal)
+                                scope.launch {
+                                    if (sessionState.isRunning) orchestrator.cancelRealRun()
+                                    orchestrator.planProject(inputGoal)
+                                    runCatching { orchestrator.autoRunAllReal() }
+                                        .onFailure { orchestrator.reportError(it.message ?: "Plan run failed.") }
+                                }
                             }
                         },
                         modifier = Modifier.height(48.dp),
