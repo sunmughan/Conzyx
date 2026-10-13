@@ -2565,7 +2565,7 @@ private fun RootScreenHost(
                     mcpBusy = state.mcpBusy,
                     mcpMessage = state.mcpMessage,
                     onInstallMcpTemplate = viewModel::installMcpTemplate,
-                    onInstallCustomMcp = viewModel::installMcpServer,
+                    onInstallCustomMcp = { server, secrets -> viewModel.installMcpServer(server, secrets) },
                     onToggleMcpServer = viewModel::toggleMcpServer,
                     onRemoveMcpServer = viewModel::removeMcpServer,
                     onDiscoverMcpTools = viewModel::discoverMcpTools,

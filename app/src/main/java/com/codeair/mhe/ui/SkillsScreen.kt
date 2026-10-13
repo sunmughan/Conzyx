@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -38,6 +40,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
@@ -97,7 +100,7 @@ fun SkillsScreen(
     mcpBusy: Boolean = false,
     mcpMessage: String? = null,
     onInstallMcpTemplate: (String) -> Unit = {},
-    onInstallCustomMcp: (McpServerInfo) -> Unit = {},
+    onInstallCustomMcp: (McpServerInfo, Map<String, String>) -> Unit = { _, _ -> },
     onToggleMcpServer: (String, Boolean) -> Unit = { _, _ -> },
     onRemoveMcpServer: (String) -> Unit = {},
     onDiscoverMcpTools: (McpServerInfo) -> Unit = {},
@@ -494,8 +497,8 @@ fun SkillsScreen(
     if (showAddCustomMcpDialog) {
         AddCustomMcpDialog(
             onDismiss = { showAddCustomMcpDialog = false },
-            onAdd = { customServer ->
-                onInstallCustomMcp(customServer)
+            onAdd = { customServer, secrets ->
+                onInstallCustomMcp(customServer, secrets)
                 showAddCustomMcpDialog = false
             }
         )
@@ -657,22 +660,47 @@ private fun McpCatalogCard(
     }
 }
 
+/**
+ * Parses a `KEY=VAL, KEY2=VAL2` list into a map. Entries without `=` are
+ * ignored; later entries win on duplicate keys. Pure, unit-tested.
+ */
+internal fun parseKeyValueList(text: String): Map<String, String> {
+    val map = mutableMapOf<String, String>()
+    text.split(",").map { it.trim() }.filter { it.contains("=") }.forEach {
+        val parts = it.split("=", limit = 2)
+        val key = parts[0].trim()
+        if (key.isNotEmpty()) map[key] = parts[1].trim()
+    }
+    return map
+}
+
 @Composable
 private fun AddCustomMcpDialog(
     onDismiss: () -> Unit,
-    onAdd: (McpServerInfo) -> Unit
+    onAdd: (McpServerInfo, Map<String, String>) -> Unit
 ) {
     var id by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var command by remember { mutableStateOf("") }
     var argsText by remember { mutableStateOf("") }
     var envText by remember { mutableStateOf("") }
+    var secretsText by remember { mutableStateOf("") }
+    var acknowledged by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Custom MCP Server", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Warning: this command will run on your device with the app's full privileges. Only add servers from sources you trust.",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.error,
+                )
                 OutlinedTextField(
                     value = id,
                     onValueChange = { id = it },
@@ -704,34 +732,56 @@ private fun AddCustomMcpDialog(
                 OutlinedTextField(
                     value = envText,
                     onValueChange = { envText = it },
-                    label = { Text("Environment (KEY=VAL, comma-separated)", fontSize = 11.sp) },
+                    label = { Text("Environment (KEY=VAL, comma-separated, non-secret only)", fontSize = 11.sp) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = secretsText,
+                    onValueChange = { secretsText = it },
+                    label = { Text("Secrets (KEY=VAL, comma-separated, stored encrypted)", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Secrets are stored encrypted in the credential store, never in the server config. Do not put secrets in Environment above.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = acknowledged,
+                        onCheckedChange = { acknowledged = it },
+                    )
+                    Text(
+                        "I understand this command runs with the app's full privileges.",
+                        fontSize = 12.sp,
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val envMap = mutableMapOf<String, String>()
-                    envText.split(",").map { it.trim() }.filter { it.contains("=") }.forEach {
-                        val parts = it.split("=", limit = 2)
-                        envMap[parts[0].trim()] = parts[1].trim()
-                    }
+                    val envMap = parseKeyValueList(envText)
+                    val secretsMap = parseKeyValueList(secretsText)
                     val argsList = argsText.split(" ").map { it.trim() }.filter { it.isNotBlank() }
+                    val serverId = id.ifBlank { "custom-" + System.currentTimeMillis() }
                     onAdd(
                         McpServerInfo(
-                            id = id.ifBlank { "custom-" + System.currentTimeMillis() },
+                            id = serverId,
                             name = name.ifBlank { id },
                             command = command,
                             args = argsList,
                             env = envMap,
+                            secretEnvNames = secretsMap.keys.toList(),
                             enabled = true,
                             isBuiltIn = false
-                        )
+                        ),
+                        secretsMap,
                     )
                 },
-                enabled = command.isNotBlank()
+                enabled = command.isNotBlank() && acknowledged
             ) {
                 Text("Add Server")
             }

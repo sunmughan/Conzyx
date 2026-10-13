@@ -1,6 +1,7 @@
 package com.codeair.mhe.ui.coordinators
 
 import com.codeair.mhe.mcp.McpAuditLogger
+import com.codeair.mhe.mcp.McpCredentialStore
 import com.codeair.mhe.mcp.McpDeniedException
 import com.codeair.mhe.mcp.McpPermissionManager
 import com.codeair.mhe.mcp.McpPromptRequiredException
@@ -32,6 +33,7 @@ class McpCoordinator(
     private val mcpAuditLogger: McpAuditLogger,
     private val mcpPermissionManager: McpPermissionManager,
     private val toolRegistry: McpToolRegistry,
+    private val credentialStore: McpCredentialStore,
 ) {
     fun refreshMcpServers(projectId: String? = host.state().activeProject?.id) {
         val servers = mcpRegistry.listServers(projectId)
@@ -39,8 +41,19 @@ class McpCoordinator(
         host.updateState { it.copy(mcpServers = servers, mcpCatalog = catalog) }
     }
 
-    fun installMcpServer(server: McpServerInfo) {
+    /**
+     * Installs a custom MCP server. [secrets] are stored in the credential
+     * store (encrypted), never in the server config: [McpServerInfo] only
+     * carries their names in `secretEnvNames`. The server is registered
+     * first so a failure there never leaves orphaned secrets behind.
+     */
+    fun installMcpServer(server: McpServerInfo, secrets: Map<String, String> = emptyMap()) {
         mcpRegistry.installServer(server)
+        secrets.forEach { (name, value) ->
+            if (name.isNotBlank() && value.isNotBlank()) {
+                credentialStore.setCredential(server.id, name, value)
+            }
+        }
         refreshMcpServers()
     }
 

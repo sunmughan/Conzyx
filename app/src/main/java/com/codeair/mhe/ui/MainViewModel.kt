@@ -654,6 +654,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mcpAuditLogger = mcpAuditLogger,
             mcpPermissionManager = mcpPermissionManager,
             toolRegistry = mcpToolRegistry,
+            credentialStore = mcpCredentialStore,
         )
     init {
         AppCrashLogger.log("MainViewModel.init entered")
@@ -1095,8 +1096,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshMcpServers(projectId: String? = _state.value.activeProject?.id) =
         mcpCoordinator.refreshMcpServers(projectId)
 
-    fun installMcpServer(server: com.codeair.mhe.mcp.McpServerInfo) =
-        mcpCoordinator.installMcpServer(server)
+    fun installMcpServer(server: com.codeair.mhe.mcp.McpServerInfo, secrets: Map<String, String> = emptyMap()) =
+        mcpCoordinator.installMcpServer(server, secrets)
 
     fun installMcpTemplate(templateId: String, envOverrides: Map<String, String> = emptyMap(), projectId: String? = _state.value.activeProject?.id) =
         mcpCoordinator.installMcpTemplate(templateId, envOverrides, projectId)
