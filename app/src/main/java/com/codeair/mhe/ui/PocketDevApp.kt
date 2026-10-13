@@ -6164,7 +6164,7 @@ private fun ChatTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(messages, key = { it.id }) { rawMessage ->
-                    val message = if (rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
+                    val message = if (!isRunning && rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
                         val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
                         if (parsed != null) rawMessage.copy(roadmap = parsed) else rawMessage
                     } else {
@@ -6175,6 +6175,8 @@ private fun ChatTab(
                     } else {
                         MessageBubble(
                             message = message,
+                            isStreaming = isRunning && !rawMessage.fromUser &&
+                                rawMessage.id == messages.lastOrNull { !it.fromUser && it.text.isNotBlank() }?.id,
                             onRunInTerminal = onRunInTerminal,
                             onOpenAttachment = onOpenAttachment,
                             onAddRoadmapComment = { stepId ->
@@ -6883,6 +6885,7 @@ private fun formatDuration(totalSeconds: Long): String = when {
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    isStreaming: Boolean = false,
     onRunInTerminal: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onAddRoadmapComment: (stepId: String?) -> Unit = {},
@@ -6905,6 +6908,15 @@ private fun MessageBubble(
                             markdown = message.text,
                             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    } else if (isStreaming) {
+                        // Avoid reparsing the entire growing response as Markdown for every token.
+                        // Plain text keeps the chat responsive; rich formatting is applied once complete.
+                        Text(
+                            text = message.text,
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     } else {
                         MarkdownText(
