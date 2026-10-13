@@ -63,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,6 +85,7 @@ import com.codeair.mhe.cloud.model.HybridJobState
 import com.codeair.mhe.cloud.model.WorkerHealthStatus
 import com.codeair.mhe.cloud.model.WorkloadRoutingPolicy
 import com.codeair.mhe.cloud.model.WorkloadType
+import kotlinx.coroutines.delay
 
 /**
  * Cloud + Phone Hybrid Studio Screen (Phase 12 v2.3).
@@ -96,6 +98,18 @@ fun CloudHybridScreen(
 ) {
     val state by coordinator.state.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // Telemetry was NOT realtime: the coordinator reads device metrics only
+    // once in init, so this screen showed a stale snapshot (e.g. battery 5%
+    // when the phone was already at 13%). Re-read while the screen is open:
+    // immediately on entry, then every 30s. The loop is cancelled
+    // automatically when the screen closes; the reads are cheap OS queries.
+    LaunchedEffect(Unit) {
+        while (true) {
+            coordinator.refreshDeviceMetrics()
+            delay(30_000)
+        }
+    }
 
     val tabs = listOf("Telemetry & Stats", "Workers Fleet", "Job Pipeline", "Routing Policies")
 
