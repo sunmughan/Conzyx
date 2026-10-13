@@ -298,6 +298,16 @@ class RuntimeCoordinator(
     }
 
     fun checkForAppUpdate(force: Boolean = false) {
+        // Play builds never self-update: Google Play owns updates, so no
+        // side-channel check is ever made and no update is ever offered.
+        if (BuildConfig.IS_PLAY_BUILD) {
+            if (force) {
+                host.updateState {
+                    it.copy(toastMessage = "App updates are managed by Google Play on this build.")
+                }
+            }
+            return
+        }
         if (!force && System.currentTimeMillis() - preferences.lastAppUpdateCheckMillis < 24L * 60L * 60L * 1000L) return
         host.scope.launch(Dispatchers.IO) {
             val update = runCatching { appUpdater().check() }.getOrNull()
@@ -358,6 +368,10 @@ class RuntimeCoordinator(
     fun debugUpdateManifestUrl(): String = if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else ""
 
     fun installAppUpdate() {
+        // Defense in depth: appUpdate state can never be set on a Play build
+        // (checkForAppUpdate returns early), but never install a side-channel
+        // APK from a Play-distributed build even if state is stale.
+        if (BuildConfig.IS_PLAY_BUILD) return
         val info = host.state().appUpdate ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !host.appContext.packageManager.canRequestPackageInstalls()) {
             host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.PERMISSION_REQUIRED) }

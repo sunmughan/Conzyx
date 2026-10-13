@@ -2149,12 +2149,23 @@ private fun AppUpdateChannelSection(
                     )
                 }
 
-                Button(
-                    onClick = onCheckNow,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp),
-                ) {
-                    Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                // Play builds never self-update from a GitHub APK (Play policy):
+                // no Check-now button, just the honest statement.
+                if (BuildConfig.IS_PLAY_BUILD) {
+                    Text(
+                        "Managed by Google Play",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                } else {
+                    Button(
+                        onClick = onCheckNow,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
                 }
             }
         }

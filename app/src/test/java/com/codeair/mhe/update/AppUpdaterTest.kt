@@ -104,4 +104,16 @@ class AppUpdaterTest {
         assertNotNull(AppUpdater.resolveArtifactForVariant(singleFlavorJson, "online"))
         assertNull(AppUpdater.resolveArtifactForVariant(singleFlavorJson, "offline"))
     }
+
+    @Test
+    fun testSelfUpdateDisallowedOnPlayBuilds() {
+        // QA C5: a Google Play build must never offer or fetch a GitHub APK.
+        // check() and download() both consult this single decision point.
+        assertFalse(AppUpdater.isSelfUpdateAllowed(isPlayBuild = true))
+    }
+
+    @Test
+    fun testSelfUpdateAllowedOnNonPlayBuilds() {
+        assertTrue(AppUpdater.isSelfUpdateAllowed(isPlayBuild = false))
+    }
 }

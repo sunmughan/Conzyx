@@ -33,8 +33,17 @@ class AppUpdater(
      * Optional Bearer / Personal Access Token for accessing private GitHub repository releases.
      */
     private val authToken: String = "",
+    /**
+     * True for Google Play builds. Play builds must never self-update from a
+     * GitHub APK — Play policy reserves updates to Google Play itself.
+     * Defaults to the build flag; tests pass an explicit value.
+     */
+    private val isPlayBuild: Boolean = BuildConfig.IS_PLAY_BUILD,
 ) {
     fun check(): AppUpdateInfo? {
+        // Play builds never check a side-channel manifest: no GitHub update
+        // is ever offered on a build distributed through Google Play.
+        if (!isSelfUpdateAllowed(isPlayBuild)) return null
         val urlsToTry = if (manifestUrlOverride.isNotBlank()) {
             listOf(manifestUrlOverride)
         } else {
@@ -171,6 +180,9 @@ class AppUpdater(
     }
 
     fun download(info: AppUpdateInfo, progress: (Long, Long) -> Unit): File {
+        check(isSelfUpdateAllowed(isPlayBuild)) {
+            "Self-update is disabled on Google Play builds; updates come from Google Play."
+        }
         val directory = File(context.filesDir, "updates").also { it.mkdirs() }
         val partial = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk.part")
         val target = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk")
@@ -274,6 +286,13 @@ class AppUpdater(
         .digest(bytes).joinToString("") { "%02x".format(it) }
 
     companion object {
+        /**
+         * The single decision point for GitHub self-update: allowed everywhere
+         * except Google Play builds. [AppUpdater.check] and [AppUpdater.download]
+         * both consult it, so a Play build can never offer or fetch a side-channel APK.
+         */
+        fun isSelfUpdateAllowed(isPlayBuild: Boolean): Boolean = !isPlayBuild
+
         fun resolveArtifactForVariant(root: JSONObject, variant: String): JSONObject? {
             return root.optJSONObject("artifacts")?.optJSONObject(variant)
                 ?: root.optJSONObject(variant)
