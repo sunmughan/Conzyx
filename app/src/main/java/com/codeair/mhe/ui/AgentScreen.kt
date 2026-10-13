@@ -135,8 +135,8 @@ internal fun formatAntigravityModelName(id: String): String = when (id) {
     "gemini-3.6-flash-low" -> "Gemini 3.6 Flash (Low)"
     "gemini-3.1-pro-high" -> "Gemini 3.1 Pro (High)"
     "gemini-3.1-pro-low" -> "Gemini 3.1 Pro (Low)"
-    "claude-sonnet-4-6" -> "Claude 3.7 Sonnet"
-    "claude-opus-4-6-thinking" -> "Claude 3.7 Opus (Thinking)"
+    "claude-sonnet-4-6" -> "Claude Sonnet 4.6"
+    "claude-opus-4-6-thinking" -> "Claude Opus 4.6 (Thinking)"
     "gpt-oss-120b-medium" -> "GPT-OSS 120B"
     else -> id.split("-").joinToString(" ") { word ->
         word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
