@@ -233,6 +233,8 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
             com.codeair.mhe.model.AgentKind.CLOUD_CODE -> ensureCloudCodeInstalled(proot, 0.985f, onProgress)
+            // Custom is bring-your-own-API: nothing to install.
+            com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
         onProgress(RuntimeInstallProgress("Setup complete", 1f))
         return InstalledRuntime(proot, rootfs)
@@ -253,6 +255,8 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(runtime.proot, 0.05f, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(runtime.proot, 0.05f, onProgress)
             com.codeair.mhe.model.AgentKind.CLOUD_CODE -> ensureCloudCodeInstalled(runtime.proot, 0.05f, onProgress)
+            // Custom is bring-your-own-API: nothing to install.
+            com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
         onProgress(RuntimeInstallProgress("${agent.title} is ready", 1f))
     }
@@ -274,6 +278,8 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.CLOUD_CODE ->
                 guestExecutableFile(CLOUDCODE_GUEST_PATH) != null &&
                     !cloudCodeMarker.readTextOrNull().isNullOrBlank()
+            // Custom is bring-your-own-API: always available, nothing to install.
+            com.codeair.mhe.model.AgentKind.CUSTOM -> true
         }
     }
 
@@ -379,6 +385,7 @@ class RuntimeInstaller(private val context: Context) {
                     com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> "deepseek"
                     com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> "antigravity"
                     com.codeair.mhe.model.AgentKind.CLOUD_CODE -> "cloudcode"
+                    com.codeair.mhe.model.AgentKind.CUSTOM -> "custom"
                 },
                 version,
             )
@@ -646,6 +653,8 @@ class RuntimeInstaller(private val context: Context) {
             com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS -> updateDsh(runtime, expectedVersion, onProgress)
             com.codeair.mhe.model.AgentKind.ANTIGRAVITY -> updateAgy(runtime, expectedVersion, onProgress)
             com.codeair.mhe.model.AgentKind.CLOUD_CODE -> updateCloudCode(runtime, expectedVersion, onProgress)
+            // Custom has no binary to update.
+            com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
         onProgress(RuntimeInstallProgress("${agent.title} $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
     }

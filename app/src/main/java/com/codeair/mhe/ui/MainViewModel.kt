@@ -354,7 +354,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         },
     )
     private val cloudCodeRuntime = CloudCodeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, cloudCodeRuntime)
+    private val customRuntime = CustomAgentBridge { profile -> vault.get(profile.kind.name) }
+    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, cloudCodeRuntime, customRuntime)
     private fun activeRuntime(): com.codeair.mhe.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
@@ -421,6 +422,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                     )
                     AgentKind.CLOUD_CODE -> CloudCodeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                    AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
                     else -> ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
                 }
             },

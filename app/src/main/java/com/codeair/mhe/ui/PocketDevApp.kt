@@ -1527,6 +1527,8 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
             AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
             AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
             AgentKind.CLOUD_CODE -> CLOUDCODE_RUNTIME_DOWNLOAD_MB
+            // Custom is bring-your-own-API: zero download.
+            AgentKind.CUSTOM -> 0
         } +
         (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0) +
         (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0)
@@ -1614,12 +1616,14 @@ private fun AgentChoiceRow(
         AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
         AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
         AgentKind.CLOUD_CODE -> Color(0xFF00ACC1)
+        AgentKind.CUSTOM -> Color(0xFF9C6BFF)
     }
     val mark = when (agent) {
         AgentKind.CLAUDE_CODE -> "CC"
         AgentKind.DEEPSEEK_HARNESS -> "DS"
         AgentKind.ANTIGRAVITY -> "AG"
         AgentKind.CLOUD_CODE -> "CL"
+        AgentKind.CUSTOM -> "CU"
     }
     Row(
         modifier = Modifier

@@ -229,7 +229,8 @@ fun AgentScreen(
     val orderedAgents = remember(state.primaryAgentKind) {
         listOf(state.primaryAgentKind) + AgentKind.entries.filterNot { it == state.primaryAgentKind }
     }
-    val viewedAgentInstalled = viewedAgent == state.agentKind ||
+    val viewedAgentInstalled = viewedAgent == AgentKind.CUSTOM ||
+        viewedAgent == state.agentKind ||
         state.installedAgentVersions.containsKey(viewedAgent)
 
     val providerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -851,13 +852,16 @@ fun AgentScreen(
                         ) {
                             orderedAgents.forEach { agent ->
                                 val isSelected = viewedAgent == agent
-                                val isInstalled = agent == state.agentKind || state.installedAgentVersions.containsKey(agent)
+                                // Custom is bring-your-own-API: always available, no install needed.
+                                val isInstalled = agent == AgentKind.CUSTOM ||
+                                    agent == state.agentKind || state.installedAgentVersions.containsKey(agent)
                                 val updateAvailable = state.agentUpdates.containsKey(agent)
                                 val shortTitle = when (agent) {
                                     AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
                                     AgentKind.CLAUDE_CODE -> "Claude Code"
                                     AgentKind.CLOUD_CODE -> "Cloud Code"
+                                    AgentKind.CUSTOM -> "Custom"
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
@@ -871,21 +875,27 @@ fun AgentScreen(
                                         },
                                 ) {
                                     Box(
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp),
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 2.dp),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                shortTitle,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                fontSize = 12.sp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
+                                        Text(
+                                            shortTitle,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textAlign = TextAlign.Center,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 11.sp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        if (updateAvailable) {
+                                            Box(
+                                                Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(top = 1.dp, end = 3.dp)
+                                                    .size(6.dp)
+                                                    .background(PocketOrange, CircleShape)
                                             )
-                                            if (updateAvailable) {
-                                                Spacer(Modifier.width(3.dp))
-                                                Box(Modifier.size(5.dp).background(PocketOrange, CircleShape))
-                                            }
                                         }
                                     }
                                 }
@@ -982,7 +992,7 @@ fun AgentScreen(
                 }
             }
 
-            // ── 2. Primary Configuration Card (Antigravity OR Provider) ──
+            // ── 2. Primary Configuration Card (Antigravity OR Custom OR Provider) ──
             item {
                 if (!viewedAgentInstalled || viewedAgent != state.agentKind) {
                     // Installation/selection guidance is shown directly below the tabs.
@@ -1002,6 +1012,12 @@ fun AgentScreen(
                         onSwitchAccount = onSwitchAntigravityAccount,
                         onRemoveAccount = onRemoveAntigravityAccount,
                         onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
+                    )
+                } else if (state.agentKind == AgentKind.CUSTOM) {
+                    AgentCustomCard(
+                        state = state,
+                        onSaveProvider = onSaveProvider,
+                        getSavedApiKey = getSavedApiKey,
                     )
                 } else {
                     AgentProviderCard(
@@ -1150,10 +1166,11 @@ fun AgentScreen(
                 }
             }
 
-            // ── 3. Runtime Updates Card ──
+            // ── 3. Runtime Updates Card (per-tab: only the viewed agent's updates) ──
             item {
                 AgentUpdateBlock(
                     state = state,
+                    viewedAgent = viewedAgent,
                     onCheck = onCheckAgentUpdates,
                     onUpdate = onUpdateAgent,
                 )
@@ -2137,14 +2154,174 @@ private fun PremiumSummaryRow(
 }
 
 /**
+ * Bring-your-own-API configuration card for the Custom agent.
+ *
+ * No binary install, no runtime updates — the user plugs in their own
+ * OpenAI-compatible or Claude-compatible endpoint (base URL + API key + model)
+ * and the Custom agent chats directly via that API.
+ */
+@Composable
+private fun AgentCustomCard(
+    state: AppUiState,
+    onSaveProvider: (ProviderProfile, String) -> Unit,
+    getSavedApiKey: (ProviderKind) -> String,
+) {
+    val currentProfile = state.provider.takeIf { it.kind == ProviderKind.CUSTOM }
+    var apiType by rememberSaveable {
+        mutableStateOf(
+            when (currentProfile?.dshApi) {
+                "anthropic-messages" -> "anthropic-messages"
+                else -> "openai-completions"
+            }
+        )
+    }
+    var baseUrl by rememberSaveable { mutableStateOf(currentProfile?.baseUrl.orEmpty()) }
+    var model by rememberSaveable { mutableStateOf(currentProfile?.model.orEmpty()) }
+    var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.CUSTOM)) }
+    var keyVisible by rememberSaveable { mutableStateOf(false) }
+    var savedTick by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Custom API", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(
+            "Bring your own key — OpenAI-compatible or Claude-compatible endpoint. No download needed.",
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        // API type selector
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(
+                    "openai-completions" to "OpenAI-compatible",
+                    "anthropic-messages" to "Claude-compatible",
+                ).forEach { (value, label) ->
+                    val selected = apiType == value
+                    Surface(
+                        shape = RoundedCornerShape(9.dp),
+                        color = if (selected) PocketOrange.copy(alpha = 0.16f) else Color.Transparent,
+                        border = if (selected) BorderStroke(1.dp, PocketOrange.copy(alpha = 0.5f)) else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { apiType = value },
+                    ) {
+                        Text(
+                            label,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp),
+                            textAlign = TextAlign.Center,
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = baseUrl,
+            onValueChange = { baseUrl = it },
+            label = { Text("Base URL") },
+            placeholder = {
+                Text(
+                    if (apiType == "anthropic-messages") "https://api.anthropic.com"
+                    else "https://api.openai.com/v1"
+                )
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        )
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = { apiKey = it; savedTick = false },
+            label = { Text("API key") },
+            singleLine = true,
+            visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { keyVisible = !keyVisible }) {
+                    Icon(
+                        if (keyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (keyVisible) "Hide key" else "Show key",
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        )
+        OutlinedTextField(
+            value = model,
+            onValueChange = { model = it },
+            label = { Text("Model") },
+            placeholder = {
+                Text(
+                    if (apiType == "anthropic-messages") "claude-sonnet-4-6"
+                    else "gpt-4o-mini"
+                )
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        )
+
+        Button(
+            onClick = {
+                val profile = ProviderProfile(
+                    kind = ProviderKind.CUSTOM,
+                    baseUrl = baseUrl.trim(),
+                    model = model.trim(),
+                    dshApi = apiType,
+                )
+                if (apiKey.isNotBlank()) {
+                    onSaveProvider(profile, apiKey.trim())
+                }
+                savedTick = true
+            },
+            enabled = baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            if (savedTick) {
+                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(if (savedTick) "Saved" else "Save Custom API", fontWeight = FontWeight.Bold)
+        }
+
+        Text(
+            "Custom chats directly via your API. For code execution (file edits, terminal), install Claude Code, DeepSeek, or Cloud Code.",
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+        )
+    }
+}
+
+/**
  * Compact Runtime Updates Card.
  */
 @Composable
 private fun AgentUpdateBlock(
     state: AppUiState,
+    viewedAgent: AgentKind,
     onCheck: () -> Unit,
     onUpdate: (AgentKind) -> Unit,
 ) {
+    // Each tab shows ONLY its own agent's update checker — never another agent's.
+    val update = state.agentUpdates[viewedAgent]
     Column(
         Modifier
             .fillMaxWidth()
@@ -2155,66 +2332,74 @@ private fun AgentUpdateBlock(
             Column(Modifier.weight(1f)) {
                 Text("Runtime updates", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Text(
-                    state.agentUpdateMessage ?: "Installed agents stay current",
+                    when {
+                        viewedAgent == AgentKind.CUSTOM -> "Custom uses your API directly — no runtime to update"
+                        update != null -> "1 update available for ${viewedAgent.title}"
+                        state.agentUpdateMessage != null && state.agentUpdatesChecking -> state.agentUpdateMessage.orEmpty()
+                        else -> "${viewedAgent.title} is up to date"
+                    },
                     fontSize = 10.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null
-            Row(
-                modifier = Modifier
-                    .clickable(enabled = canCheck, onClick = onCheck)
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (state.agentUpdatesChecking) {
-                    CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.6.dp)
-                } else {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(14.dp))
+            if (viewedAgent != AgentKind.CUSTOM) {
+                val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null
+                Row(
+                    modifier = Modifier
+                        .clickable(enabled = canCheck, onClick = onCheck)
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.agentUpdatesChecking) {
+                        CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.6.dp)
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(14.dp))
+                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text("Check updates", color = PocketOrange, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Spacer(Modifier.width(5.dp))
-                Text("Check updates", color = PocketOrange, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 
-        state.agentUpdates.forEach { (agent, update) ->
-                val updating = state.agentUpdating == agent
-                val downloaded = state.agentUpdateDownloadedBytes
-                val total = state.agentUpdateTotalBytes
-                val fraction = if (updating && downloaded != null && total != null && total > 0L) {
-                    (downloaded.toFloat() / total).coerceIn(0f, 1f)
-                } else state.agentUpdateProgress.coerceIn(0f, 1f)
+        if (update != null) {
+            val agent = viewedAgent
+            val updating = state.agentUpdating == agent
+            val downloaded = state.agentUpdateDownloadedBytes
+            val total = state.agentUpdateTotalBytes
+            val fraction = if (updating && downloaded != null && total != null && total > 0L) {
+                (downloaded.toFloat() / total).coerceIn(0f, 1f)
+            } else state.agentUpdateProgress.coerceIn(0f, 1f)
 
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = PocketOrange.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.28f)),
-                ) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(agent.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text("v${update.installedVersion} → v${update.latestVersion}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text("UPDATE", color = PocketOrange, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = PocketOrange.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.28f)),
+            ) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(agent.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("v${update.installedVersion} → v${update.latestVersion}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (updating) {
-                            state.agentUpdateMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
-                        } else {
-                            Button(
-                                onClick = { onUpdate(agent) },
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = state.agentUpdating == null && state.agentInstalling == null,
-                                shape = RoundedCornerShape(10.dp),
-                            ) {
-                                Text("Update ${agent.title}", fontSize = 12.sp)
-                            }
+                        Text("UPDATE", color = PocketOrange, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                    if (updating) {
+                        state.agentUpdateMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                    } else {
+                        Button(
+                            onClick = { onUpdate(agent) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.agentUpdating == null && state.agentInstalling == null,
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text("Update ${agent.title}", fontSize = 12.sp)
                         }
                     }
                 }
+            }
         }
     }
 }

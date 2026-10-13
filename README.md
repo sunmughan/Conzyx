@@ -72,6 +72,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Files header fixed**: the "Files" title shared one row with 7 action buttons and wrapped vertically on narrow phones. The title now sits on its own top-left line with the full icon row below it.
 - **Prompt-send crash fixed**: the native `pocket_spawn.c` still exported JNI symbols under the old upstream package (`Java_com_jarves_mh_runtime_NativeSpawn_*`) while the Kotlin class lives at `com.codeair.mhe.runtime.NativeSpawn`, so every agent session died at spawn time with "No implementation found". All three JNI entry points (spawn/waitFor/kill) renamed to the `com.codeair.mhe` package.
 - **Full-app audit fixes (2026-10-13)**: duplicate FCM services removed in the online flavor (every push was delivered twice); `System.loadLibrary("pocketspawn")` now throws a clear reinstall message instead of a raw linker error; `scripts/build-play-release.sh` no longer defaults to the upstream author's `/Users/jarves/` keystore path; prebuilt `libpocketspawn.so` rebuilt from the fixed C source so ARM64-host builds don't reintroduce the JNI crash.
+- **Agent screen fixes (2026-10-13)**: agent tab names are now centered in their own columns; the Runtime updates card shows only the currently viewed tab's agent updates (Antigravity/DeepSeek/Claude/Cloud each get their own checker); new **Custom** agent tab — bring your own OpenAI-compatible or Claude-compatible API key (base URL + key + model), no binary download or install needed, chats directly via your API.
 
 ### 🛡️ Reliability
 

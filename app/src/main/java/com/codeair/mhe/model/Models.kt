@@ -78,6 +78,12 @@ enum class AgentKind(
         "Cloud-based coding agent · multi-account with auto-failover",
         "34.2 MB",
     ),
+    CUSTOM(
+        "custom",
+        "Custom",
+        "Your own API key · OpenAI / Claude-compatible",
+        "",
+    ),
     ;
 
     companion object {
@@ -144,6 +150,8 @@ fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
     AgentKind.CLOUD_CODE -> emptyList()
+    // Custom agent is pure bring-your-own-API: OpenAI-compatible and Claude-compatible endpoints only.
+    AgentKind.CUSTOM -> listOf(ProviderKind.CUSTOM, ProviderKind.ANTHROPIC, ProviderKind.LLM_ROUTER)
 }
 
 data class ProviderProfile(

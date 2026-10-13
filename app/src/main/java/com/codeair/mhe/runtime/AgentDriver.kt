@@ -46,6 +46,7 @@ class AgentRegistry(drivers: List<AgentDriver>) {
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
             cloudCode: RuntimeBridge,
+            custom: RuntimeBridge,
         ) = AgentRegistry(
             listOf(
                 BuiltInAgentDriver(
@@ -92,6 +93,21 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.INTERACTIVE_APPROVALS,
                     ),
                 ),
+                // Custom is bring-your-own-API: no binary to install, direct API chat.
+                object : AgentDriver {
+                    override val kind: AgentKind = AgentKind.CUSTOM
+                    override val runtime: RuntimeBridge = custom
+                    override val capabilities: Set<AgentCapability> = setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                    )
+                    override fun isInstalled(installer: RuntimeInstaller): Boolean = true
+                    override suspend fun install(
+                        installer: RuntimeInstaller,
+                        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+                    ) = Unit
+                },
             ),
         )
     }
