@@ -2,7 +2,12 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
-keystore_path="${MH_UPLOAD_STORE_FILE:-/Users/jarves/.mobile-harness/mobile-harness-upload.jks}"
+if [[ -z "${MH_UPLOAD_STORE_FILE:-}" ]]; then
+  echo "MH_UPLOAD_STORE_FILE is not set: point it at your upload keystore, e.g." >&2
+  echo "  export MH_UPLOAD_STORE_FILE=\"\$HOME/.mobile-harness/mobile-harness-upload.jks\"" >&2
+  exit 1
+fi
+keystore_path="$MH_UPLOAD_STORE_FILE"
 key_alias="${MH_UPLOAD_KEY_ALIAS:-mobile-harness-upload}"
 keychain_account="com.codeair.mhe"
 keychain_service="Mobile Harness Upload Key"

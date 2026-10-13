@@ -95,7 +95,15 @@ private object NativeSpawn {
     const val STILL_RUNNING = -2
 
     init {
-        System.loadLibrary("pocketspawn")
+        try {
+            System.loadLibrary("pocketspawn")
+        } catch (e: UnsatisfiedLinkError) {
+            throw IllegalStateException(
+                "Native runtime library (libpocketspawn.so) is missing or incompatible. " +
+                    "Reinstall the app from the official release.",
+                e,
+            )
+        }
     }
 
     external fun spawn(
