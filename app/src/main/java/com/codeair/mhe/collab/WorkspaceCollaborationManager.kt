@@ -52,9 +52,12 @@ class WorkspaceCollaborationManager(
      */
     fun createShareSession(projectId: String, projectName: String): SharedProjectSession {
         val shareToken = UUID.randomUUID().toString().take(8).uppercase()
+        // On-device session only: there is no collaboration server, so no
+        // share URL is generated. The token is a LOCAL join code that works
+        // only on this device. Never fabricate a share link.
         val owner = TeamMember(
-            name = "Project Owner",
-            email = "owner@pocketdev.local",
+            name = "You",
+            email = "",
             role = TeamMemberRole.OWNER,
             status = MemberStatus.ACTIVE,
             permissions = TeamPermissions.forRole(TeamMemberRole.OWNER)
@@ -63,7 +66,7 @@ class WorkspaceCollaborationManager(
         val session = SharedProjectSession(
             projectId = projectId,
             projectName = projectName,
-            shareUrl = "https://share.pocketdev.io/join/$projectId?token=$shareToken",
+            shareUrl = "",
             shareToken = shareToken,
             isLiveSyncEnabled = true,
             members = listOf(owner),

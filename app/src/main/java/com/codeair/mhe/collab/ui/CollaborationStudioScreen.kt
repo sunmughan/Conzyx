@@ -234,6 +234,11 @@ fun CollaborationStudioScreen(
             title = { Text("Join Collaboration Session") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Enter the session code shown on this device. Sessions live only on this device.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     OutlinedTextField(
                         value = tokenInput,
                         onValueChange = { tokenInput = it },
@@ -477,7 +482,7 @@ private fun OverviewTabContent(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("No Active Collaboration Session", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text(
-                            "Start a shared workspace to collaborate in real-time, share AI sessions, review code, and manage team checkpoints.",
+                            "Start an on-device workspace session to organize team roles, review code, and manage checkpoints on this device. There is no server sync: joining works only on this device.",
                             fontSize = 12.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 8.dp)
@@ -520,7 +525,8 @@ private fun OverviewTabContent(
                         ) {
                             Column {
                                 Text("Shared Project: ${session.projectName}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("Token: ${session.shareToken}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                Text("Local session code: ${session.shareToken}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                Text("On-device session only. Joining works on this device; there is no server sync.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Button(
                                 onClick = { manager.toggleLiveSync(!session.isLiveSyncEnabled) },
@@ -534,20 +540,12 @@ private fun OverviewTabContent(
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
-                                onClick = { clipboard.setText(AnnotatedString(session.shareUrl)) },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Copy Link", fontSize = 11.sp)
-                            }
-                            OutlinedButton(
                                 onClick = { clipboard.setText(AnnotatedString(session.shareToken)) },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Copy Token", fontSize = 11.sp)
+                                Text("Copy Session Code", fontSize = 11.sp)
                             }
                             OutlinedButton(
                                 onClick = { manager.endShareSession() },

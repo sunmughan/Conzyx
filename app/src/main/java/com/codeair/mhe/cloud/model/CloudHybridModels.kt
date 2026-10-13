@@ -83,23 +83,32 @@ data class CloudWorkerSpec(
     val ramGb: Int = 16,
     val maxConcurrentJobs: Int = 4,
     val supportedWorkloads: Set<WorkloadType> = WorkloadType.entries.toSet(),
-    val pingLatencyMs: Long = 45L,
-    val healthStatus: WorkerHealthStatus = WorkerHealthStatus.HEALTHY
+    // Unknown until a real /health probe runs: never display a made-up latency
+    // or HEALTHY badge for a worker that has never been probed.
+    val pingLatencyMs: Long = -1L,
+    val healthStatus: WorkerHealthStatus = WorkerHealthStatus.OFFLINE
 )
 
 /**
  * Real-time device physical and hardware telemetry.
+ *
+ * Values are ONLY real readings collected from ActivityManager / BatteryManager /
+ * ConnectivityManager. [cpuTemperatureCelsius] is null because Android exposes no
+ * public CPU-temperature API: the UI must show "Not available", never a made-up
+ * number. [collected] is false until a real collection has run, so the UI can
+ * show placeholders instead of plausible-looking defaults.
  */
 data class DeviceResourceMetrics(
-    val availableRamMb: Long = 2048L,
-    val totalRamMb: Long = 8192L,
-    val batteryLevelPercent: Int = 85,
-    val isCharging: Boolean = true,
+    val availableRamMb: Long = 0L,
+    val totalRamMb: Long = 0L,
+    val batteryLevelPercent: Int = 0,
+    val isCharging: Boolean = false,
     val isLowPowerMode: Boolean = false,
-    val isWifiConnected: Boolean = true,
+    val isWifiConnected: Boolean = false,
     val isMeteredNetwork: Boolean = false,
-    val cpuTemperatureCelsius: Double = 36.5,
-    val thermalThrottling: Boolean = false
+    val cpuTemperatureCelsius: Double? = null,
+    val thermalThrottling: Boolean = false,
+    val collected: Boolean = false
 ) {
     val ramUsagePercent: Int
         get() = if (totalRamMb > 0) (((totalRamMb - availableRamMb).toDouble() / totalRamMb) * 100).toInt() else 0

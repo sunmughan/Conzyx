@@ -22,19 +22,14 @@ class CloudWorkerRegistryTest {
     }
 
     @Test
-    fun testDefaultPresetsLoadedOnInit() {
+    fun testRegistryStartsEmpty() {
+        // No fabricated preset workers: the fleet starts empty. Only workers
+        // the user explicitly adds may ever appear.
         val workers = registry.getAllWorkers()
-        assertTrue(workers.isNotEmpty())
-
-        val fastBuild = registry.getWorkerById("worker-fastbuild-us-east")
-        assertNotNull(fastBuild)
-        assertEquals("us-east-1", fastBuild!!.region)
-        assertEquals(16, fastBuild.cpuCores)
-        assertEquals(32, fastBuild.ramGb)
-
-        val gpuWorker = registry.getWorkerById("worker-gpu-us-central")
-        assertNotNull(gpuWorker)
-        assertTrue(gpuWorker!!.gpuAvailable)
+        assertTrue(workers.isEmpty())
+        assertNull(registry.getWorkerById("worker-fastbuild-us-east"))
+        assertNull(registry.getWorkerById("worker-gpu-us-central"))
+        assertNull(registry.getWorkerById("worker-eu-highperf"))
     }
 
     @Test
@@ -63,7 +58,17 @@ class CloudWorkerRegistryTest {
 
     @Test
     fun testUpdateWorkerHealthAndAvailability() {
-        val workerId = "worker-fastbuild-us-east"
+        val worker = CloudWorkerSpec(
+            id = "worker-probe-1",
+            name = "Probe Worker",
+            endpointUrl = "https://probe.example.invalid",
+            region = "us-east-1",
+            cpuCores = 16,
+            ramGb = 32,
+            healthStatus = WorkerHealthStatus.HEALTHY
+        )
+        registry.registerWorker(worker)
+        val workerId = "worker-probe-1"
 
         val updated = registry.updateWorkerHealth(
             workerId = workerId,
@@ -91,6 +96,14 @@ class CloudWorkerRegistryTest {
 
     @Test
     fun testGetHealthyWorkersExcludesOfflineNodes() {
+        val healthy = CloudWorkerSpec(
+            id = "healthy-node-1",
+            name = "Healthy Node",
+            endpointUrl = "https://healthy.example.invalid",
+            region = "us-east-1",
+            healthStatus = WorkerHealthStatus.HEALTHY
+        )
+        registry.registerWorker(healthy)
         val healthyBefore = registry.getHealthyWorkers()
         val firstId = healthyBefore.first().id
 
@@ -102,6 +115,28 @@ class CloudWorkerRegistryTest {
 
     @Test
     fun testGetWorkersForSpecificWorkload() {
+        registry.registerWorker(
+            CloudWorkerSpec(
+                id = "gpu-node-1",
+                name = "GPU Node",
+                endpointUrl = "https://gpu.example.invalid",
+                region = "us-central-1",
+                gpuAvailable = true,
+                healthStatus = WorkerHealthStatus.HEALTHY,
+                supportedWorkloads = setOf(WorkloadType.GPU_MODEL_INFERENCE)
+            )
+        )
+        registry.registerWorker(
+            CloudWorkerSpec(
+                id = "gradle-node-1",
+                name = "Gradle Node",
+                endpointUrl = "https://gradle.example.invalid",
+                region = "us-east-1",
+                healthStatus = WorkerHealthStatus.HEALTHY,
+                supportedWorkloads = setOf(WorkloadType.HEAVY_GRADLE_BUILD)
+            )
+        )
+
         val gpuWorkers = registry.getWorkersForWorkload(WorkloadType.GPU_MODEL_INFERENCE)
         assertTrue(gpuWorkers.isNotEmpty())
         assertTrue(gpuWorkers.all { it.supportedWorkloads.contains(WorkloadType.GPU_MODEL_INFERENCE) })
@@ -112,13 +147,14 @@ class CloudWorkerRegistryTest {
     }
 
     @Test
-    fun testResetToDefaultsRestoresInitialFleet() {
+    fun testResetToDefaultsClearsFleet() {
         val custom = CloudWorkerSpec(id = "temporary-node", name = "Temp", endpointUrl = "http://localhost", region = "local")
         registry.registerWorker(custom)
         assertNotNull(registry.getWorkerById("temporary-node"))
 
+        // Reset means an empty fleet: no fabricated presets come back.
         registry.resetToDefaults()
         assertNull(registry.getWorkerById("temporary-node"))
-        assertNotNull(registry.getWorkerById("worker-fastbuild-us-east"))
+        assertTrue(registry.getAllWorkers().isEmpty())
     }
 }

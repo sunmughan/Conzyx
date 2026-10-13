@@ -229,19 +229,20 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                 )
                 Spacer(Modifier.height(10.dp))
 
-                // RAM Gauge
+                // RAM Gauge: real readings only. Before the first real collection
+                // (metrics.collected == false) show placeholders, never defaults.
                 Text(
-                    text = "RAM Available: ${metrics.availableRamMb} MB / ${metrics.totalRamMb} MB (${metrics.ramUsagePercent}% used)",
+                    text = if (metrics.collected) "RAM Available: ${metrics.availableRamMb} MB / ${metrics.totalRamMb} MB (${metrics.ramUsagePercent}% used)" else "RAM Available: Collecting real readings...",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
                 LinearProgressIndicator(
-                    progress = { (metrics.ramUsagePercent.toFloat() / 100f).coerceIn(0f, 1f) },
+                    progress = { if (metrics.collected) (metrics.ramUsagePercent.toFloat() / 100f).coerceIn(0f, 1f) else 0f },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp),
-                    color = if (metrics.availableRamMb < 1500L) Color(0xFFF57C00) else MaterialTheme.colorScheme.primary
+                    color = if (metrics.collected && metrics.availableRamMb < 1500L) Color(0xFFF57C00) else MaterialTheme.colorScheme.primary
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -253,17 +254,17 @@ private fun HybridTelemetryTab(coordinator: CloudHybridCoordinator) {
                 ) {
                     TelemetryChip(
                         icon = Icons.Default.BatteryChargingFull,
-                        label = "${metrics.batteryLevelPercent}% ${if (metrics.isCharging) "Charging" else "Battery"}",
-                        color = if (metrics.batteryLevelPercent > 20) Color(0xFF2E7D32) else Color(0xFFD32F2F)
+                        label = if (metrics.collected) "${metrics.batteryLevelPercent}% ${if (metrics.isCharging) "Charging" else "Battery"}" else "Battery: Collecting...",
+                        color = if (metrics.collected && metrics.batteryLevelPercent > 20) Color(0xFF2E7D32) else if (metrics.collected) Color(0xFFD32F2F) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     TelemetryChip(
                         icon = Icons.Default.Speed,
-                        label = if (metrics.thermalThrottling) "Throttled" else "Thermals: ${metrics.cpuTemperatureCelsius}°C",
+                        label = if (metrics.thermalThrottling) "Throttled" else metrics.cpuTemperatureCelsius?.let { "Thermals: ${it}°C" } ?: "Thermals: Not available",
                         color = if (metrics.thermalThrottling) Color(0xFFD32F2F) else Color(0xFF2E7D32)
                     )
                     TelemetryChip(
                         icon = Icons.Default.Wifi,
-                        label = if (metrics.isWifiConnected) "Wi-Fi" else "Cellular",
+                        label = if (!metrics.collected) "Network: Collecting..." else if (metrics.isWifiConnected) "Wi-Fi" else "Cellular",
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -456,6 +457,16 @@ private fun HybridWorkersTab(coordinator: CloudHybridCoordinator) {
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (state.registeredWorkers.isEmpty()) {
+                item {
+                    Text(
+                        text = "No cloud runners registered. Add your own runner with + Add Runner, then Ping All to verify it really responds.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
             items(state.registeredWorkers, key = { it.id }) { worker ->
                 WorkerCard(worker = worker)
             }
@@ -505,7 +516,7 @@ private fun WorkerCard(worker: CloudWorkerSpec) {
                     color = if (worker.healthStatus == WorkerHealthStatus.HEALTHY) Color(0xFF2E7D32) else Color(0xFFF57C00)
                 ) {
                     Text(
-                        text = "${worker.pingLatencyMs}ms",
+                        text = if (worker.healthStatus == WorkerHealthStatus.HEALTHY) "${worker.pingLatencyMs}ms" else worker.healthStatus.name,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,

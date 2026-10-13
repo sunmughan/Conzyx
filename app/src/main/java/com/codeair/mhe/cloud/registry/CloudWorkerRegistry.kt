@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * Thread-Safe Cloud Worker Fleet Registry (Phase 12).
  * Manages registered cloud execution nodes, tracks real-time heartbeat latency,
  * and maintains active capacity states.
+ *
+ * NO preset workers: the registry starts EMPTY. Every listed worker is one the
+ * user explicitly added (Add Runner) or that was registered by a real backend.
+ * Fabricated endpoints, latencies and prices are never shown as real workers.
  */
 class CloudWorkerRegistry {
 
@@ -20,7 +24,7 @@ class CloudWorkerRegistry {
     val workersFlow: StateFlow<List<CloudWorkerSpec>> = _workersFlow.asStateFlow()
 
     init {
-        loadDefaultPresets()
+        syncFlow()
     }
 
     fun registerWorker(worker: CloudWorkerSpec): CloudWorkerSpec {
@@ -68,65 +72,8 @@ class CloudWorkerRegistry {
     }
 
     fun resetToDefaults() {
+        // No fabricated presets: reset means an empty fleet.
         workersMap.clear()
-        loadDefaultPresets()
-    }
-
-    private fun loadDefaultPresets() {
-        val defaults = listOf(
-            CloudWorkerSpec(
-                id = "worker-fastbuild-us-east",
-                name = "FastBuild Runner (x86_64 16-Core)",
-                endpointUrl = "https://build-cloud.pocketdev.io",
-                region = "us-east-1",
-                isAvailable = true,
-                costPerHourUsd = 0.05,
-                gpuAvailable = false,
-                cpuCores = 16,
-                ramGb = 32,
-                pingLatencyMs = 42L,
-                healthStatus = WorkerHealthStatus.HEALTHY,
-                supportedWorkloads = setOf(
-                    WorkloadType.HEAVY_GRADLE_BUILD,
-                    WorkloadType.LARGE_TEST_SUITE,
-                    WorkloadType.CROSS_COMPILATION,
-                    WorkloadType.DOCKER_CONTAINER_RUN
-                )
-            ),
-            CloudWorkerSpec(
-                id = "worker-gpu-us-central",
-                name = "AI GPU Accelerator (NVIDIA L40S)",
-                endpointUrl = "https://gpu-cloud.pocketdev.io",
-                region = "us-central-1",
-                isAvailable = true,
-                costPerHourUsd = 0.20,
-                gpuAvailable = true,
-                cpuCores = 12,
-                ramGb = 48,
-                pingLatencyMs = 65L,
-                healthStatus = WorkerHealthStatus.HEALTHY,
-                supportedWorkloads = setOf(
-                    WorkloadType.GPU_MODEL_INFERENCE,
-                    WorkloadType.AI_CODE_SYNTHESIS,
-                    WorkloadType.KNOWLEDGE_DISTILLATION
-                )
-            ),
-            CloudWorkerSpec(
-                id = "worker-eu-highperf",
-                name = "EU High-Performance Node (32-Core)",
-                endpointUrl = "https://eu-cloud.pocketdev.io",
-                region = "eu-west-1",
-                isAvailable = true,
-                costPerHourUsd = 0.08,
-                gpuAvailable = false,
-                cpuCores = 32,
-                ramGb = 64,
-                pingLatencyMs = 110L,
-                healthStatus = WorkerHealthStatus.HEALTHY,
-                supportedWorkloads = WorkloadType.entries.toSet()
-            )
-        )
-        defaults.forEach { workersMap[it.id] = it }
         syncFlow()
     }
 

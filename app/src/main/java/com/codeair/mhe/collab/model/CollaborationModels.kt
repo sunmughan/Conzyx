@@ -110,7 +110,7 @@ data class OrganizationAccount(
     val plan: OrganizationPlan = OrganizationPlan.PRO,
     val totalMembersCount: Int = 1,
     val sharedProjectsCount: Int = 1,
-    val ownerEmail: String = "admin@pocketdev.io",
+    val ownerEmail: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -222,7 +222,7 @@ data class SharedProjectSession(
  */
 data class CollaborationSessionState(
     val activeSession: SharedProjectSession? = null,
-    val organization: OrganizationAccount = OrganizationAccount(name = "Mobile Harness Extended Workspace", slug = "pocketdev-workspace"),
+    val organization: OrganizationAccount = OrganizationAccount(name = "Mobile Harness Extended Workspace", slug = "local-workspace"),
     val availableCheckpoints: List<SharedCheckpoint> = emptyList(),
     val pendingReviewComments: List<CodeComment> = emptyList(),
     val activeAgentJobs: List<SharedAgentJob> = emptyList(),

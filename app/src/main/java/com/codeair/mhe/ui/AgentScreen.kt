@@ -87,6 +87,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -190,8 +191,13 @@ fun AgentScreen(
 ) {
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var showTeamDialog by rememberSaveable { mutableStateOf(false) }
-    val teamOrchestratorResolved = teamOrchestrator ?: remember { AgentTeamOrchestrator() }
+    // NO silent demo fallback: if the caller did not wire the real orchestrator
+    // (isDemoMode=false + RealTeamAgentExecutor), the Team Studio must not open
+    // in demo mode showing simulated tasks/tokens. It stays closed and the
+    // button below reports "not configured" instead.
+    val teamOrchestratorResolved = teamOrchestrator
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
     var baseUrl by rememberSaveable(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
     var model by rememberSaveable(state.provider.model) { mutableStateOf(state.provider.model) }
@@ -816,7 +822,17 @@ fun AgentScreen(
                             )
                         }
                     }
-                    IconButton(onClick = { showTeamDialog = true }) {
+                    IconButton(onClick = {
+                        if (teamOrchestratorResolved != null) {
+                            showTeamDialog = true
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Team execution is not configured in this build.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }) {
                         Icon(
                             Icons.Default.Groups,
                             contentDescription = "Multi-Agent Engineering Team",
@@ -1196,7 +1212,7 @@ fun AgentScreen(
         }
     }
 
-    if (showTeamDialog) {
+    if (showTeamDialog && teamOrchestratorResolved != null) {
         MultiAgentTeamBottomSheet(
             orchestrator = teamOrchestratorResolved,
             onDismiss = { showTeamDialog = false },

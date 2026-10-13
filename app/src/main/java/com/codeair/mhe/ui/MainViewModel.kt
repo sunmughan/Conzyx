@@ -434,7 +434,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isDemoMode = false,
         concurrencyController = teamConcurrencyController,
     )
-    val cloudHybridCoordinator = com.codeair.mhe.cloud.CloudHybridCoordinator()
+    val cloudHybridCoordinator = com.codeair.mhe.cloud.CloudHybridCoordinator(application = application)
     val workspaceCollaborationManager = com.codeair.mhe.collab.WorkspaceCollaborationManager()
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)

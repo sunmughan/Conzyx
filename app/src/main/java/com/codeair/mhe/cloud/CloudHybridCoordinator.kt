@@ -1,5 +1,13 @@
 package com.codeair.mhe.cloud
 
+import android.app.ActivityManager
+import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import com.codeair.mhe.cloud.model.CloudArtifact
 import com.codeair.mhe.cloud.model.CloudHybridState
 import com.codeair.mhe.cloud.model.CloudWorkerSpec
@@ -17,10 +25,16 @@ import com.codeair.mhe.cloud.registry.CloudWorkerRegistry
 import com.codeair.mhe.cloud.routing.WorkloadDecisionEngine
 import com.codeair.mhe.cloud.runner.CloudJobRunner
 import com.codeair.mhe.cloud.sync.CloudArtifactSyncEngine
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 // Typealiases for backward compatibility
 typealias WorkloadRoutingPolicy = com.codeair.mhe.cloud.model.WorkloadRoutingPolicy
@@ -32,13 +46,20 @@ typealias HybridJob = com.codeair.mhe.cloud.model.HybridJob
  * Cloud + Phone Hybrid Coordinator (Phase 12 v2.3).
  * Intelligently balances workloads across the local Android PRoot Linux environment
  * and high-compute remote cloud workers (FastBuild runners, GPU accelerators).
+ *
+ * Telemetry shown on screen is collected from the real device via [application]
+ * (ActivityManager / BatteryManager / ConnectivityManager). No plausible-looking
+ * default numbers are ever displayed as readings.
  */
 class CloudHybridCoordinator(
     val decisionEngine: WorkloadDecisionEngine = WorkloadDecisionEngine(),
     val workerRegistry: CloudWorkerRegistry = CloudWorkerRegistry(),
     val syncEngine: CloudArtifactSyncEngine = CloudArtifactSyncEngine(),
-    val jobRunner: CloudJobRunner = CloudJobRunner()
+    val jobRunner: CloudJobRunner = CloudJobRunner(),
+    private val application: Application? = null
 ) {
+
+    private val coordinatorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow(
         CloudHybridState(
@@ -59,6 +80,7 @@ class CloudHybridCoordinator(
     val activeJobs: StateFlow<List<HybridJob>> = _activeJobs.asStateFlow()
 
     init {
+        refreshDeviceMetrics()
         syncState()
     }
 
@@ -72,10 +94,58 @@ class CloudHybridCoordinator(
     }
 
     /**
-     * Backward-compatible evaluation function.
+     * Collects REAL device telemetry from the OS. CPU temperature has no public
+     * Android API, so it stays null (UI shows "Not available") instead of a
+     * fabricated number. With no Application, metrics stay uncollected.
      */
-    fun shouldOffloadToCloud(workloadType: WorkloadType, deviceAvailableRamMb: Long = 2048): Boolean {
-        val currentMetrics = _state.value.deviceMetrics.copy(availableRamMb = deviceAvailableRamMb)
+    fun refreshDeviceMetrics() {
+        val app = application ?: return
+        val metrics = collectRealDeviceMetrics(app)
+        _state.value = _state.value.copy(deviceMetrics = metrics)
+    }
+
+    private fun collectRealDeviceMetrics(app: Application): DeviceResourceMetrics {
+        val activityManager = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memInfo)
+
+        val batteryManager = app.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            .takeIf { it in 0..100 } ?: 0
+        val batteryIntent = app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val isCharging = plugged != 0
+
+        val connectivityManager = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+        val isWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val isMetered = try {
+            connectivityManager.isActiveNetworkMetered
+        } catch (e: Exception) {
+            false
+        }
+
+        return DeviceResourceMetrics(
+            availableRamMb = (memInfo.availMem / (1024L * 1024L)),
+            totalRamMb = (memInfo.totalMem / (1024L * 1024L)),
+            batteryLevelPercent = batteryLevel,
+            isCharging = isCharging,
+            isLowPowerMode = false,
+            isWifiConnected = isWifi,
+            isMeteredNetwork = isMetered,
+            cpuTemperatureCelsius = null,
+            thermalThrottling = false,
+            collected = true
+        )
+    }
+
+    /**
+     * Backward-compatible evaluation function. With no explicit RAM override,
+     * the real collected reading is used, never a hardcoded default.
+     */
+    fun shouldOffloadToCloud(workloadType: WorkloadType, deviceAvailableRamMb: Long = -1L): Boolean {
+        val ram = if (deviceAvailableRamMb >= 0) deviceAvailableRamMb else _state.value.deviceMetrics.availableRamMb
+        val currentMetrics = _state.value.deviceMetrics.copy(availableRamMb = ram)
         val decision = decisionEngine.evaluate(
             workloadType = workloadType,
             policy = _routingPolicy.value,
@@ -158,19 +228,43 @@ class CloudHybridCoordinator(
     }
 
     /**
-     * Pings all registered workers to refresh network latency and health status.
+     * Pings all registered workers with a REAL reachability probe: HTTP GET to
+     * each worker's /health endpoint, measuring actual latency. Unreachable
+     * workers are marked UNREACHABLE with their last known latency. Nothing is
+     * simulated: a dead or fictional endpoint reports as dead.
      */
     fun pingWorkers() {
-        workerRegistry.getAllWorkers().forEach { worker ->
-            val simulatedLatency = when (worker.region) {
-                "us-east-1" -> 38L
-                "us-central-1" -> 58L
-                "eu-west-1" -> 105L
-                else -> 80L
+        val workers = workerRegistry.getAllWorkers()
+        if (workers.isEmpty()) return
+        coordinatorScope.launch {
+            workers.forEach { worker ->
+                val (reachable, latencyMs) = probeWorkerHealth(worker.endpointUrl)
+                val status = if (reachable) WorkerHealthStatus.HEALTHY else WorkerHealthStatus.OFFLINE
+                workerRegistry.updateWorkerHealth(worker.id, status, latencyMs)
             }
-            workerRegistry.updateWorkerHealth(worker.id, WorkerHealthStatus.HEALTHY, simulatedLatency)
+            syncState()
         }
-        syncState()
+    }
+
+    private fun probeWorkerHealth(endpointUrl: String): Pair<Boolean, Long> {
+        val startedAt = System.currentTimeMillis()
+        return try {
+            val url = URL(endpointUrl.trimEnd('/') + "/health")
+            val code = (url.openConnection() as HttpURLConnection).run {
+                connectTimeout = 4000
+                readTimeout = 4000
+                requestMethod = "GET"
+                instanceFollowRedirects = true
+                connect()
+                val responseCode = responseCode
+                disconnect()
+                responseCode
+            }
+            val latency = System.currentTimeMillis() - startedAt
+            (code in 200..399) to latency
+        } catch (e: Exception) {
+            false to -1L
+        }
     }
 
     private fun recordJobCompletion(completedJob: HybridExecutionJob) {

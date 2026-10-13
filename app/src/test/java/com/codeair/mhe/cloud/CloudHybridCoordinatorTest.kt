@@ -25,7 +25,8 @@ class CloudHybridCoordinatorTest {
     fun testInitialCoordinatorState() {
         val state = coordinator.state.value
         assertEquals(WorkloadRoutingPolicy.HYBRID_AUTO, state.routingPolicy)
-        assertTrue(state.registeredWorkers.isNotEmpty())
+        // No fabricated workers: the fleet starts empty.
+        assertTrue(state.registeredWorkers.isEmpty())
         assertTrue(state.activeJobs.isEmpty())
         assertTrue(state.completedJobs.isEmpty())
         assertEquals(0, state.totalOffloadedJobs)
@@ -77,6 +78,18 @@ class CloudHybridCoordinatorTest {
     @Test
     fun testSubmitExecutionJobLifecycle() {
         coordinator.setPolicy(WorkloadRoutingPolicy.CLOUD_OFFLOAD)
+        // A real, user-registered healthy worker pointing at an unreachable
+        // endpoint: the cloud path must report NOT_CONFIGURED with a clear
+        // message, never a fake COMPLETED with canned logs.
+        coordinator.workerRegistry.registerWorker(
+            com.codeair.mhe.cloud.model.CloudWorkerSpec(
+                id = "ci-worker-1",
+                name = "CI Worker",
+                endpointUrl = "https://ci.example.invalid",
+                region = "eu-central-1",
+                healthStatus = com.codeair.mhe.cloud.model.WorkerHealthStatus.HEALTHY
+            )
+        )
 
         val job = coordinator.submitExecutionJob(
             title = "Run Integration Tests",
@@ -84,7 +97,7 @@ class CloudHybridCoordinatorTest {
             runImmediately = true
         )
 
-        // Milestone 0 honesty: no real cloud worker endpoint is configured in
+        // Milestone 0 honesty: no real cloud worker endpoint is reachable in
         // this build, so the cloud path must report NOT_CONFIGURED with a clear
         // message, never a fake COMPLETED with canned logs.
         assertEquals(HybridJobState.NOT_CONFIGURED, job.state)
@@ -115,17 +128,30 @@ class CloudHybridCoordinatorTest {
     }
 
     @Test
-    fun testPingWorkersUpdatesLatencies() {
+    fun testPingWorkersMarksUnreachableOffline() {
+        // A worker pointing at a port nothing listens on: the real /health
+        // probe must fail and mark it OFFLINE, never a simulated latency.
+        coordinator.workerRegistry.registerWorker(
+            com.codeair.mhe.cloud.model.CloudWorkerSpec(
+                id = "dead-worker-1",
+                name = "Dead Worker",
+                endpointUrl = "http://127.0.0.1:1",
+                region = "local",
+                healthStatus = com.codeair.mhe.cloud.model.WorkerHealthStatus.HEALTHY
+            )
+        )
         coordinator.pingWorkers()
-        val workers = coordinator.state.value.registeredWorkers
 
-        val usEast = workers.find { it.region == "us-east-1" }
-        assertNotNull(usEast)
-        assertEquals(38L, usEast!!.pingLatencyMs)
-
-        val euWest = workers.find { it.region == "eu-west-1" }
-        assertNotNull(euWest)
-        assertEquals(105L, euWest!!.pingLatencyMs)
+        // pingWorkers probes asynchronously; poll briefly for the real result.
+        var observed: com.codeair.mhe.cloud.model.WorkerHealthStatus? = null
+        val deadline = System.currentTimeMillis() + 10_000L
+        while (System.currentTimeMillis() < deadline) {
+            observed = coordinator.state.value.registeredWorkers
+                .find { it.id == "dead-worker-1" }?.healthStatus
+            if (observed == com.codeair.mhe.cloud.model.WorkerHealthStatus.OFFLINE) break
+            Thread.sleep(200)
+        }
+        assertEquals(com.codeair.mhe.cloud.model.WorkerHealthStatus.OFFLINE, observed)
     }
 
     @Test
