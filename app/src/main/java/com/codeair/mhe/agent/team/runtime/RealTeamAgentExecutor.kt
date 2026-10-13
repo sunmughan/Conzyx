@@ -7,6 +7,7 @@ import com.codeair.mhe.agent.team.model.TeamTask
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.ProjectKind
+import com.codeair.mhe.model.ProviderKind
 import com.codeair.mhe.model.ProviderProfile
 import com.codeair.mhe.model.RuntimeEvent
 import com.codeair.mhe.runtime.RuntimeBridge
@@ -78,6 +79,11 @@ internal fun readinessReason(
     secret: String?,
 ): String? {
     if (!isInstalled) return "'${kind.title}' runtime is not installed"
+    // DeepSeek Harness rejects the Claude subscription login outright (same
+    // guard as the main chat): a saved Claude key does not make it usable.
+    if (kind == AgentKind.DEEPSEEK_HARNESS && provider?.kind == ProviderKind.CLAUDE) {
+        return "Claude subscription login is not supported by DeepSeek Harness. Pick a key-based provider in Settings."
+    }
     if (sessionAuthAvailable) return null
     if (provider == null) return "No provider configured for ${kind.title}."
     if (secret.isNullOrBlank()) return "No API key or token saved for ${provider.kind.title}."
@@ -103,8 +109,13 @@ internal fun resolveEffectiveKind(
         AgentKind.CLAUDE_CODE,
         AgentKind.DEEPSEEK_HARNESS,
         AgentKind.CLOUD_CODE,
-        AgentKind.CUSTOM,
     ).distinct()
+        // Custom is chat-only (no file edits, no tools): it can never execute
+        // an engineering task, so it is never a fallback candidate even when
+        // it is the user's selected agent. Letting it run would mark tasks
+        // COMPLETED with zero code written. A custom endpoint still works
+        // for real engineering through DeepSeek Harness (mh-custom route).
+        .filter { it != AgentKind.CUSTOM }
     val reasons = mutableListOf<String>()
     for (kind in order) {
         val reason = readinessOf(kind)
@@ -144,6 +155,11 @@ private const val LIVE_EMIT_THROTTLE_MS = 400L
  * auth (the Antigravity CLI never reads a vault API key), so a task wired
  * to Claude Code runs on Antigravity when no Claude key is saved, and the
  * live task + artifact metadata record the engine that actually ran it.
+ * DeepSeek Harness is a full engine (real file edits and tools, including
+ * custom OpenAI/Claude-compatible endpoints via its mh-custom route), and
+ * it rejects the Claude subscription login. Custom is deliberately NOT a
+ * candidate: it is chat-only (no file edits, no tools), so letting it run
+ * would mark engineering tasks COMPLETED with zero code written.
  * Only when NO engine is usable does the task fail with NOT_CONFIGURED
  * naming every engine tried and why.
  *
@@ -223,10 +239,24 @@ class RealTeamAgentExecutor(
             }
         )) {
             is AgentResolution.Ready -> resolution.kind
-            is AgentResolution.Unusable -> return failFast(
-                "No usable agent runtime for '${context.role.title}'. Tried: ${resolution.reasons}. " +
-                    "Install a runtime from Agent settings or sign in."
-            )
+            is AgentResolution.Unusable -> {
+                // A configured Custom endpoint is chat-only and can never run
+                // engineering tasks, so it is not a fallback candidate. Say
+                // where it CAN work: DeepSeek Harness runs that same endpoint
+                // (mh-custom route) with real file edits and tools.
+                val customProvider = providerFor(AgentKind.CUSTOM)
+                val customConfigured = customProvider != null &&
+                    customProvider.resolvedBaseUrl.isNotBlank() &&
+                    customProvider.let { secretFor(it) }.isNotBlank()
+                val customNote = if (customConfigured) {
+                    " Your Custom API endpoint is chat-only (no file edits/tools) and cannot run engineering tasks. " +
+                        "To use that endpoint for real engineering work, point DeepSeek Harness at it instead."
+                } else ""
+                return failFast(
+                    "No usable agent runtime for '${context.role.title}'. Tried: ${resolution.reasons}.$customNote " +
+                        "Install a runtime from Agent settings or sign in."
+                )
+            }
         }
         // For session-auth engines the provider is passed to the bridge but
         // unused: the Antigravity CLI authenticates with its own session.

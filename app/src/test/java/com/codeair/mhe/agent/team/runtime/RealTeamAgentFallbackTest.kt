@@ -119,4 +119,59 @@ class RealTeamAgentFallbackTest {
         assertTrue(reasons.contains("Claude Code"))
         assertTrue(reasons.contains("Antigravity"))
     }
+
+    @Test
+    fun testDeepSeekWithClaudeProviderIsNotReady() {
+        // DeepSeek Harness rejects the Claude subscription login outright;
+        // a saved Claude key does not make it usable.
+        val reason = readinessReason(
+            kind = AgentKind.DEEPSEEK_HARNESS,
+            isInstalled = true,
+            sessionAuthAvailable = false,
+            provider = ProviderProfile(kind = ProviderKind.CLAUDE),
+            secret = "sk-key",
+        )
+        assertNotNull(reason)
+        assertTrue(reason!!.contains("not supported by DeepSeek Harness"))
+    }
+
+    @Test
+    fun testCustomIsNeverAFallbackCandidate() {
+        // Custom is chat-only (no file edits, no tools): even when it is the
+        // user's selected agent and reports ready, it must never run an
+        // engineering task, or tasks would "complete" with zero code written.
+        val resolution = resolveEffectiveKind(
+            requested = AgentKind.CLAUDE_CODE,
+            preferred = AgentKind.CUSTOM,
+            readinessOf = { kind ->
+                if (kind == AgentKind.CUSTOM) null else "not usable"
+            },
+        )
+        assertTrue(resolution is AgentResolution.Unusable)
+        assertTrue((resolution as AgentResolution.Unusable).reasons.contains("Claude Code"))
+    }
+
+    @Test
+    fun testCustomAsRequestedKindIsNeverUsed() {
+        // Even when CUSTOM is the requested engine and reports ready, it is
+        // filtered out: the task falls back to a real engine, or fails when
+        // no real engine is usable.
+        val fallback = resolveEffectiveKind(
+            requested = AgentKind.CUSTOM,
+            preferred = null,
+            readinessOf = { kind ->
+                if (kind == AgentKind.ANTIGRAVITY) null else "not usable"
+            },
+        )
+        assertEquals(AgentResolution.Ready(AgentKind.ANTIGRAVITY), fallback)
+
+        val unusable = resolveEffectiveKind(
+            requested = AgentKind.CUSTOM,
+            preferred = null,
+            readinessOf = { kind ->
+                if (kind == AgentKind.CUSTOM) null else "not usable"
+            },
+        )
+        assertTrue(unusable is AgentResolution.Unusable)
+    }
 }
