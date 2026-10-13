@@ -291,13 +291,40 @@ private fun BlueprintTab(
         item {
             Text("Target Framework", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            // Keep framework labels concise and use intrinsic chip widths: equal-width chips
+            // squeeze "Fullstack" into multiple lines on a phone-sized viewport.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 AppFramework.entries.forEach { fw ->
+                    val shortName = when (fw) {
+                        AppFramework.ANDROID_COMPOSE -> "Android"
+                        AppFramework.FLUTTER -> "Flutter"
+                        AppFramework.REACT_NATIVE -> "React"
+                        AppFramework.FULLSTACK_BACKEND -> "Fullstack"
+                    }
                     FilterChip(
                         selected = selectedFramework == fw,
                         onClick = { selectedFramework = fw },
-                        label = { Text(fw.displayName.split(" ").first(), fontSize = 11.sp) },
-                        modifier = Modifier.weight(1f)
+                        label = {
+                            Text(
+                                text = shortName,
+                                maxLines = 1,
+                                softWrap = false,
+                                fontSize = 10.5.sp
+                            )
+                        },
+                        modifier = Modifier.weight(
+                            when (fw) {
+                                AppFramework.ANDROID_COMPOSE -> 1.15f
+                                AppFramework.FLUTTER -> 0.9f
+                                AppFramework.REACT_NATIVE -> 0.9f
+                                AppFramework.FULLSTACK_BACKEND -> 1.2f
+                            }
+                        ),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     )
                 }
             }
