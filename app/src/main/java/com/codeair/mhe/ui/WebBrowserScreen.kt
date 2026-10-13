@@ -118,6 +118,8 @@ private val BrowserTabsStateSaver = Saver<MutableState<List<BrowserTab>>, List<S
     save = { state -> BrowserTabsSaver.save(state.value) },
     restore = { saved -> mutableStateOf(BrowserTabsSaver.restore(saved) ?: listOf(BrowserTab(id = "tab_initial"))) },
 )
+
+private data class BrowserHistoryItem(
     val title: String,
     val url: String,
     val timestamp: Long = System.currentTimeMillis(),
