@@ -4995,6 +4995,46 @@ private fun WorkspaceScreen(
                                             else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
                                         }
                                     }
+                                    if (state.isRunning) {
+                                        val analysisMotion = rememberInfiniteTransition(label = "requirements-analysis")
+                                        val magnifierRotation by analysisMotion.animateFloat(
+                                            initialValue = -12f,
+                                            targetValue = 12f,
+                                            animationSpec = infiniteRepeatable(
+                                                animation = tween(550),
+                                                repeatMode = RepeatMode.Reverse,
+                                            ),
+                                            label = "magnifier-rotation",
+                                        )
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.widthIn(max = 118.dp),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Search,
+                                                    contentDescription = "Analyzing requirements",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp).graphicsLayer {
+                                                        rotationZ = magnifierRotation
+                                                    },
+                                                )
+                                                Text(
+                                                    "Analyzing…",
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                    }
                                     IconButton(
                                         onClick = { showChats = true },
                                         modifier = Modifier.size(36.dp),
