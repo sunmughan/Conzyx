@@ -82,6 +82,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 - **GitHub Sign-In**: added alongside Google sign-in, with compact round provider buttons on the auth screen.
 - **Google Sign-In fixed**: the OAuth client ID now points at the correct Firebase project (`codeair-apps`).
+- **Google Sign-In certificate fix**: the release signing key's SHA-1 and SHA-256 fingerprints are now registered in the Firebase console and `google-services.json` carries the matching Android OAuth clients, fixing the "package certificate hash" sign-in error on release builds.
 - **FCM push notifications**: `MheMessagingService` receives pushes and the registration token is fetched and stored at startup; messaging is now shared across online and offline flavors.
 
 ---
