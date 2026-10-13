@@ -71,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -426,7 +427,7 @@ private fun FileRowItem(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Text(file.path, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            Text(file.path, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
 
             TextButton(onClick = onAction) {
                 Text(actionLabel, fontSize = 11.sp)
@@ -533,7 +534,7 @@ private fun BranchesTab(
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(branch.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp)
+                            Text(branch.name, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp, color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
                             if (isCurrent) {
                                 Spacer(Modifier.width(6.dp))
                                 Text("(current)", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
@@ -923,7 +924,7 @@ private fun AutonomousWorkflowTab(
                                     color = if (selectedIssue?.number == issue.number) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                                 ) {
                                     Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text("#${issue.number} ${issue.title}", fontSize = 12.5.sp, modifier = Modifier.weight(1f))
+                                        Text("#${issue.number} ${issue.title}", fontSize = 12.5.sp, color = if (selectedIssue?.number == issue.number) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                                         if (selectedIssue?.number == issue.number) {
                                             Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                         }
@@ -963,19 +964,20 @@ private fun AutonomousWorkflowTab(
                             WorkflowStepStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                             WorkflowStepStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
                             else -> MaterialTheme.colorScheme.surface
-                        }
+                        },
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         when (step.status) {
                             WorkflowStepStatus.IN_PROGRESS -> CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                            WorkflowStepStatus.SUCCESS -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(18.dp))
+                            WorkflowStepStatus.SUCCESS -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32), modifier = Modifier.size(18.dp))
                             WorkflowStepStatus.FAILED -> Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                             else -> Box(modifier = Modifier.size(18.dp).background(Color.Gray.copy(alpha = 0.3f), CircleShape))
                         }
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(step.title, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                            Text(step.title, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurface)
                             Text(step.detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -987,11 +989,14 @@ private fun AutonomousWorkflowTab(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2E7D32).copy(alpha = 0.15f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF2E7D32).copy(alpha = 0.15f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("🎉 Autonomous Workflow Completed!", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
-                        Text("Pull Request: ${workflowState.prUrl}", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text("🎉 Autonomous Workflow Completed!", fontWeight = FontWeight.Bold, color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFA5D6A7) else Color(0xFF2E7D32))
+                        Text("Pull Request: ${workflowState.prUrl}", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

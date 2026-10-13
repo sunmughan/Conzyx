@@ -5552,6 +5552,7 @@ private fun FilesTab(
                         modifier = Modifier.padding(start = 14.dp),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                     )
                     Row(

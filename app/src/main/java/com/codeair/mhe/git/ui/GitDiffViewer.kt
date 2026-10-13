@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -252,9 +253,12 @@ private fun DiffLineRow(line: GitDiffLine) {
         GitDiffLineType.HEADER -> "@"
     }
 
+    // Dark green / dark red diff text is unreadable on dark backgrounds:
+    // light variants in dark theme, dark variants in light theme.
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColor = when (line.type) {
-        GitDiffLineType.ADDITION -> Color(0xFF1B5E20)
-        GitDiffLineType.DELETION -> Color(0xFFB71C1C)
+        GitDiffLineType.ADDITION -> if (isDark) Color(0xFFA5D6A7) else Color(0xFF1B5E20)
+        GitDiffLineType.DELETION -> if (isDark) Color(0xFFEF9A9A) else Color(0xFFB71C1C)
         GitDiffLineType.CONTEXT, GitDiffLineType.HEADER -> MaterialTheme.colorScheme.onSurface
     }
 

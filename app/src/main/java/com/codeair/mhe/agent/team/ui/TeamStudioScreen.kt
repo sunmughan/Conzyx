@@ -31,10 +31,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -47,7 +50,6 @@ import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,7 +62,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -83,8 +84,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -120,7 +124,7 @@ fun TeamStudioScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var inputGoal by remember { mutableStateOf(sessionState.activeGoal.ifBlank { "Build robust offline mobile feature with testing and CI" }) }
 
-    val tabs = listOf("Roster", "Task DAG", "Comms", "Blackboard", "Review & Budget")
+    val tabs = listOf("Roster", "Task DAG", "Comms", "Blackboard", "Reviews")
 
     // Antigravity-style header status: parallel count wins over single-role text.
     // When the adaptive scheduler throttles, the reason is shown inline.
@@ -833,21 +837,27 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Summary Header & Action Bar
-        Row(
+        // Summary Header & Action Bar: title on its own full-width row,
+        // buttons on a row below. Cramming label + buttons into one Row
+        // squeezed the label and the buttons on narrow phones.
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = "DAG Execution Pipeline (${sessionState.tasks.count { it.status == TeamTaskStatus.COMPLETED }}/${sessionState.tasks.size} Completed)",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth()
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Button(
                     onClick = {
                         scope.launch {
@@ -971,17 +981,31 @@ private fun TaskDagCard(
     task: TeamTask,
     onToggleStatus: () -> Unit
 ) {
+    // Theme-aware status containers with their matching on-colors. The old
+    // hardcoded light containers (0xFFE8F5E9 / 0xFFE3F2FD / 0xFFFFEBEE) plus
+    // a color-less title made contentColorFor resolve the title to BLACK on
+    // dark backgrounds. Every text below carries an explicit color so no
+    // text on a dark background can ever render black/dark again.
+    val containerColor = when (task.status) {
+        TeamTaskStatus.COMPLETED -> MaterialTheme.colorScheme.tertiaryContainer
+        TeamTaskStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer
+        TeamTaskStatus.READY -> MaterialTheme.colorScheme.secondaryContainer
+        TeamTaskStatus.BLOCKED, TeamTaskStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = when (task.status) {
+        TeamTaskStatus.COMPLETED -> MaterialTheme.colorScheme.onTertiaryContainer
+        TeamTaskStatus.IN_PROGRESS -> MaterialTheme.colorScheme.onPrimaryContainer
+        TeamTaskStatus.READY -> MaterialTheme.colorScheme.onSecondaryContainer
+        TeamTaskStatus.BLOCKED, TeamTaskStatus.FAILED -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = when (task.status) {
-                TeamTaskStatus.COMPLETED -> Color(0xFFE8F5E9)
-                TeamTaskStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                TeamTaskStatus.READY -> Color(0xFFE3F2FD)
-                TeamTaskStatus.BLOCKED, TeamTaskStatus.FAILED -> Color(0xFFFFEBEE)
-                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            }
+            containerColor = containerColor,
+            contentColor = contentColor
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
     ) {
@@ -1016,17 +1040,17 @@ private fun TaskDagCard(
 
                 IconButton(onClick = onToggleStatus, modifier = Modifier.size(24.dp)) {
                     when (task.status) {
-                        TeamTaskStatus.COMPLETED -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32))
-                        TeamTaskStatus.IN_PROGRESS -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        TeamTaskStatus.READY -> Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFF1976D2))
-                        else -> Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TeamTaskStatus.COMPLETED -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = contentColor)
+                        TeamTaskStatus.IN_PROGRESS -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = contentColor)
+                        TeamTaskStatus.READY -> Icon(Icons.Default.PlayArrow, contentDescription = null, tint = contentColor)
+                        else -> Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = contentColor.copy(alpha = 0.7f))
                     }
                 }
             }
 
             Spacer(Modifier.height(4.dp))
-            Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Text(text = task.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = contentColor)
+            Text(text = task.description, fontSize = 11.sp, color = contentColor.copy(alpha = 0.8f))
 
             // FAILED tasks show their real failure reason inline: previously
             // the cause (e.g. "runtime not installed") only existed in the
@@ -1036,7 +1060,7 @@ private fun TaskDagCard(
                 Text(
                     text = task.output.take(400),
                     fontSize = 11.sp,
-                    color = Color(0xFFB71C1C)
+                    color = contentColor
                 )
             }
 
@@ -1047,8 +1071,8 @@ private fun TaskDagCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     task.affectedFiles.forEach { file ->
-                        Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                            Text(file, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                        Surface(shape = RoundedCornerShape(4.dp), color = contentColor.copy(alpha = 0.15f)) {
+                            Text(file, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = contentColor, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                         }
                     }
                 }
@@ -1106,7 +1130,10 @@ private fun TeamCommsTab(orchestrator: AgentTeamOrchestrator) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Row(
@@ -1121,39 +1148,91 @@ private fun TeamCommsTab(orchestrator: AgentTeamOrchestrator) {
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                                Text(msg.type.name, fontSize = 8.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                Text(msg.type.name, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                             }
                         }
                         Spacer(Modifier.height(4.dp))
-                        Text(text = msg.content, fontSize = 11.sp)
+                        Text(text = msg.content, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }
         }
 
-        // Send Message Field
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Send Message Field: same shape as the main chat composer — text field
+        // on top, circular send button inside the field at the bottom-right.
+        val sendMessage = {
+            if (inputMessage.isNotBlank()) {
+                orchestrator.broadcastMessage(TeamRole.MANAGER, null, inputMessage)
+                inputMessage = ""
+            }
+        }
+        Surface(
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(
+                width = 1.dp,
+                color = if (inputMessage.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant
+            ),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            OutlinedTextField(
-                value = inputMessage,
-                onValueChange = { inputMessage = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                placeholder = { Text("Broadcast note to team...", fontSize = 11.sp) },
-                shape = RoundedCornerShape(8.dp)
-            )
-            IconButton(
-                onClick = {
-                    if (inputMessage.isNotBlank()) {
-                        orchestrator.broadcastMessage(TeamRole.MANAGER, null, inputMessage)
-                        inputMessage = ""
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                BasicTextField(
+                    value = inputMessage,
+                    onValueChange = { inputMessage = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .heightIn(min = 28.dp, max = 120.dp),
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { sendMessage() }),
+                    decorationBox = { innerTextField ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (inputMessage.isEmpty()) {
+                                Text(
+                                    text = "Broadcast note to team...",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(
+                                color = if (inputMessage.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = CircleShape
+                            )
+                            .clickable(enabled = inputMessage.isNotBlank(), onClick = { sendMessage() }),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowUpward,
+                            contentDescription = "Send",
+                            tint = if (inputMessage.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(19.dp)
+                        )
                     }
                 }
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -1204,7 +1283,10 @@ private fun TeamBlackboardTab(orchestrator: AgentTeamOrchestrator) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(
@@ -1216,10 +1298,11 @@ private fun TeamBlackboardTab(orchestrator: AgentTeamOrchestrator) {
                                 text = artifact.title,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
                             )
                             Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                                Text("v${artifact.version}", fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                Text("v${artifact.version}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
                         }
                         Spacer(Modifier.height(4.dp))
@@ -1238,6 +1321,7 @@ private fun TeamBlackboardTab(orchestrator: AgentTeamOrchestrator) {
                                 text = artifact.content,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(8.dp)
                             )
                         }
@@ -1249,12 +1333,17 @@ private fun TeamBlackboardTab(orchestrator: AgentTeamOrchestrator) {
 }
 
 /**
- * Tab 5: Review Gatekeeper & Budget Quota Controls.
+ * Tab 5: Review Gatekeeper Sign-offs.
+ *
+ * The old Resource Quota & Token Budget card is gone: it displayed a
+ * hardcoded 100,000-token quota and a usage counter that could never move,
+ * because the CLI bridges do not report token counts. A control that shows
+ * numbers it cannot measure is decorative, so it was removed. The quota
+ * safety gate in the orchestrator still exists; only the dead display is gone.
  */
 @Composable
 private fun TeamReviewBudgetTab(orchestrator: AgentTeamOrchestrator) {
     val sessionState by orchestrator.sessionState.collectAsState()
-    val budget = sessionState.budget
 
     Column(
         modifier = Modifier
@@ -1262,40 +1351,6 @@ private fun TeamReviewBudgetTab(orchestrator: AgentTeamOrchestrator) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Budget & Quota Section
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "Resource Quota & Token Budget",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(8.dp))
-                val progress = if (budget.tokenQuota > 0) (budget.totalTokensUsed.toFloat() / budget.tokenQuota).coerceIn(0f, 1f) else 0f
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp),
-                    color = if (budget.isQuotaExceeded) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("${budget.totalTokensUsed} / ${budget.tokenQuota} tokens", fontSize = 11.sp)
-                    Text("Total Cost: $${budget.totalCostUsd}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text("Elapsed: ${budget.elapsedTimeMs / 1000}s • Limit: ${budget.maxExecutionTimeMs / 1000}s", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
         // Review Sign-Offs Section
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1306,7 +1361,8 @@ private fun TeamReviewBudgetTab(orchestrator: AgentTeamOrchestrator) {
                 Text(
                     text = "Review Gatekeeper Sign-offs (${sessionState.reviews.size})",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(8.dp))
                 if (sessionState.reviews.isEmpty()) {
@@ -1324,7 +1380,8 @@ private fun TeamReviewBudgetTab(orchestrator: AgentTeamOrchestrator) {
                                 Text(
                                     text = "${rev.reviewerRole.title} (${rev.reviewerRole.name})",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(rev.comments, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }

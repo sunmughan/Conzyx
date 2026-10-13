@@ -70,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -384,12 +385,15 @@ private fun BlueprintTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("Data Models (${currentBlueprint.entities.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Data Models (${currentBlueprint.entities.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                         currentBlueprint.entities.forEach { e ->
-                            Text("• ${e.name} (${e.fields.size} fields: ${e.fields.take(3).joinToString { it.name }}...)", fontSize = 12.sp)
+                            Text("• ${e.name} (${e.fields.size} fields: ${e.fields.take(3).joinToString { it.name }}...)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -399,12 +403,15 @@ private fun BlueprintTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("Screens (${currentBlueprint.screens.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Screens (${currentBlueprint.screens.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                         currentBlueprint.screens.forEach { s ->
-                            Text("• ${s.title} (${s.route})", fontSize = 12.sp)
+                            Text("• ${s.title} (${s.route})", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -414,12 +421,15 @@ private fun BlueprintTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("REST API Endpoints (${currentBlueprint.endpoints.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("REST API Endpoints (${currentBlueprint.endpoints.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                         currentBlueprint.endpoints.forEach { ep ->
-                            Text("• ${ep.method} ${ep.path} - ${ep.summary}", fontSize = 11.5.sp)
+                            Text("• ${ep.method} ${ep.path} - ${ep.summary}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -601,13 +611,19 @@ private fun BuildAutomationTab(
                             Icon(
                                 if (buildResult.success) Icons.Default.CheckCircle else Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = if (buildResult.success) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                                // Dark green (0xFF2E7D32) on a dark background is unreadable;
+                                // light green in dark theme, dark green in light theme.
+                                tint = if (buildResult.success) {
+                                    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
+                                } else MaterialTheme.colorScheme.error
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 if (buildResult.success) "Build Successful!" else "Build Failed",
                                 fontWeight = FontWeight.Bold,
-                                color = if (buildResult.success) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                                color = if (buildResult.success) {
+                                    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
+                                } else MaterialTheme.colorScheme.error
                             )
                         }
 
@@ -832,17 +848,20 @@ private fun PlayStoreTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 ) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("Exported Bundle", fontWeight = FontWeight.Bold)
-                        Text("Location: ${storeBundle.listingDir.absolutePath}", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Text("Exported Bundle", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Location: ${storeBundle.listingDir.absolutePath}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Spacer(Modifier.height(8.dp))
-                        Text("• ${storeBundle.titleFile.name}", fontSize = 11.5.sp)
-                        Text("• ${storeBundle.shortDescFile.name}", fontSize = 11.5.sp)
-                        Text("• ${storeBundle.fullDescFile.name}", fontSize = 11.5.sp)
-                        Text("• ${storeBundle.privacyPolicyFile.name}", fontSize = 11.5.sp)
-                        Text("• ${storeBundle.complianceReportFile.name}", fontSize = 11.5.sp)
+                        Text("• ${storeBundle.titleFile.name}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("• ${storeBundle.shortDescFile.name}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("• ${storeBundle.fullDescFile.name}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("• ${storeBundle.privacyPolicyFile.name}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("• ${storeBundle.complianceReportFile.name}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
             }

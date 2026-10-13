@@ -597,7 +597,8 @@ private fun JobCard(job: HybridExecutionJob) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (job.state == HybridJobState.COMPLETED) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+            containerColor = if (job.state == HybridJobState.COMPLETED) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
     ) {
@@ -620,7 +621,7 @@ private fun JobCard(job: HybridExecutionJob) {
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                    Text(text = job.title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(text = job.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 }
 
                 Surface(
@@ -665,7 +666,7 @@ private fun JobCard(job: HybridExecutionJob) {
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(12.dp))
-                                Text(art.filename, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                                Text(art.filename, fontSize = 9.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                             }
                         }
                     }
