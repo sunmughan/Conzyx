@@ -4872,8 +4872,12 @@ private fun WorkspaceScreen(
             onDismiss = { showChats = false },
             onCreate = {
                 onCreateChat()
-                showChats = false
-                selectedTab = WorkspaceTab.CHAT
+                // While a task is running, keep the switcher open so the newly
+                // created conversation is visible without detaching live task output.
+                if (!state.isRunning) {
+                    showChats = false
+                    selectedTab = WorkspaceTab.CHAT
+                }
             },
             onSwitch = { chatId ->
                 onSwitchChat(chatId)
