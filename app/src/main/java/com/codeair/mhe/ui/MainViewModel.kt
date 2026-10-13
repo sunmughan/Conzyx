@@ -1878,10 +1878,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createProject(name: String, folderUri: Uri? = null) {
         if (name.isBlank() && folderUri == null) return
-        if (_state.value.isRunning || _state.value.projectTerminalRunning) {
-            _state.update { it.copy(toastMessage = "Stop the background task before creating another project") }
-            return
-        }
         if (folderUri != null) {
             _state.update { it.copy(projectImporting = true, projectImportMessage = "Creating project and binding folder…") }
             viewModelScope.launch {
@@ -1953,6 +1949,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             language = "TypeScript",
             slug = slug,
         )
+
+        val current = _state.value
+        if (current.isRunning || current.projectTerminalRunning) {
+            // Create and persist the project without replacing the workspace state
+            // owned by the currently running agent/terminal session.
+            File(getApplication<Application>().filesDir, "workspaces/${project.id}").mkdirs()
+            val firstChat = ProjectChat(title = "New chat")
+            preferences.saveProjectChats(project.id, listOf(firstChat))
+            val projects = listOf(project) + current.projects
+            preferences.saveProjects(projects)
+            _state.update {
+                it.copy(
+                    projects = projects,
+                    toastMessage = "${project.name} created. The current task continues in the background.",
+                )
+            }
+            return
+        }
+
         configureBridgeRoots(project.id, project.rootPath)
         val guestRoot = guestRootFor(project)
         _state.update {
