@@ -998,6 +998,7 @@ fun SettingsScreen(
                 }
             }
 
+            item {
                 Surface(
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
