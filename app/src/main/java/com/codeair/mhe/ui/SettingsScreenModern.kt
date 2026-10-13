@@ -998,34 +998,6 @@ fun SettingsScreen(
                 }
             }
 
-            item {
-                Surface(
-                    shape = RoundedCornerShape(13.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onReplayAppTour() }
-                        .padding(vertical = 4.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = PocketOrange,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("What's New in v3.0.0", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("Replay the interactive feature tour covering all 14 phases", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
                 Surface(
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
