@@ -620,6 +620,7 @@ fun CodeEditorScreen(
                 }
             },
         )
+    }
     if (renameDialogOpen && workspaceDir != null) {
         // Milestone 2: preview-before-rename with undo. The engine is an
         // explicitly text-based rename (see RenameEngine.PROVIDER_LABEL).
@@ -1607,7 +1608,6 @@ fun CodeEditorScreen(
             }
         }
     }
-}
 }
 
 @Composable
