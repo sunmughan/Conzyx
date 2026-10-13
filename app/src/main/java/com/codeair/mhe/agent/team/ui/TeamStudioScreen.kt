@@ -606,6 +606,10 @@ private fun AgentDetailSheet(
     val usage = usages[role]
     val outputText = live?.outputTail.orEmpty()
     val scrollState = rememberScrollState()
+    // QA H6: the outer sheet column gets its OWN scroll state. The inner
+    // live-output box keeps `scrollState` (with its auto-pin-to-bottom
+    // effect); sharing one ScrollState between two scrollables would fight.
+    val sheetScrollState = rememberScrollState()
     val isRunning = live?.status == LiveTaskStatus.RUNNING
 
     // Keep the live output pinned to the bottom while it streams.
@@ -629,6 +633,7 @@ private fun AgentDetailSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(sheetScrollState)
             .navigationBarsPadding()
             .padding(horizontal = 18.dp)
             .padding(bottom = 24.dp),
@@ -877,7 +882,10 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = Color(0xFF1A1207)
+                        // QA H5: near-black text on theme primary was unreadable
+                        // where primary is dark. onPrimary is the theme's
+                        // guaranteed-contrast pairing.
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
                 ) {
