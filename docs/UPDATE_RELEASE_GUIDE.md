@@ -6,7 +6,7 @@ This guide explains how **Mobile Harness Extended** delivers in-app updates for 
 
 ## 1. Dual-Flavor Update Architecture
 
-Mobile Harness is distributed in two distinct flavors (`runtimeDelivery` dimension):
+Mobile Harness Extended is distributed in two distinct flavors (`runtimeDelivery` dimension):
 
 | Flavor | Artifact Name | Approximate Size | Characteristics |
 | :--- | :--- | :--- | :--- |
@@ -129,7 +129,7 @@ export default {
       });
     }
 
-    return new Response("Mobile Harness Update Gateway Active", { status: 200 });
+    return new Response("Mobile Harness Extended Update Gateway Active", { status: 200 });
   }
 };
 ```

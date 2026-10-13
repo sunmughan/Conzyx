@@ -19,7 +19,7 @@ class ProjectChatTest {
     @Test
     fun testProjectSlugSanitization() {
         assertEquals("my-awesome-repo", projectSlug("My Awesome Repo!"))
-        assertEquals("mobile-harness-v2", projectSlug("Mobile Harness (v2)"))
+        assertEquals("mobile-harness-v2", projectSlug("Mobile Harness Extended (v2)"))
         assertEquals("project", projectSlug("   "))
     }
 }

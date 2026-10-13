@@ -78,7 +78,7 @@ Files:
 APK URL baked into the manifest:
   $base_url/$apk_name
 
-In a debug build of Mobile Harness, open Settings → Update channel, paste:
+In a debug build of Mobile Harness Extended, open Settings → Update channel, paste:
   $base_url/mobile-harness-update.json
 and tap Use & check.
 

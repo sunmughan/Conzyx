@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Wire protocol for the Mobile Harness marketplace registry (Milestone 13).
+ * Wire protocol for the Mobile Harness Extended marketplace registry (Milestone 13).
  *
  * Base URL: the registry's `registryUrl` (e.g. https://marketplace.example.com).
  * Auth: buyer/seller calls use `Authorization: Bearer <token>`; discovery calls

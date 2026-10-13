@@ -41,7 +41,7 @@ This checklist covers the Play-facing work for package `com.codeair.mhe`. It doe
 - [ ] Complete Anthropic branding, authentication, licensing, and redistribution review
 - [ ] Resolve or obtain approval for the local executable-runtime architecture
 
-Account-deletion and Play Billing requirements apply only if Mobile Harness later introduces first-party accounts or sells digital subscriptions in the app.
+Account-deletion and Play Billing requirements apply only if Mobile Harness Extended later introduces first-party accounts or sells digital subscriptions in the app.
 
 ## Build configuration
 

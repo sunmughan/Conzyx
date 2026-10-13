@@ -147,7 +147,7 @@ fun AuthScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Terminal,
-                        contentDescription = "Mobile Harness",
+                        contentDescription = "Mobile Harness Extended",
                         tint = Color.White,
                         modifier = Modifier.size(30.dp),
                     )
@@ -156,7 +156,7 @@ fun AuthScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
-                    text = "Mobile Harness",
+                    text = "Mobile Harness Extended",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )

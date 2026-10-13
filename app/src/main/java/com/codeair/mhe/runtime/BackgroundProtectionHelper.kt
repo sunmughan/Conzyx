@@ -101,7 +101,7 @@ object BackgroundProtectionHelper {
             Intent().apply {
                 component = ComponentName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity")
                 putExtra("package_name", packageName)
-                putExtra("package_label", "Mobile Harness")
+                putExtra("package_label", "Mobile Harness Extended")
             },
             // Oppo / Realme / OnePlus ColorOS Startup
             Intent().apply {

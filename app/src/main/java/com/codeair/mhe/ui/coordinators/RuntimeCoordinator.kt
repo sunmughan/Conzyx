@@ -308,7 +308,7 @@ class RuntimeCoordinator(
                 }
             } else if (force) {
                 host.updateState {
-                    it.copy(toastMessage = "Mobile Harness is up to date (${BuildConfig.APP_VARIANT} · v${BuildConfig.VERSION_NAME})")
+                    it.copy(toastMessage = "Mobile Harness Extended is up to date (${BuildConfig.APP_VARIANT} · v${BuildConfig.VERSION_NAME})")
                 }
             }
         }
@@ -415,7 +415,7 @@ class RuntimeCoordinator(
         val message = if (isOffline) {
             "Connect to Wi-Fi or mobile data, then try again. Internet is required to finish the first-time setup."
         } else {
-            error.message?.take(300) ?: "Something went wrong while preparing Mobile Harness. Please try again."
+            error.message?.take(300) ?: "Something went wrong while preparing Mobile Harness Extended. Please try again."
         }
         host.updateState {
             it.copy(

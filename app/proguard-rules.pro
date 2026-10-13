@@ -1,1 +1,1 @@
-# Mobile Harness alpha: release shrinking is intentionally disabled.
+# Mobile Harness Extended alpha: release shrinking is intentionally disabled.

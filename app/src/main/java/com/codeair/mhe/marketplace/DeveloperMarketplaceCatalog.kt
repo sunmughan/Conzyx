@@ -130,7 +130,7 @@ object DeveloperMarketplaceCatalog {
         MarketplaceItem(
             name = "Android Kotlin Clean Starter",
             category = MarketplaceCategory.TEMPLATES,
-            author = "Mobile Harness",
+            author = "Mobile Harness Extended",
             description = "Jetpack Compose + Material 3 + Coroutines production starter with Gradle kts.",
             rating = 5.0,
             downloads = 7400,
@@ -150,7 +150,7 @@ object DeveloperMarketplaceCatalog {
         MarketplaceItem(
             name = "React Native Expo Mobile Starter",
             category = MarketplaceCategory.TEMPLATES,
-            author = "Mobile Harness",
+            author = "Mobile Harness Extended",
             description = "TypeScript Expo router starter with NativeWind styling and offline SQLite caching.",
             rating = 4.8,
             downloads = 5300,

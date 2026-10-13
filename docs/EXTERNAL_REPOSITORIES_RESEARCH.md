@@ -6,7 +6,7 @@ Comprehensive architectural analysis, classification, and integration reference 
 
 ## 1. Quick Classification Matrix
 
-| Project | Category | Integrated in Mobile Harness As | Official Repository / Source |
+| Project | Category | Integrated in Mobile Harness Extended As | Official Repository / Source |
 | :--- | :--- | :--- | :--- |
 | **`geo-sleuth`** | **Agent Skill** | Native Agent Skill (`.agents/skills/geo-sleuth`) | [`Oldcircle/geo-sleuth`](https://github.com/Oldcircle/geo-sleuth) |
 | **`stickman-video-director`** | **Agent Skill** | Native Agent Skill (`.agents/skills/stickman-video-director`) | [`kaomei/stickman-video-director`](https://github.com/kaomei/stickman-video-director) |
@@ -57,7 +57,7 @@ These skills are natively provisioned by `SkillManager` into `File(context.files
 
 ## 3. Standalone Systems (Browser Quick Shortcuts)
 
-These projects are independent applications, self-hosted services, or datasets that run outside the agent skill sandbox. They are accessible in Mobile Harness via the in-app Chromium **Preview** homescreen under **Standalone Systems & Tools**:
+These projects are independent applications, self-hosted services, or datasets that run outside the agent skill sandbox. They are accessible in Mobile Harness Extended via the in-app Chromium **Preview** homescreen under **Standalone Systems & Tools**:
 
 ### 1. `hermes3d`
 * **Repository:** [iamlukethedev/Hermes3D](https://github.com/iamlukethedev/Hermes3D)

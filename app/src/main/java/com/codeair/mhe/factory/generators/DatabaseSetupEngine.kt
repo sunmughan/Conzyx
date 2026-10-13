@@ -31,7 +31,7 @@ object DatabaseSetupEngine {
 
     fun generateSchemaDdl(entities: List<DataEntitySpec>): String {
         val sb = StringBuilder()
-        sb.append("-- Mobile Harness App Factory Database Schema\n")
+        sb.append("-- Mobile Harness Extended App Factory Database Schema\n")
         sb.append("-- Generated for offline SQLite / Room / Postgres compatibility\n\n")
 
         for (entity in entities) {

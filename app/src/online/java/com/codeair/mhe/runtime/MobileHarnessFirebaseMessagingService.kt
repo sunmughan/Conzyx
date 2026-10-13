@@ -18,7 +18,7 @@ class MobileHarnessFirebaseMessagingService : FirebaseMessagingService() {
         val title = data["title"]
             ?.takeIf { it.isNotBlank() }
             ?: notification?.title
-            ?: "Mobile Harness"
+            ?: "Mobile Harness Extended"
 
         val body = data["body"]
             ?.takeIf { it.isNotBlank() }

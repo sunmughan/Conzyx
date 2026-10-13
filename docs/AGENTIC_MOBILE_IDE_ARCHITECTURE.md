@@ -1,8 +1,8 @@
-# Mobile Harness — Agentic Mobile IDE Architecture
+# Mobile Harness Extended — Agentic Mobile IDE Architecture
 
 ## Current architecture audit
 
-Mobile Harness is an Android application with applicationId `com.codeair.mhe`.
+Mobile Harness Extended is an Android application with applicationId `com.codeair.mhe`.
 
 - Kotlin + Jetpack Compose UI.
 - AndroidX lifecycle/ViewModel state ownership.
@@ -24,7 +24,7 @@ The Android process owns orchestration and UX state. The Linux environment is th
 
 RuntimeBridge is the provider-neutral execution contract. Antigravity has explicit session recovery support because its provider conversation ID can be preserved.
 
-Provider credentials/session state remain owned by the respective runtime/provider; Mobile Harness should not scrape or duplicate provider credentials.
+Provider credentials/session state remain owned by the respective runtime/provider; Mobile Harness Extended should not scrape or duplicate provider credentials.
 
 ### Workspace/change review
 
@@ -160,6 +160,6 @@ For the `online` flavor, Firebase Cloud Messaging is an additional remote-event 
 
 The `offline` flavor does not include the Firebase Messaging runtime or messaging service. This preserves the offline runtime's dependency boundary while allowing the shared Android notification policy to remain unchanged.
 
-Background FCM notification payloads may be displayed directly by the FCM SDK rather than invoking `onMessageReceived`. Remote backends that need Mobile Harness to control notification presentation should therefore use data messages and the documented route/title/body contract.
+Background FCM notification payloads may be displayed directly by the FCM SDK rather than invoking `onMessageReceived`. Remote backends that need Mobile Harness Extended to control notification presentation should therefore use data messages and the documented route/title/body contract.
 
 The supplied Firebase configuration contains a matching `com.codeair.mhe` Android client; the project configuration is scoped to that client rather than carrying unrelated sibling-app clients.

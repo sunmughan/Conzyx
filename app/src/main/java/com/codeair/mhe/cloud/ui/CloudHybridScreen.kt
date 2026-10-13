@@ -741,7 +741,7 @@ private fun HybridPoliciesTab(coordinator: CloudHybridCoordinator) {
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = "Select how Mobile Harness balances on-device battery/thermals against cloud execution speed.",
+            text = "Select how Mobile Harness Extended balances on-device battery/thermals against cloud execution speed.",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

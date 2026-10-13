@@ -17,7 +17,7 @@ class RuntimeExecutionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var projectName: String = "your project"
-    private var notificationTitle: String = "Mobile Harness is working"
+    private var notificationTitle: String = "Mobile Harness Extended is working"
     private var agentName: String = "Coding agent"
     private var canStop: Boolean = true
     private var taskRunning: Boolean = false

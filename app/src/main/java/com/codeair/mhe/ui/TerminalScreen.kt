@@ -463,7 +463,7 @@ fun TerminalScreen(
                             if (displayedLines.isEmpty()) {
                                 Text(
                                     if (searchQuery.isNotEmpty()) "No matching terminal output found."
-                                    else "Mobile Harness Terminal ready.\nType a bash command below or tap a quick command chip above.",
+                                    else "Mobile Harness Extended Terminal ready.\nType a bash command below or tap a quick command chip above.",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.sp,
                                     color = emptyStateColor,

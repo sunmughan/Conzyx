@@ -742,9 +742,9 @@ private fun BackgroundTaskSetupScreen(
     val currentDescription = when (currentStep) {
         0 -> "See live progress and receive an alert when Claude finishes or needs your attention."
         1 -> if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
-            "Allow Mobile Harness to continue tasks without pausing when switching to recents. On ${BackgroundProtectionHelper.getOemName()} devices, also enable Autostart."
+            "Allow Mobile Harness Extended to continue tasks without pausing when switching to recents. On ${BackgroundProtectionHelper.getOemName()} devices, also enable Autostart."
         } else {
-            "Allow Mobile Harness to continue a task when you lock the phone or switch to another app."
+            "Allow Mobile Harness Extended to continue a task when you lock the phone or switch to another app."
         }
         else -> if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
             "Keep the CPU & network active while tasks run. Make sure battery optimization is set to Unrestricted."
@@ -822,7 +822,7 @@ private fun BackgroundTaskSetupScreen(
             Text("Prepare for reliable setup", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Setup time depends on the toolchains you choose next. You may leave Mobile Harness in the background while it works.",
+                "Setup time depends on the toolchains you choose next. You may leave Mobile Harness Extended in the background while it works.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -1167,7 +1167,7 @@ private fun RuntimeSetupPromptScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Your phone meets the requirements. Choose your coding tools next and Mobile Harness will handle the setup.",
+                    text = "Your phone meets the requirements. Choose your coding tools next and Mobile Harness Extended will handle the setup.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.5.sp,
                     lineHeight = 19.sp,
@@ -1447,7 +1447,7 @@ private fun RuntimeSetupPromptScreen(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = if (compatible) "Install Mobile Harness" else "Device not supported",
+                            text = if (compatible) "Install Mobile Harness Extended" else "Device not supported",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                         )
@@ -1780,7 +1780,7 @@ private fun RuntimeInstallationScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Set up Mobile Harness", fontWeight = FontWeight.Bold)
+                        Text("Set up Mobile Harness Extended", fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
@@ -1885,7 +1885,7 @@ private fun RuntimeInstallationScreen(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "You can leave Mobile Harness in the background and follow setup from the notification.",
+                "You can leave Mobile Harness Extended in the background and follow setup from the notification.",
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
@@ -2308,7 +2308,7 @@ private fun StartupErrorScreen(
             Icon(Icons.Default.Warning, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(20.dp))
             Text(
-                if (isOffline) "You're offline" else "Mobile Harness couldn't finish starting",
+                if (isOffline) "You're offline" else "Mobile Harness Extended couldn't finish starting",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -2726,7 +2726,7 @@ private fun ProviderSetupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (onboarding) "Set up Mobile Harness" else "AI Provider & Settings") },
+                title = { Text(if (onboarding) "Set up Mobile Harness Extended" else "AI Provider & Settings") },
                 navigationIcon = {
                     if (handleBack != null) {
                         IconButton(onClick = handleBack) {
@@ -2866,7 +2866,7 @@ private fun DeviceCheckStep(context: Context, onContinue: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         BrandMark()
         Text("Your phone is the workspace", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Mobile Harness checks compatibility before downloading the private Linux runtime.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Mobile Harness Extended checks compatibility before downloading the private Linux runtime.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         CheckRow(Icons.Default.Memory, "Memory", "$totalRamLabel GB usable · ${if (totalRamGb >= 7.5) "Full mode" else "Lite mode"}", true)
         CheckRow(Icons.Default.Code, "Processor", Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown", arm64)
         CheckRow(Icons.Default.Storage, "Android", "Android ${Build.VERSION.RELEASE}", true)
@@ -2935,7 +2935,7 @@ private fun ProviderChoiceStep(
         Text("Connect your AI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Choose how Mobile Harness should access your coding model.",
+            "Choose how Mobile Harness Extended should access your coding model.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
         )
@@ -3272,7 +3272,7 @@ private fun ProviderCredentialsStep(
             Text(
                 when {
                     agentKind == AgentKind.DEEPSEEK_HARNESS -> "DeepSeek Harness will connect through this API endpoint."
-                    provider.protocol.name.startsWith("OPENAI") -> "Mobile Harness will translate Claude Code requests for this provider."
+                    provider.protocol.name.startsWith("OPENAI") -> "Mobile Harness Extended will translate Claude Code requests for this provider."
                     else -> "Claude Code will connect through this API endpoint."
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3941,7 +3941,7 @@ private fun ProjectsScreen(
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Mobile Harness ${update.versionName}", fontWeight = FontWeight.Bold)
+                                Text("Mobile Harness Extended ${update.versionName}", fontWeight = FontWeight.Bold)
                                 Text("A new update is ready", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text("Update", color = PocketOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -4279,14 +4279,14 @@ private fun ProjectsScreen(
             title = { Text("Update to ${update.versionName}", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(update.notes.ifBlank { "Get the latest improvements and fixes for Mobile Harness." })
+                    Text(update.notes.ifBlank { "Get the latest improvements and fixes for Mobile Harness Extended." })
                     if (update.sizeBytes > 0) Text("Download size: ${formatMegabytes(update.sizeBytes)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     if (!canInstall) {
                         Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
                                 Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Allow ‘Install unknown apps’ for Mobile Harness. Without this permission, Android will not install the update.", fontSize = 13.sp)
+                                Text("Allow ‘Install unknown apps’ for Mobile Harness Extended. Without this permission, Android will not install the update.", fontSize = 13.sp)
                             }
                         }
                     }
@@ -5001,7 +5001,7 @@ private fun WorkspaceScreen(
                         Column(Modifier.weight(1f)) {
                             Text(state.runtimeRecoveryStatus, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                if (state.runtimeRecoveryCanResume) "Your task state is preserved." else "Mobile Harness is reconnecting without discarding the task.",
+                                if (state.runtimeRecoveryCanResume) "Your task state is preserved." else "Mobile Harness Extended is reconnecting without discarding the task.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 maxLines = 1,
@@ -5919,7 +5919,7 @@ private fun ChatTab(
         if (isGranted) {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Mobile Harness…")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Mobile Harness Extended…")
             }
             try {
                 speechRecognizerLauncher.launch(intent)
@@ -5939,7 +5939,7 @@ private fun ChatTab(
         } else {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Mobile Harness…")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Mobile Harness Extended…")
             }
             try {
                 speechRecognizerLauncher.launch(intent)
@@ -7007,7 +7007,7 @@ private fun ChangesTab(
                 }
             }
         }
-        if (changes.isEmpty()) item { EmptyState(Icons.Default.Code, "No changes yet", "Ask Mobile Harness to update your project.") }
+        if (changes.isEmpty()) item { EmptyState(Icons.Default.Code, "No changes yet", "Ask Mobile Harness Extended to update your project.") }
         items(changes, key = { it.path }) { change ->
             val expanded = expandedPath == change.path
             Card(Modifier.fillMaxWidth()) {
@@ -7141,7 +7141,7 @@ private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
     ) {
         androidx.compose.foundation.Image(
             painter = painterResource(id = R.drawable.ic_launcher),
-            contentDescription = "Mobile Harness",
+            contentDescription = "Mobile Harness Extended",
             modifier = Modifier.fillMaxSize(),
         )
     }

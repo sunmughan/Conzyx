@@ -38,7 +38,7 @@ object SigningAndVersionManager {
             "-keyalg", "RSA",
             "-keysize", "2048",
             "-validity", "10000",
-            "-dname", "CN=Mobile Harness, OU=App Factory, O=Codeair Software Solutions"
+            "-dname", "CN=Mobile Harness Extended, OU=App Factory, O=Codeair Software Solutions"
         )
         try {
             val process = ProcessBuilder(cmd)
@@ -88,7 +88,7 @@ object SigningAndVersionManager {
         if (original.contains("keystore.properties")) return true // already injected
         val snippet = """
             
-            // Injected by Mobile Harness App Factory — release signing via keystore.properties
+            // Injected by Mobile Harness Extended App Factory — release signing via keystore.properties
             val keystoreProps = java.util.Properties().apply {
                 val propsFile = rootProject.file("keystore.properties")
                 if (propsFile.isFile) propsFile.inputStream().use(::load)
@@ -132,7 +132,7 @@ object SigningAndVersionManager {
         }
         props.setProperty("versionCode", newCode.toString())
         props.setProperty("versionName", newName)
-        propsFile.outputStream().use { props.store(it, "Managed by Mobile Harness App Factory") }
+        propsFile.outputStream().use { props.store(it, "Managed by Mobile Harness Extended App Factory") }
         return newCode to newName
     }
 }

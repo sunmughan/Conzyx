@@ -1,6 +1,6 @@
-# Mobile Harness FCM Remote Events
+# Mobile Harness Extended FCM Remote Events
 
-Mobile Harness uses Firebase Cloud Messaging only as a remote transport. Local Android/Linux runtime notifications remain on the Android notification path and do not depend on FCM.
+Mobile Harness Extended uses Firebase Cloud Messaging only as a remote transport. Local Android/Linux runtime notifications remain on the Android notification path and do not depend on FCM.
 
 ## Online flavor
 
@@ -14,7 +14,7 @@ The service accepts data-oriented events with this contract:
 - `type` — optional event type for future routing/analytics.
 - `messageId` — supplied by FCM when available; it is used to derive a stable notification id.
 
-For events that require Mobile Harness to own presentation, send a data message rather than depending on an FCM notification payload. Background notification payloads can be rendered directly by the FCM SDK.
+For events that require Mobile Harness Extended to own presentation, send a data message rather than depending on an FCM notification payload. Background notification payloads can be rendered directly by the FCM SDK.
 
 Example data payload:
 
@@ -35,7 +35,7 @@ The app posts the resulting notification through `NotificationCoordinator`, so c
 
 FCM registration tokens are persisted in app-private `SharedPreferences` through `PushTokenStore`. The token is not an OAuth credential and is not logged or embedded into source code.
 
-A future authenticated backend may read the token and register it against the signed-in Mobile Harness account. Until that backend exists, the client intentionally does not transmit the token anywhere.
+A future authenticated backend may read the token and register it against the signed-in Mobile Harness Extended account. Until that backend exists, the client intentionally does not transmit the token anywhere.
 
 ## Offline flavor
 

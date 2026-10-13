@@ -67,6 +67,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Accent discipline**: orange is reserved for interactive elements only; decorative badges are neutral grays.
 - **Studio cards relocated**: the four studio cards moved to the bottom of the home screen so your projects come first.
 - **Branding cleanup**: leftover PocketDev references removed, version pills removed from studio headers and onboarding, phase pills removed from the tour.
+- **Full rebrand to Mobile Harness Extended**: every user-facing "Mobile Harness" string is now "Mobile Harness Extended" (app name, install screen, launcher label, Play listing, privacy policy, in-app text, generated-app templates). The launcher icon and Play icon now carry an EXTENDED label under the mark, and the Play feature graphic reads "Mobile Harness Extended".
 - **Status bar respected**: the app no longer overrides status bar or navigation bar colors; your device defaults are left alone.
 - **Browser redesigned**: bigger URL bar, top row reduced to URL bar + menu, ports strip and unused pills removed.
 - **Files header fixed**: the "Files" title shared one row with 7 action buttons and wrapped vertically on narrow phones. The title now sits on its own top-left line with the full icon row below it.

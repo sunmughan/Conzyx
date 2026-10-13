@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Wire protocol for the Mobile Harness cloud worker API (Milestone 11).
+ * Wire protocol for the Mobile Harness Extended cloud worker API (Milestone 11).
  *
  * Base URL: the worker's `endpointUrl` (e.g. https://worker.example.com).
  * Auth: `Authorization: Bearer <authKey>` on every call. A blank auth key is

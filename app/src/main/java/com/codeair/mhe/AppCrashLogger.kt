@@ -64,7 +64,7 @@ object AppCrashLogger {
             write(
                 buildString {
                     appendLine("============================================================")
-                    appendLine("Mobile Harness crash/startup logger initialized")
+                    appendLine("Mobile Harness Extended crash/startup logger initialized")
                     appendLine("timestamp=${timestamp()}")
                     appendLine("package=${app.packageName}")
                     appendLine("version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
