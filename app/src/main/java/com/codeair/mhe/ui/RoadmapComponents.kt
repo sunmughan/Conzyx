@@ -789,7 +789,7 @@ fun EngineeringStateBanner(
     val state = snapshot.state
     val (label, color, icon) = when (state) {
         EngineeringState.IDLE -> Triple("Idle", MaterialTheme.colorScheme.onSurfaceVariant, "⏸️")
-        EngineeringState.ANALYZING -> Triple("Analyzing Requirements", MaterialTheme.colorScheme.primary, "🔍")
+        EngineeringState.ANALYZING -> Triple("Analyzing Requirements", MaterialTheme.colorScheme.primary, "")
         EngineeringState.PLANNING -> Triple("Formulating Plan", MaterialTheme.colorScheme.primary, "📝")
         EngineeringState.IMPLEMENTING -> Triple("Implementing Changes", PocketOrange, "💻")
         EngineeringState.BUILDING -> Triple("Building Project", PocketOrange, "⚙️")
@@ -820,7 +820,9 @@ fun EngineeringStateBanner(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.weight(1f),
             ) {
-                Text(icon, fontSize = 13.sp)
+                if (icon.isNotBlank()) {
+                    Text(icon, fontSize = 13.sp)
+                }
                 Text(
                     text = label,
                     fontSize = 11.sp,
