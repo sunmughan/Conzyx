@@ -60,20 +60,38 @@ class LspManagerTest {
     }
 
     @Test
-    fun `requestCodeActions provides contextual quickfixes for errors and extract refactoring`() {
+    fun `requestCodeActions only offers actions with a real appliable edit`() {
         val index = WorkspaceSemanticIndex(null)
         val lsp = LspManager(workspaceDir = null, semanticIndex = index)
 
-        // Content with unclosed delimiter error
+        // Unclosed delimiter: no single correct insertion point, so no
+        // action is offered (a guessed edit would corrupt nested code).
         val brokenCode = """
             fun broken() {
                 val x = 10
         """.trimIndent()
+        val noActions = lsp.requestCodeActions("Kotlin", "src/Broken.kt", 2, 1, brokenCode)
+        assertTrue(noActions.none { it.kind.startsWith("refactor") })
+        assertTrue(noActions.none { it.title.contains("closing delimiter") })
+        assertTrue(noActions.all { it.newText != null })
 
-        val actions = lsp.requestCodeActions("Kotlin", "src/Broken.kt", 2, 1, brokenCode)
-        assertTrue(actions.isNotEmpty())
-        assertTrue(actions.any { it.title.contains("Insert matching closing delimiter") })
-        assertTrue(actions.any { it.kind.startsWith("refactor") })
+        // Duplicate import: the fix deletes the duplicate (2nd) line.
+        val dupCode = "import foo.Bar\nimport foo.Bar\nval x = 1"
+        val dupActions = lsp.requestCodeActions("Kotlin", "src/Dup.kt", 2, 1, dupCode)
+        assertEquals(1, dupActions.size)
+        assertEquals("import foo.Bar\nval x = 1", dupActions[0].newText)
+        assertEquals("src/Dup.kt", dupActions[0].targetFile)
+
+        // Empty catch: the fix rethrows the caught variable.
+        val catchCode = "try { risky() } catch (e: Exception) {}"
+        val catchActions = lsp.requestCodeActions("Kotlin", "src/Catch.kt", 1, 1, catchCode)
+        assertEquals(1, catchActions.size)
+        assertTrue(catchActions[0].newText!!.contains("throw e"))
+        assertTrue(catchActions[0].newText!!.contains("catch (e: Exception)"))
+
+        // No interactive Extract actions: they cannot apply with one tap.
+        assertTrue(dupActions.none { it.kind.startsWith("refactor") })
+        assertTrue(catchActions.none { it.kind.startsWith("refactor") })
     }
 
     @Test

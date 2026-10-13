@@ -4911,6 +4911,24 @@ private fun WorkspaceScreen(
             onPlanRename = { oldName, newName -> viewModel?.planRenameSymbol(oldName, newName) },
             onApplyRename = { preview -> viewModel?.applyRenameSymbol(preview) ?: "" },
             onUndoRename = { viewModel?.undoLastRename() ?: false },
+            // QA H1: palette actions that leave the editor get real behavior.
+            onPaletteNavigate = { tabId ->
+                onCloseFile()
+                selectedTab = when (tabId) {
+                    "chat" -> WorkspaceTab.CHAT
+                    "terminal" -> WorkspaceTab.TERMINAL
+                    "changes" -> WorkspaceTab.CHANGES
+                    "preview" -> WorkspaceTab.PREVIEW
+                    else -> WorkspaceTab.FILES
+                }
+            },
+            onCreateFile = { name -> viewModel?.createFile(name) ?: false },
+            onCreateFolder = { name -> viewModel?.createFolder(name) ?: false },
+            onRefreshFiles = { viewModel?.refreshProjectFiles() },
+            onPrepareTerminalCommand = { command -> viewModel?.prepareProjectTerminalCommand(command) },
+            onShowToast = { message -> viewModel?.showToast(message) },
+            onSaveSecondary = { path, text -> onSaveFile(path, text) },
+            onCheckRuntimeHealth = { viewModel?.getRuntimeHealthSnapshot() ?: RuntimeHealthSnapshot() },
         )
         return
     }

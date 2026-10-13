@@ -3,6 +3,7 @@ package com.codeair.mhe.ui
 import com.codeair.mhe.runtime.SemanticCodeEngine
 import java.io.File
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -135,6 +136,19 @@ fun CodeEditorScreen(
     onPlanRename: (String, String) -> com.codeair.mhe.workspace.ReplacePreview? = { _, _ -> null },
     onApplyRename: (com.codeair.mhe.workspace.ReplacePreview) -> String = { "" },
     onUndoRename: () -> Boolean = { false },
+    // QA H1: palette actions that leave the editor (navigation, file ops,
+    // build/test, health) are wired to real behavior by the parent — the
+    // palette must never dismiss with nothing happening.
+    onPaletteNavigate: (String) -> Unit = {},
+    onCreateFile: (String) -> Boolean = { false },
+    onCreateFolder: (String) -> Boolean = { false },
+    onRefreshFiles: () -> Unit = {},
+    onPrepareTerminalCommand: (String) -> Unit = {},
+    onShowToast: (String) -> Unit = {},
+    // QA H3: pane-2 save goes to the parent (path-aware save).
+    onSaveSecondary: suspend (String, String) -> Boolean = { _, _ -> false },
+    // QA H1: runtime health snapshot for the Check Health dialog.
+    onCheckRuntimeHealth: () -> RuntimeHealthSnapshot = { RuntimeHealthSnapshot() },
 ) {
     val source = content.orEmpty()
     val readOnly = loading || source.contains("[File truncated — too large to display fully]")
@@ -156,6 +170,13 @@ fun CodeEditorScreen(
         if (value.text != lastReportedText && !readOnly) {
             lastReportedText = value.text
             onContentChanged(value.text)
+        }
+    }
+    // QA H3: same file in both panes = one shared buffer. Programmatic
+    // state sets do not fire EditorPane's onValueChange, so this cannot loop.
+    LaunchedEffect(value.text) {
+        if (splitScreenOpen && secondaryFilePath == filePath && secondaryValue.text != value.text) {
+            secondaryValue = TextFieldValue(value.text, value.selection)
         }
     }
     LaunchedEffect(value.selection) {
@@ -184,6 +205,14 @@ fun CodeEditorScreen(
     var saving by rememberSaveable(filePath) { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable(filePath) { mutableStateOf(false) }
     var splitScreenOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    // QA H1: palette-driven dialogs.
+    var newFileDialogOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var newFolderDialogOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var healthDialogOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var newEntryName by rememberSaveable(filePath) { mutableStateOf("") }
+    // QA H3: pane-2 discard confirmation targets.
+    var secondaryDiscardForClose by rememberSaveable(filePath) { mutableStateOf(false) }
+    var secondaryDiscardSwitchTo by rememberSaveable(filePath) { mutableStateOf<String?>(null) }
     var secondaryFilePath by rememberSaveable(filePath) {
         mutableStateOf(openTabs.firstOrNull { it != filePath } ?: filePath)
     }
@@ -198,6 +227,9 @@ fun CodeEditorScreen(
         }
         mutableStateOf(TextFieldValue(initialSecText))
     }
+    // QA H3: pane-2 tracks its own saved baseline, like the primary pane.
+    var secondarySavedText by remember(secondaryFilePath) { mutableStateOf(secondaryValue.text) }
+    var savingSecondary by rememberSaveable(filePath) { mutableStateOf(false) }
     val secondaryVertical = rememberScrollState()
     val secondaryHorizontal = rememberScrollState()
     val secondaryLines = remember(secondaryValue.text) { secondaryValue.text.split('\n') }
@@ -216,6 +248,17 @@ fun CodeEditorScreen(
     }
 
     val dirty = value.text != savedText
+    // QA H3: pane-2 dirtiness is independent — except when both panes show
+    // the same file, where they share one buffer (see the sync effect below).
+    val secondaryDirty = splitScreenOpen && secondaryFilePath != filePath &&
+        secondaryValue.text != secondarySavedText
+
+    // QA H4: system back must hit the same unsaved-changes dialog as the
+    // toolbar close. This handler registers after the parent's, so it wins
+    // while enabled; when clean it stays disabled and the parent closes.
+    BackHandler(enabled = (dirty || secondaryDirty) && !readOnly) {
+        showDiscardDialog = true
+    }
     val lines = remember(value.text) { value.text.split('\n') }
     val lineNumbers = remember(lines.size) { (1..max(1, lines.size)).joinToString("\n") }
     val symbols = remember(value.text, filePath) { extractEditorSymbols(value.text, filePath) }
@@ -373,6 +416,51 @@ fun CodeEditorScreen(
         }
     }
 
+    // QA H3: pane-2 save. Same-file splits share the primary buffer, so
+    // pane 2 is never dirty for them and this is a no-op there.
+    val saveSecondary: () -> Unit = {
+        if (secondaryDirty && !readOnly && !savingSecondary) {
+            val pathToSave = secondaryFilePath
+            val textToSave = secondaryValue.text
+            scope.launch {
+                savingSecondary = true
+                if (onSaveSecondary(pathToSave, textToSave)) secondarySavedText = textToSave
+                savingSecondary = false
+            }
+        }
+    }
+
+    fun switchSecondaryTab(tab: String) {
+        secondaryFilePath = tab
+        try {
+            val f = File(tab)
+            if (f.exists() && f.isFile) {
+                secondaryValue = TextFieldValue(f.readText())
+            }
+        } catch (_: Exception) {}
+    }
+
+    // QA H1: Run Build / Run Tests resolve the project's real command and
+    // prefill it in the Terminal tab for review + Run. No detectable
+    // command means honest feedback, never an invented command.
+    fun runPaletteCommand(forTests: Boolean) {
+        val dir = workspaceDir
+        if (dir == null) {
+            onShowToast("No workspace open.")
+            return
+        }
+        val command = detectPaletteBuildCommand(dir, forTests)
+        if (command == null) {
+            onShowToast(
+                if (forTests) "No test command detected for this project."
+                else "No build command detected for this project."
+            )
+            return
+        }
+        onPrepareTerminalCommand(command)
+        onPaletteNavigate("terminal")
+    }
+
     fun goToLine(line: Int) {
         val target = line.coerceIn(1, max(1, lines.size))
         val offset = value.text.split('\n')
@@ -457,7 +545,12 @@ fun CodeEditorScreen(
         AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
             title = { Text("Unsaved changes") },
-            text = { Text("Save your changes to " + filePath.substringAfterLast('/') + " before closing?") },
+            text = {
+                Text(
+                    "Save your changes to " + filePath.substringAfterLast('/') + " before closing?" +
+                        if (secondaryDirty) " Pane 2 (" + secondaryFilePath.substringAfterLast('/') + ") has unsaved changes too — saving will include them." else ""
+                )
+            },
             confirmButton = {
                 TextButton(
                     enabled = !saving,
@@ -468,6 +561,14 @@ fun CodeEditorScreen(
                             saving = false
                             if (saved) {
                                 savedText = value.text
+                                // QA H3: closing drops pane-2 edits too — save them as well.
+                                if (secondaryDirty) {
+                                    savingSecondary = true
+                                    if (onSaveSecondary(secondaryFilePath, secondaryValue.text)) {
+                                        secondarySavedText = secondaryValue.text
+                                    }
+                                    savingSecondary = false
+                                }
                                 showDiscardDialog = false
                                 onClose()
                             }
@@ -481,6 +582,144 @@ fun CodeEditorScreen(
                     onClick = {
                         showDiscardDialog = false
                         onClose()
+                    },
+                ) { Text("Discard") }
+            },
+        )
+    }
+
+    // QA H1: palette New File / New Folder. Names are project-root-relative;
+    // separators and `..` are rejected so a name can never escape the root.
+    if (newFileDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { newFileDialogOpen = false },
+            title = { Text("New file") },
+            text = {
+                OutlinedTextField(
+                    value = newEntryName,
+                    onValueChange = { newEntryName = it },
+                    singleLine = true,
+                    label = { Text("File name") },
+                    placeholder = { Text("e.g. notes.txt") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = isValidNewEntryName(newEntryName),
+                    onClick = {
+                        val name = newEntryName.trim()
+                        newFileDialogOpen = false
+                        if (onCreateFile(name)) onShowToast("Created $name") else onShowToast("Could not create $name")
+                    },
+                ) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { newFileDialogOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (newFolderDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { newFolderDialogOpen = false },
+            title = { Text("New folder") },
+            text = {
+                OutlinedTextField(
+                    value = newEntryName,
+                    onValueChange = { newEntryName = it },
+                    singleLine = true,
+                    label = { Text("Folder name") },
+                    placeholder = { Text("e.g. docs") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = isValidNewEntryName(newEntryName),
+                    onClick = {
+                        val name = newEntryName.trim()
+                        newFolderDialogOpen = false
+                        if (onCreateFolder(name)) onShowToast("Created folder $name") else onShowToast("Could not create folder $name")
+                    },
+                ) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { newFolderDialogOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    // QA H1: Check Runtime Health shows a live snapshot — storage, rootfs,
+    // memory — computed when the dialog opens, never estimated.
+    if (healthDialogOpen) {
+        val snapshot = remember { onCheckRuntimeHealth() }
+        AlertDialog(
+            onDismissRequest = { healthDialogOpen = false },
+            title = { Text("Runtime Health") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Storage: ${snapshot.storageStatus} — ${formatBytes(snapshot.storageUsableBytes)} free of ${formatBytes(snapshot.storageTotalBytes)}")
+                    snapshot.storageMessage?.let {
+                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("Rootfs: ${snapshot.rootfsStatus}")
+                    if (snapshot.rootfsMissingPaths.isNotEmpty()) {
+                        Text("Missing: " + snapshot.rootfsMissingPaths.joinToString(", "))
+                    }
+                    if (snapshot.rootfsCorruptedPaths.isNotEmpty()) {
+                        Text("Corrupted: " + snapshot.rootfsCorruptedPaths.joinToString(", "))
+                    }
+                    Text("Memory: ${formatBytes(snapshot.memoryUsedBytes)} used of ${formatBytes(snapshot.memoryMaxBytes)} max")
+                }
+            },
+            confirmButton = { TextButton(onClick = { healthDialogOpen = false }) { Text("Close") } },
+        )
+    }
+
+    // QA H3: leaving split view / switching pane-2 files with unsaved
+    // pane-2 edits asks first — Save, Discard, or Cancel (back / outside).
+    if (secondaryDiscardForClose || secondaryDiscardSwitchTo != null) {
+        val switching = !secondaryDiscardForClose
+        AlertDialog(
+            onDismissRequest = {
+                secondaryDiscardForClose = false
+                secondaryDiscardSwitchTo = null
+            },
+            title = { Text("Pane 2 has unsaved changes") },
+            text = {
+                Text(
+                    "Save your changes to " + secondaryFilePath.substringAfterLast('/') +
+                        " before " + if (switching) "switching files?" else "closing split view?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !savingSecondary,
+                    onClick = {
+                        val target = secondaryDiscardSwitchTo
+                        scope.launch {
+                            savingSecondary = true
+                            if (onSaveSecondary(secondaryFilePath, secondaryValue.text)) {
+                                secondarySavedText = secondaryValue.text
+                            }
+                            savingSecondary = false
+                            if (switching) {
+                                target?.let { switchSecondaryTab(it) }
+                            } else {
+                                splitScreenOpen = false
+                            }
+                            secondaryDiscardForClose = false
+                            secondaryDiscardSwitchTo = null
+                        }
+                    },
+                ) { Text("Save & continue") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        val target = secondaryDiscardSwitchTo
+                        if (switching) {
+                            target?.let { switchSecondaryTab(it) }
+                        } else {
+                            splitScreenOpen = false
+                        }
+                        secondaryDiscardForClose = false
+                        secondaryDiscardSwitchTo = null
                     },
                 ) { Text("Discard") }
             },
@@ -601,6 +840,26 @@ fun CodeEditorScreen(
                     "close_tab" -> onCloseTab(filePath)
                     "close_other_tabs" -> onCloseOtherTabs(filePath)
                     "close_all_tabs" -> onCloseAllTabs()
+                    // QA H1: every remaining action now does something real.
+                    "new_file" -> {
+                        newEntryName = ""
+                        newFileDialogOpen = true
+                    }
+                    "new_folder" -> {
+                        newEntryName = ""
+                        newFolderDialogOpen = true
+                    }
+                    "refresh_files" -> onRefreshFiles()
+                    "global_search_workspace" -> globalSearchOpen = true
+                    "nav_chat" -> onPaletteNavigate("chat")
+                    "nav_files" -> onPaletteNavigate("files")
+                    "nav_terminal" -> onPaletteNavigate("terminal")
+                    "nav_changes" -> onPaletteNavigate("changes")
+                    "nav_preview" -> onPaletteNavigate("preview")
+                    "run_build" -> runPaletteCommand(forTests = false)
+                    "run_tests" -> runPaletteCommand(forTests = true)
+                    "check_health" -> healthDialogOpen = true
+                    else -> onShowToast("Action \"$actionId\" is not available.")
                 }
             },
         )
@@ -865,7 +1124,23 @@ fun CodeEditorScreen(
                         items(activeCodeActions.size) { idx ->
                             val action = activeCodeActions[idx]
                             Surface(
-                                onClick = { codeActionsOpen = false },
+                                // QA H2: tapping a quick fix applies its edit
+                                // to the buffer (the user still reviews + saves).
+                                // Actions only ever carry a real edit now.
+                                onClick = {
+                                    codeActionsOpen = false
+                                    val newText = action.newText
+                                    if (newText != null &&
+                                        (action.targetFile == null || action.targetFile == filePath)
+                                    ) {
+                                        val cursor = value.selection.start.coerceAtMost(newText.length)
+                                        value = TextFieldValue(newText, TextRange(cursor))
+                                        bracketPair = findBracketPair(newText, cursor)
+                                        onShowToast("Quick fix applied")
+                                    } else {
+                                        onShowToast("This quick fix could not be applied.")
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -1436,11 +1711,39 @@ fun CodeEditorScreen(
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
+                                // QA H3: pane-2 dirty indicator.
+                                if (secondaryDirty) {
+                                    Text(
+                                        text = "· Unsaved",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
+                                // QA H3: pane-2 save — edits used to be silently discarded.
+                                if (secondaryDirty && !readOnly) {
+                                    IconButton(
+                                        enabled = !savingSecondary,
+                                        onClick = saveSecondary,
+                                        modifier = Modifier.size(24.dp),
+                                    ) {
+                                        if (savingSecondary) {
+                                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Icon(
+                                                Icons.Default.Save,
+                                                contentDescription = "Save Pane 2",
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                }
                                 if (openTabs.size > 1) {
                                     var switchMenuOpen by remember { mutableStateOf(false) }
                                     Box {
@@ -1459,13 +1762,13 @@ fun CodeEditorScreen(
                                                     text = { Text(tab.substringAfterLast('/'), fontSize = 12.sp) },
                                                     onClick = {
                                                         switchMenuOpen = false
-                                                        secondaryFilePath = tab
-                                                        try {
-                                                            val f = File(tab)
-                                                            if (f.exists() && f.isFile) {
-                                                                secondaryValue = TextFieldValue(f.readText())
-                                                            }
-                                                        } catch (_: Exception) {}
+                                                        // QA H3: switching pane-2 files with
+                                                        // unsaved edits asks first.
+                                                        if (secondaryDirty) {
+                                                            secondaryDiscardSwitchTo = tab
+                                                        } else {
+                                                            switchSecondaryTab(tab)
+                                                        }
                                                     },
                                                 )
                                             }
@@ -1473,7 +1776,11 @@ fun CodeEditorScreen(
                                     }
                                 }
                                 IconButton(
-                                    onClick = { splitScreenOpen = false },
+                                    // QA H3: closing split view with unsaved
+                                    // pane-2 edits asks first.
+                                    onClick = {
+                                        if (secondaryDirty) secondaryDiscardForClose = true else splitScreenOpen = false
+                                    },
                                     modifier = Modifier.size(24.dp),
                                 ) {
                                     Icon(
@@ -1491,13 +1798,18 @@ fun CodeEditorScreen(
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         EditorPane(
                             value = secondaryValue,
-                            onValueChange = { secondaryValue = it },
+                            onValueChange = {
+                                secondaryValue = it
+                                // QA H3: same file in both panes = one shared buffer.
+                                if (secondaryFilePath == filePath) value = it
+                            },
                             lineNumbers = secondaryLineNumbers,
                             vertical = secondaryVertical,
                             horizontal = secondaryHorizontal,
                             wordWrap = wordWrap,
                             readOnly = false,
                             bracketPair = null,
+                            onSaveShortcut = saveSecondary,
                         )
                     }
                 }
@@ -1690,6 +2002,24 @@ private fun EditorPane(
             )
         }
     }
+}
+
+/**
+ * QA H1: a palette New File / New Folder name is project-root-relative.
+ * Separators and `..` are rejected so a name can never escape the root.
+ */
+internal fun isValidNewEntryName(name: String): Boolean {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty() || trimmed == "." || trimmed == "..") return false
+    if ('/' in trimmed || '\\' in trimmed || '\u0000' in trimmed) return false
+    return true
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1_024 -> "$bytes B"
+    bytes < 1_048_576 -> "%.1f KB".format(bytes / 1_024.0)
+    bytes < 1_073_741_824 -> "%.1f MB".format(bytes / 1_048_576.0)
+    else -> "%.1f GB".format(bytes / 1_073_741_824.0)
 }
 
 private fun statusText(value: TextFieldValue, dirty: Boolean, bracketPair: BracketPair?): String {

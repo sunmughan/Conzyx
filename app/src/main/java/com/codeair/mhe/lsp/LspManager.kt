@@ -349,7 +349,14 @@ class LspManager(
     }
 
     /**
-     * Computes contextual Code Actions (quick fixes & refactorings).
+     * Computes contextual Code Actions (quick fixes).
+     *
+     * QA H2: every returned action carries [LspCodeAction.newText] — the full
+     * corrected document — so tapping it actually applies the fix. Actions
+     * that cannot be applied with one tap are NOT offered: an unclosed
+     * delimiter has no single correct insertion point (appending the closer
+     * at the document end silently corrupts nested code), and Extract
+     * variable/function need interactive selection + naming.
      */
     fun requestCodeActions(
         language: String,
@@ -361,43 +368,68 @@ class LspManager(
         val actions = mutableListOf<LspCodeAction>()
         val diagnostics = EditorDiagnosticsEngine.analyzeDocument(content, filePath)
         val lineDiags = diagnostics.filter { it.lineNumber == line }.ifEmpty { diagnostics }
+        val lines = content.lines()
 
         for (diag in lineDiags) {
             when (diag.ruleId) {
-                "syntax.unclosed_delimiter" -> {
-                    actions.add(
-                        LspCodeAction(
-                            title = "Insert matching closing delimiter",
-                            kind = "quickfix",
-                            isPreferred = true,
-                        )
-                    )
-                }
                 "linter.duplicate_import" -> {
-                    actions.add(
-                        LspCodeAction(
-                            title = "Remove duplicate import statement",
-                            kind = "quickfix",
-                            isPreferred = true,
+                    // The diagnosed line IS the duplicate (second) import: drop it.
+                    val idx = diag.lineNumber - 1
+                    if (idx in lines.indices) {
+                        val fixed = (lines.subList(0, idx) + lines.subList(idx + 1, lines.size))
+                            .joinToString("\n")
+                        actions.add(
+                            LspCodeAction(
+                                title = "Remove duplicate import statement",
+                                kind = "quickfix",
+                                isPreferred = true,
+                                newText = fixed,
+                                targetFile = filePath,
+                            )
                         )
-                    )
+                    }
                 }
                 "linter.empty_catch" -> {
-                    actions.add(
-                        LspCodeAction(
-                            title = "Add logger or rethrow in empty catch block",
-                            kind = "quickfix",
-                        )
-                    )
+                    buildEmptyCatchFix(lines, diag.lineNumber, filePath)?.let { actions.add(it) }
                 }
             }
         }
 
-        // Generic refactoring actions
-        actions.add(LspCodeAction(title = "Extract variable / constant", kind = "refactor.extract"))
-        actions.add(LspCodeAction(title = "Extract function / method", kind = "refactor.extract"))
-
         return actions
+    }
+
+    /**
+     * Builds the rethrow fix for a one-line `catch (...) {}`: replaces the
+     * empty block with `throw <var>`, so the exception fails loudly instead
+     * of being swallowed. Returns null when the caught variable cannot be
+     * extracted reliably (e.g. `_`) or when code follows the `{}` on the
+     * line — in both cases no fix is offered rather than a guessed one.
+     */
+    private fun buildEmptyCatchFix(
+        lines: List<String>,
+        lineNumber: Int,
+        filePath: String,
+    ): LspCodeAction? {
+        val idx = lineNumber - 1
+        if (idx !in lines.indices) return null
+        val line = lines[idx]
+        val match = Regex("""catch\s*\(([^)]*)\)\s*\{\s*\}""").find(line) ?: return null
+        val after = line.substring(match.range.last + 1).trim()
+        if (after.isNotEmpty() && !after.startsWith("//")) return null
+        val inside = match.groupValues[1]
+        val varName = inside.substringBefore(":").trim().split(Regex("\\s+")).lastOrNull().orEmpty()
+        if (varName == "_" || !varName.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) return null
+        val indent = line.takeWhile { it == ' ' || it == '\t' }
+        val fixedLine = line.substring(0, match.range.first) +
+            "catch ($inside) {\n$indent    throw $varName\n$indent}" +
+            line.substring(match.range.last + 1)
+        val fixed = lines.toMutableList().also { it[idx] = fixedLine }.joinToString("\n")
+        return LspCodeAction(
+            title = "Rethrow in empty catch block",
+            kind = "quickfix",
+            newText = fixed,
+            targetFile = filePath,
+        )
     }
 
     private fun getWordAt(content: String, lineNum: Int, charNum: Int): String {

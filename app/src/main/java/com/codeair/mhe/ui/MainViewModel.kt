@@ -161,6 +161,23 @@ private data class ImportedZipProject(
     val sourceAttachment: ChatAttachment,
 )
 
+/**
+ * QA H1 (Check Runtime Health): point-in-time runtime health, every field
+ * from a live check — storage from the runtime health controller, rootfs
+ * from the rootfs integrity verifier, memory from the app-process Runtime.
+ */
+data class RuntimeHealthSnapshot(
+    val storageStatus: String = "Unknown",
+    val storageMessage: String? = null,
+    val storageUsableBytes: Long = 0L,
+    val storageTotalBytes: Long = 0L,
+    val rootfsStatus: String = "Unknown",
+    val rootfsMissingPaths: List<String> = emptyList(),
+    val rootfsCorruptedPaths: List<String> = emptyList(),
+    val memoryUsedBytes: Long = 0L,
+    val memoryMaxBytes: Long = 0L,
+)
+
 data class AppUiState(
     val startupStage: StartupStage = StartupStage.CHECKING,
     val startupProgress: Float = 0f,
@@ -2810,8 +2827,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun closeFile() =
         editorCoordinator.closeFile()
 
-    fun createFile(relativePath: String, initialContent: String = "") {
-        val project = _state.value.activeProject ?: return
+    /**
+     * QA H1: returns true only when the file was actually created, so callers
+     * (Command Palette new-file dialog) can report success honestly.
+     */
+    fun createFile(relativePath: String, initialContent: String = ""): Boolean {
+        val project = _state.value.activeProject ?: return false
         val root = projectWorkspaceRoot(project)
         val result = fileOperationsController.createFile(root, relativePath, initialContent)
         if (result.isSuccess) {
@@ -2820,10 +2841,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             AppCrashLogger.log("Failed to create file: ${result.exceptionOrNull()?.message}")
         }
+        return result.isSuccess
     }
 
-    fun createFolder(relativePath: String) {
-        val project = _state.value.activeProject ?: return
+    /**
+     * QA H1: returns true only when the directory was actually created.
+     */
+    fun createFolder(relativePath: String): Boolean {
+        val project = _state.value.activeProject ?: return false
         val root = projectWorkspaceRoot(project)
         val result = fileOperationsController.createDirectory(root, relativePath)
         if (result.isSuccess) {
@@ -2831,6 +2856,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             AppCrashLogger.log("Failed to create directory: ${result.exceptionOrNull()?.message}")
         }
+        return result.isSuccess
+    }
+
+    /**
+     * QA H1 (Check Runtime Health): a point-in-time snapshot of the real
+     * storage / rootfs / memory state, shown in the editor's health dialog.
+     * Nothing here is estimated or invented — every field comes from a live
+     * check at call time.
+     */
+    fun getRuntimeHealthSnapshot(): RuntimeHealthSnapshot {
+        val storage = runtimeHealthController.checkStorageHealth()
+        val storageStatus = when (storage) {
+            is com.codeair.mhe.runtime.StorageHealthResult.Healthy -> "Healthy"
+            is com.codeair.mhe.runtime.StorageHealthResult.Warning -> "Warning"
+            is com.codeair.mhe.runtime.StorageHealthResult.Critical -> "Critical"
+        }
+        val storageMessage = when (storage) {
+            is com.codeair.mhe.runtime.StorageHealthResult.Healthy -> null
+            is com.codeair.mhe.runtime.StorageHealthResult.Warning -> storage.message
+            is com.codeair.mhe.runtime.StorageHealthResult.Critical -> storage.message
+        }
+        val storageUsableBytes = when (storage) {
+            is com.codeair.mhe.runtime.StorageHealthResult.Healthy -> storage.usableBytes
+            is com.codeair.mhe.runtime.StorageHealthResult.Warning -> storage.usableBytes
+            is com.codeair.mhe.runtime.StorageHealthResult.Critical -> storage.usableBytes
+        }
+        val storageTotalBytes = when (storage) {
+            is com.codeair.mhe.runtime.StorageHealthResult.Healthy -> storage.totalBytes
+            is com.codeair.mhe.runtime.StorageHealthResult.Warning -> storage.totalBytes
+            is com.codeair.mhe.runtime.StorageHealthResult.Critical -> storage.totalBytes
+        }
+        val rootfs = com.codeair.mhe.runtime.RootfsIntegrityVerifier.verify(
+            java.io.File(application.filesDir, "runtime/ubuntu")
+        )
+        val rootfsStatus = if (rootfs.isValid) {
+            "Intact"
+        } else {
+            "Issues found"
+        }
+        val runtime = Runtime.getRuntime()
+        return RuntimeHealthSnapshot(
+            storageStatus = storageStatus,
+            storageMessage = storageMessage,
+            storageUsableBytes = storageUsableBytes,
+            storageTotalBytes = storageTotalBytes,
+            rootfsStatus = rootfsStatus,
+            rootfsMissingPaths = rootfs.missingPaths,
+            rootfsCorruptedPaths = rootfs.corruptedPaths,
+            memoryUsedBytes = runtime.totalMemory() - runtime.freeMemory(),
+            memoryMaxBytes = runtime.maxMemory(),
+        )
     }
 
     fun renameEntry(oldRelativePath: String, newRelativePath: String) {
