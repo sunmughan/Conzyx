@@ -97,7 +97,7 @@ class CloudHybridModelsTest {
     fun testCloudWorkerSpecDefaults() {
         val worker = CloudWorkerSpec(
             name = "Test Worker",
-            endpointUrl = "https://test.pocketdev.io",
+            endpointUrl = "https://test.example.invalid",
             region = "eu-west-1",
             costPerHourUsd = 0.08,
             cpuCores = 16,
@@ -105,7 +105,9 @@ class CloudHybridModelsTest {
         )
         assertTrue(worker.id.isNotBlank())
         assertEquals("Test Worker", worker.name)
-        assertEquals(WorkerHealthStatus.HEALTHY, worker.healthStatus)
+        // Unknown until a real /health probe runs: never HEALTHY by default.
+        assertEquals(WorkerHealthStatus.OFFLINE, worker.healthStatus)
+        assertEquals(-1L, worker.pingLatencyMs)
         assertTrue(worker.isAvailable)
         assertFalse(worker.gpuAvailable)
         assertEquals(9, worker.supportedWorkloads.size)

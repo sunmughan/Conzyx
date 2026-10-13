@@ -44,8 +44,24 @@ class CloudHybridCoordinatorTest {
     @Test
     fun testShouldOffloadToCloudWithLowRam() {
         coordinator.setPolicy(WorkloadRoutingPolicy.HYBRID_AUTO)
+        // Offloading needs a real healthy worker: with none registered, even a
+        // low-RAM device must stay local instead of offloading to a fake one.
+        val staysLocal = coordinator.shouldOffloadToCloud(
+            workloadType = WorkloadType.HEAVY_GRADLE_BUILD,
+            deviceAvailableRamMb = 512L
+        )
+        assertFalse(staysLocal)
 
-        // Low RAM device should offload heavy Gradle build
+        // With a healthy worker registered, low RAM should offload.
+        coordinator.workerRegistry.registerWorker(
+            com.codeair.mhe.cloud.model.CloudWorkerSpec(
+                id = "offload-worker-1",
+                name = "Offload Worker",
+                endpointUrl = "https://offload.example.invalid",
+                region = "us-east-1",
+                healthStatus = com.codeair.mhe.cloud.model.WorkerHealthStatus.HEALTHY
+            )
+        )
         val shouldOffload = coordinator.shouldOffloadToCloud(
             workloadType = WorkloadType.HEAVY_GRADLE_BUILD,
             deviceAvailableRamMb = 512L
