@@ -39,7 +39,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -76,6 +77,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.factory.blueprint.AppFactoryBlueprintEngine
@@ -681,7 +684,11 @@ private fun SigningTab(
     onBumpVersion: (VersionBumpType) -> Unit
 ) {
     var keyAlias by rememberSaveable { mutableStateOf("releaseKey") }
-    var keyPassword by rememberSaveable { mutableStateOf("pocketdev123") }
+    // No default password: every keystore gets a password only the user chose.
+    // Plain remember (not rememberSaveable) keeps the password out of the
+    // Activity saved-state bundle.
+    var keyPassword by remember { mutableStateOf("") }
+    var keyPasswordVisible by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -714,10 +721,21 @@ private fun SigningTab(
                         value = keyPassword,
                         onValueChange = { keyPassword = it },
                         label = { Text("Keystore Password") },
+                        visualTransformation = if (keyPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { keyPasswordVisible = !keyPasswordVisible }) {
+                                Icon(
+                                    if (keyPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (keyPasswordVisible) "Hide password" else "Show password",
+                                )
+                            }
+                        },
+                        supportingText = { Text("At least 6 characters. Keep it safe — a lost keystore password cannot be recovered.") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Button(
                         onClick = { onGenerateKeystore(keyAlias, keyPassword) },
+                        enabled = keyAlias.isNotBlank() && keyPassword.length >= 6,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(16.dp))

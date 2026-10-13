@@ -171,7 +171,7 @@ class AppFactoryCoordinator(
     fun generateReleaseKeystore(
         targetDirectory: File? = null,
         alias: String = "releaseKey",
-        pass: String = "pocketdev123"
+        pass: String
     ) {
         val bp = host.state().appFactoryBlueprint
         val projectDir = targetDirectory ?: host.state().activeProject?.let { workspaceRootFor(it) } ?: File(host.appContext.filesDir, "projects/${bp?.name?.lowercase()?.replace(" ", "_") ?: "app"}")

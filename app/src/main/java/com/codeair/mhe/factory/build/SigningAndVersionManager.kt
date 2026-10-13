@@ -27,6 +27,11 @@ object SigningAndVersionManager {
         require(storePassword.isNotBlank() && keyPassword.isNotBlank()) {
             "Keystore and key passwords must not be blank."
         }
+        // keytool itself rejects passwords shorter than 6 characters; fail
+        // here with a clear message instead of a cryptic keytool error.
+        require(storePassword.length >= 6 && keyPassword.length >= 6) {
+            "Keystore and key passwords must be at least 6 characters (keytool requirement)."
+        }
         val keystoreFile = File(projectDir, "release.keystore")
         val cmd = listOf(
             "keytool", "-genkeypair",

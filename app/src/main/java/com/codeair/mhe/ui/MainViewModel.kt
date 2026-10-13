@@ -4468,7 +4468,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
     fun generateReleaseKeystore(
         targetDirectory: File? = null,
         alias: String = "releaseKey",
-        pass: String = "pocketdev123"
+        pass: String
     ) = appFactoryCoordinator.generateReleaseKeystore(targetDirectory, alias, pass)
 
     fun bumpAppVersion(
