@@ -407,35 +407,37 @@ private fun HybridWorkersTab(coordinator: CloudHybridCoordinator) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Actions
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        // Keep the heading on its own line and place Add Runner before Ping All.
+        // A wrapping action row avoids the vertical, character-by-character button seen on phones.
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = "Cloud Runner Fleet (${state.registeredWorkers.size} registered)",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showAddDialog = true },
+                    modifier = Modifier.height(44.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text("+ Add Runner", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
                 Button(
                     onClick = { coordinator.pingWorkers() },
+                    modifier = Modifier.height(44.dp),
                     shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Ping All", fontSize = 11.sp)
-                }
-                OutlinedButton(
-                    onClick = { showAddDialog = true },
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text("+ Add Runner", fontSize = 11.sp)
+                    Text("Ping All", fontSize = 12.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -745,9 +747,24 @@ private fun HybridPoliciesTab(coordinator: CloudHybridCoordinator) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = policy.displayName, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        val policyTextColor = if (isSelected) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                        Text(
+                            text = policy.displayName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = policyTextColor
+                        )
                         Spacer(Modifier.height(2.dp))
-                        Text(text = policy.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = policy.description,
+                            fontSize = 11.sp,
+                            color = if (isSelected) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
                     if (isSelected) {
