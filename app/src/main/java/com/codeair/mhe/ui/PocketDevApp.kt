@@ -3541,9 +3541,11 @@ private fun ClaudeSubscriptionCredentialsStep(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 /**
- * One-time explainer shown on the first open of each studio. Any dismissal
- * (Got it, Skip, back press, outside tap) marks it seen; the caller decides
- * whether to proceed into the studio (Got it / Skip) or stay put (exit).
+ * One-time explainer shown on the first open of each studio. One page per
+ * tab/screen inside that studio, so the user learns every screen before
+ * using it. Any dismissal (Got it, Skip, back press, outside tap) marks it
+ * seen; the caller decides whether to proceed into the studio (Got it /
+ * Skip) or stay put (exit).
  */
 @Composable
 private fun StudioOnboardingDialog(
@@ -3551,42 +3553,76 @@ private fun StudioOnboardingDialog(
     onProceed: () -> Unit,
     onExit: () -> Unit,
 ) {
-    val (title, bullets) = when (studio) {
-        OverlayScreen.APP_FACTORY -> "What is App Factory?" to listOf(
-            "Describe your app idea, and AI builds the whole app for you: screens, logic, and database.",
-            "Build a real APK on your device or with CI, no laptop needed.",
-            "Get a Play Store-ready package, with listing and release built in.",
+    val pages = when (studio) {
+        OverlayScreen.APP_FACTORY -> listOf(
+            "App Factory" to "App Factory turns one idea into a Play Store-ready app: blueprint, code, build, signing, and listing, all from your phone.",
+            "Blueprint" to "Describe your app idea. AI turns it into a blueprint: features, screens, and data model.",
+            "Code & DB" to "AI writes the app code and builds the SQLite database from your blueprint.",
+            "Build & CI" to "Build a real APK on your device, or with CI when you need more power.",
+            "Signing & Version" to "Sign your APK with your keystore and manage the version code and version name.",
+            "Play Store" to "Fill in your Play listing and ship the release to the Play Store.",
         )
-        OverlayScreen.TEAM_STUDIO -> "What is Multi-Agent Studio?" to listOf(
-            "Give one goal, and a team of up to 10 AI engineering agents works on it together.",
-            "A DAG scheduler splits the work, and the Blackboard shows every agent's live progress.",
-            "Open any agent to see its tasks, output, and artifacts.",
+        OverlayScreen.TEAM_STUDIO -> listOf(
+            "Multi-Agent Studio" to "A team of up to 10 AI engineering agents works on one goal together. Every tab below shows one part of how the team works.",
+            "Roster" to "Your team: 10 specialized agent roles. See who is on the team and what each one does.",
+            "Task DAG" to "Plan turns your goal into a task pipeline. Agents run it, and Retry failed re-runs only the failed tasks.",
+            "Comms" to "Messages between agents, and between you and the team, in one place.",
+            "Blackboard" to "Every artifact the agents produce: files, notes, and results, pinned on one shared board.",
+            "Reviews" to "Reviewer sign-offs on finished work, before anything is marked done.",
         )
-        OverlayScreen.CLOUD_HYBRID -> "What is Cloud Hybrid?" to listOf(
-            "Your phone and the cloud work as one team: heavy jobs move to fast cloud runners.",
-            "Live hardware telemetry shows battery, CPU, and network while work runs.",
-            "Your phone stays light and smooth, even on big builds.",
+        OverlayScreen.CLOUD_HYBRID -> listOf(
+            "Cloud Hybrid" to "Phone and cloud work as one team: heavy jobs move to fast cloud runners while your phone stays light.",
+            "Telemetry & Stats" to "Live hardware stats from your phone: battery, CPU, and network, refreshed while you watch.",
+            "Workers Fleet" to "Your cloud runners. Add your own workers to take the heavy jobs.",
+            "Job Pipeline" to "Every job in one pipeline: running, completed, and where each one ran.",
+            "Routing Policies" to "Rules that decide what runs on your phone and what goes to the cloud.",
         )
-        else -> "" to emptyList()
+        else -> listOf("" to "")
     }
+    var page by remember { mutableStateOf(0) }
     AlertDialog(
         onDismissRequest = onExit,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
+        title = { Text(pages[page].first, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                bullets.forEach { bullet ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("•", color = MaterialTheme.colorScheme.primary)
-                        Text(bullet, fontSize = 14.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(pages[page].second, fontSize = 14.sp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${page + 1} / ${pages.size}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    pages.forEachIndexed { index, _ ->
+                        Box(
+                            modifier = Modifier
+                                .size(if (index == page) 8.dp else 6.dp)
+                                .background(
+                                    color = if (index == page) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = CircleShape,
+                                ),
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = onProceed) { Text("Got it") }
+            if (page < pages.lastIndex) {
+                Button(onClick = { page++ }) { Text("Next") }
+            } else {
+                Button(onClick = onProceed) { Text("Got it") }
+            }
         },
         dismissButton = {
-            TextButton(onClick = onProceed) { Text("Skip") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (page > 0) {
+                    TextButton(onClick = { page-- }) { Text("Back") }
+                }
+                TextButton(onClick = onProceed) { Text("Skip") }
+            }
         },
     )
 }
