@@ -341,7 +341,28 @@ data class AppUiState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
-    private val claudeRuntime = ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+    // One shared policy engine: the Settings toggles/kill switch and the
+    // agent bridges must observe the same in-memory state. (Previously the
+    // Claude bridge built its own engine, so the kill switch in Settings
+    // could never reach it.)
+    val permissionPolicyEngine = com.codeair.mhe.security.PermissionPolicyEngine(application)
+    val mcpRegistry = com.codeair.mhe.mcp.McpRegistry(application)
+    val mcpAuditLogger = com.codeair.mhe.mcp.McpAuditLogger(application)
+    val mcpPermissionManager = com.codeair.mhe.mcp.McpPermissionManager(File(application.filesDir, "mcp"), permissionPolicyEngine)
+    // The single safety gateway: kill switch + path audit + MCP consult +
+    // policy engine. It is constructed and used (not decorative): it is the
+    // choke point for Claude Code's per-tool approvals and the
+    // session-start gates. workspaceRoot is null because projects vary, so
+    // per-project root containment is unavailable; structural
+    // traversal/null-byte checks + the engine's own sensitive-file rules
+    // still apply.
+    val safetyGateway = com.codeair.mhe.security.SafetyGateway(
+        policyEngine = permissionPolicyEngine,
+        workspaceRoot = null,
+        mcpPermissionManager = mcpPermissionManager,
+        mcpServerResolver = { serverId -> mcpRegistry.getServer(serverId) },
+    )
+    private val claudeRuntime = ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
     private val antigravityRuntime = AntigravityRuntimeBridge(
@@ -394,10 +415,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val fileOperationsController = com.codeair.mhe.workspace.FileOperationsController()
     val projectMemoryStore = com.codeair.mhe.runtime.ProjectMemoryStore(application.filesDir)
     val agentOrchestrator = com.codeair.mhe.session.AgentOrchestrator(checkpointManager, projectMemoryStore)
-    val permissionPolicyEngine = com.codeair.mhe.security.PermissionPolicyEngine(application)
-    val mcpRegistry = com.codeair.mhe.mcp.McpRegistry(application)
-    val mcpAuditLogger = com.codeair.mhe.mcp.McpAuditLogger(application)
-    val mcpPermissionManager = com.codeair.mhe.mcp.McpPermissionManager(File(application.filesDir, "mcp"), permissionPolicyEngine)
     val mcpClientRunner = com.codeair.mhe.runtime.McpClientRunner()
     val gitHubClient = com.codeair.mhe.network.GitHubClient()
     val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
@@ -410,7 +427,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Fresh bridge instance per execution: separate instance means a
                 // separate OS process, which is what makes parallel agents real.
                 when (kind) {
-                    AgentKind.CLAUDE_CODE -> ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                    AgentKind.CLAUDE_CODE -> ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
                     AgentKind.DEEPSEEK_HARNESS -> DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
                     AgentKind.ANTIGRAVITY -> AntigravityRuntimeBridge(
                         application,
@@ -439,6 +456,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _state.value.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN
             },
             preferredKind = { _state.value.agentKind },
+            // The emergency kill switch blocks new team tasks too, not just
+            // the main chat session.
+            isKillSwitchEngaged = { permissionPolicyEngine.isEmergencyKillSwitchEngaged() },
         ),
         concurrencyController = teamConcurrencyController,
     )
@@ -3110,6 +3130,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         agentChatController.sanitizeAttachmentName(name)
 
     fun sendPrompt(prompt: String) {
+        if (permissionPolicyEngine.isEmergencyKillSwitchEngaged()) {
+            _state.update { it.copy(toastMessage = "Emergency kill switch is ACTIVE — agent sessions are blocked until it is turned off.") }
+            return
+        }
         val project = state.value.activeProject ?: return
         if (_state.value.agentKind == AgentKind.ANTIGRAVITY &&
             _state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {

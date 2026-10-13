@@ -937,6 +937,14 @@ fun SettingsScreen(
 
                         Spacer(Modifier.height(4.dp))
 
+                        Text(
+                            "Scope: per-tool approval above is enforced for Claude Code. Other agents run with their CLI defaults. The emergency kill switch blocks new agent sessions and MCP calls.",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        Spacer(Modifier.height(4.dp))
+
                         Button(
                             onClick = { showAuditLogSheet = true },
                             modifier = Modifier.fillMaxWidth(),

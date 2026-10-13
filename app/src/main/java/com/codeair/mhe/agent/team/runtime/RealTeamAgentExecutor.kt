@@ -197,6 +197,11 @@ class RealTeamAgentExecutor(
      * wired engine when that engine is not usable.
      */
     private val preferredKind: () -> AgentKind? = { null },
+    /**
+     * True when the emergency kill switch is engaged: no team task may
+     * start while it is on.
+     */
+    private val isKillSwitchEngaged: () -> Boolean = { false },
 ) : TeamAgentExecutor {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -218,6 +223,11 @@ class RealTeamAgentExecutor(
             )
             registerLive(task, context, startedAt, LiveTaskStatus.FAILED, reason, 0L, null, requestedKind)
             return result
+        }
+
+        // Emergency kill switch: no team task may start while it is on.
+        if (isKillSwitchEngaged()) {
+            return failFast("Emergency kill switch is ACTIVE — team tasks are blocked until it is turned off.")
         }
 
         // Resolve the engine: the role's wired engine when usable, else the

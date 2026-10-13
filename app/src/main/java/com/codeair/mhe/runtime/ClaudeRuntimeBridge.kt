@@ -63,12 +63,44 @@ internal object ProviderRuntimeErrorDetector {
     }
 }
 
+/**
+ * Maps a Claude Code permission request (tool name + optional shell command
+ * + file paths) to the [com.codeair.mhe.security.SafetyOperation] the
+ * [com.codeair.mhe.security.SafetyGateway] authorizes. Command requests are
+ * shell exec; file tools map by verb. Pure top-level function so it is
+ * unit-testable without a bridge instance (the bridge needs Android
+ * Context and the guest runtime).
+ */
+internal fun mapClaudeApprovalToOperation(
+    toolName: String,
+    command: String?,
+    paths: List<String>,
+): com.codeair.mhe.security.SafetyOperation = when {
+    !command.isNullOrBlank() -> com.codeair.mhe.security.SafetyOperation.ShellExec(command, null)
+    toolName.contains("write", ignoreCase = true) || toolName.contains("edit", ignoreCase = true) ->
+        com.codeair.mhe.security.SafetyOperation.FileOp(
+            com.codeair.mhe.security.FileOpKind.WRITE, paths.firstOrNull() ?: toolName
+        )
+    toolName.contains("delete", ignoreCase = true) || toolName.contains("remove", ignoreCase = true) ->
+        com.codeair.mhe.security.SafetyOperation.FileOp(
+            com.codeair.mhe.security.FileOpKind.DELETE, paths.firstOrNull() ?: toolName
+        )
+    else -> com.codeair.mhe.security.SafetyOperation.FileOp(
+        com.codeair.mhe.security.FileOpKind.READ, paths.firstOrNull() ?: toolName
+    )
+}
+
 class ClaudeRuntimeBridge(
     private val context: Context,
     private val secretFor: (ProviderProfile) -> String?,
+    /**
+     * The app-wide safety gateway (single shared [PermissionPolicyEngine]
+     * instance). The bridge must NOT construct its own engine: a private
+     * engine would never see the kill switch / toggles changed in Settings.
+     */
+    private val safetyGateway: com.codeair.mhe.security.SafetyGateway,
 ) : RuntimeBridge {
     private val installer = RuntimeInstaller(context)
-    val permissionEngine = com.codeair.mhe.security.PermissionPolicyEngine(context)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
     override val supportsSessionRecovery: Boolean = true
@@ -400,28 +432,20 @@ class ClaudeRuntimeBridge(
                         .ifBlank { command.orEmpty() }
                         .ifBlank { "$toolName running in project" }
 
-                    val category = when {
-                        !command.isNullOrBlank() -> com.codeair.mhe.security.PermissionCategory.SHELL_EXEC
-                        toolName.contains("write", ignoreCase = true) || toolName.contains("edit", ignoreCase = true) ->
-                            com.codeair.mhe.security.PermissionCategory.FILE_WRITE
-                        toolName.contains("delete", ignoreCase = true) || toolName.contains("remove", ignoreCase = true) ->
-                            com.codeair.mhe.security.PermissionCategory.FILE_DELETE
-                        else -> com.codeair.mhe.security.PermissionCategory.FILE_READ
-                    }
-                    val target = command ?: paths.firstOrNull() ?: toolName
-
-                    val decision = permissionEngine.evaluatePermission(
-                        com.codeair.mhe.security.PermissionRequest(
-                            category = category,
-                            target = target,
-                            command = command,
-                            sessionId = sessionId,
-                            projectId = activeProjectSlug
-                        )
+                    // Route the request through the single SafetyGateway: kill
+                    // switch + path audit + MCP consult + policy engine.
+                    // PROMPT is treated as deny here — the headless bridge has
+                    // no UI channel to ask the user mid-run (same as before,
+                    // when a non-allowed engine decision was a deny).
+                    val operation = mapClaudeApprovalToOperation(toolName, command, paths)
+                    val decision = safetyGateway.authorize(
+                        operation,
+                        sessionId = sessionId,
+                        projectId = activeProjectSlug
                     )
 
                     val response = File(file.parentFile, "$approvalId.response")
-                    if (decision.allowed) {
+                    if (decision.verdict == com.codeair.mhe.security.SafetyVerdict.ALLOW) {
                         Log.d("ClaudeBridge", "Approving permission request $approvalId for $toolName ($paths)")
                         response.writeText("allow")
                         eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
