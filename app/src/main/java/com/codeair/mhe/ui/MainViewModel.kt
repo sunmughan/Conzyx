@@ -797,7 +797,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Each coordinator owns one domain's operations and state machine;
     // MainViewModel keeps a stable public API by delegating to them.
     private val marketplaceCoordinator =
-        com.codeair.mhe.ui.coordinators.MarketplaceCoordinator(coordinatorHost, marketplaceInstallManager, marketplacePublishedItemsStore)
+        com.codeair.mhe.ui.coordinators.MarketplaceCoordinator(
+            coordinatorHost,
+            marketplaceInstallManager,
+            marketplacePublishedItemsStore,
+            mcpRegistry,
+            onMcpServersChanged = { mcpCoordinator.refreshMcpServers() },
+        )
     private val teamCoordinator =
         com.codeair.mhe.ui.coordinators.TeamCoordinator(teamOrchestrator)
     private val cloudCoordinator =

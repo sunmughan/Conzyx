@@ -1,11 +1,14 @@
 package com.codeair.mhe.ui.coordinators
 
 import com.codeair.mhe.marketplace.DeveloperMarketplaceCatalog
+import com.codeair.mhe.marketplace.MarketplaceCategory
 import com.codeair.mhe.marketplace.MarketplaceInstallManager
 import com.codeair.mhe.marketplace.MarketplaceInstallResult
 import com.codeair.mhe.marketplace.MarketplaceItem
 import com.codeair.mhe.marketplace.MarketplacePublishedItemsStore
 import com.codeair.mhe.marketplace.validateMarketplaceItem
+import com.codeair.mhe.mcp.McpRegistry
+import com.codeair.mhe.mcp.McpServerInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +37,9 @@ class MarketplaceCoordinator(
     private val host: CoordinatorHost,
     private val installManager: MarketplaceInstallManager,
     private val publishedStore: MarketplacePublishedItemsStore,
+    private val mcpRegistry: McpRegistry,
+    /** Refreshes the MCP server list UI after a marketplace (un)install registers one. */
+    private val onMcpServersChanged: () -> Unit = {},
 ) {
     private val _installedIds = MutableStateFlow(installManager.installedIds())
     val installedIds: StateFlow<Set<String>> = _installedIds.asStateFlow()
@@ -65,8 +71,10 @@ class MarketplaceCoordinator(
     fun installMarketplaceItem(item: MarketplaceItem) {
         host.scope.launch(Dispatchers.IO) {
             val outcome = when (val result = installManager.install(item)) {
-                is MarketplaceInstallResult.Installed ->
-                    "Installed ${item.name}"
+                is MarketplaceInstallResult.Installed -> {
+                    val mcpNote = registerMarketplaceMcpServer(item)
+                    "Installed ${item.name}$mcpNote"
+                }
                 is MarketplaceInstallResult.Failed ->
                     "Install failed: ${result.reason}"
                 MarketplaceInstallResult.AlreadyInstalled ->
@@ -79,9 +87,30 @@ class MarketplaceCoordinator(
         }
     }
 
+    /**
+     * Registers an installed MCP marketplace item as a usable MCP server.
+     * Returns the toast suffix describing what happened. Non-MCP items
+     * return "" — nothing to register.
+     */
+    private fun registerMarketplaceMcpServer(item: MarketplaceItem): String {
+        if (item.category != MarketplaceCategory.MCP_SERVERS) return ""
+        val server = marketplaceItemToMcpServer(item)
+            ?: return " (MCP server not registered: install value is not a command)"
+        mcpRegistry.installServer(server)
+        onMcpServersChanged()
+        return " (MCP server registered)"
+    }
+
     fun uninstallMarketplaceItem(item: MarketplaceItem) {
         host.scope.launch(Dispatchers.IO) {
             val removed = installManager.uninstall(item.id)
+            if (item.category == MarketplaceCategory.MCP_SERVERS) {
+                // Symmetric with install: an uninstalled MCP item must not
+                // leave a registered server behind.
+                if (mcpRegistry.removeServer("marketplace-${item.id}")) {
+                    onMcpServersChanged()
+                }
+            }
             _installedIds.value = installManager.installedIds()
             val outcome = if (removed) "Uninstalled ${item.name}" else "${item.name} was not installed"
             withContext(Dispatchers.Main) {
@@ -89,4 +118,29 @@ class MarketplaceCoordinator(
             }
         }
     }
+}
+
+/**
+ * Maps a marketplace MCP item to the [McpServerInfo] installing it
+ * registers. Returns null when the item's install value cannot become a
+ * server command (blank, or an http(s) URL — a URL is a download, not a
+ * command to run). Server ids are namespaced `marketplace-<itemId>` so a
+ * marketplace server never collides with a built-in template id.
+ * Pure function, unit-tested.
+ */
+internal fun marketplaceItemToMcpServer(item: MarketplaceItem): McpServerInfo? {
+    val commandLine = item.installUrl.trim()
+    if (commandLine.isBlank()) return null
+    if (commandLine.startsWith("http://") || commandLine.startsWith("https://")) return null
+    val parts = commandLine.split(Regex("\\s+"))
+    return McpServerInfo(
+        id = "marketplace-${item.id}",
+        name = item.name,
+        description = item.description,
+        command = parts.first(),
+        args = parts.drop(1),
+        enabled = true,
+        isBuiltIn = false,
+        projectId = null,
+    )
 }
