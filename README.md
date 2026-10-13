@@ -69,6 +69,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 - **Branding cleanup**: leftover PocketDev references removed, version pills removed from studio headers and onboarding, phase pills removed from the tour.
 - **Status bar respected**: the app no longer overrides status bar or navigation bar colors; your device defaults are left alone.
 - **Browser redesigned**: bigger URL bar, top row reduced to URL bar + menu, ports strip and unused pills removed.
+- **Files header fixed**: the Files tab header held 7 action buttons, squeezing the "Files" title into a vertical wrap on narrow phones. Only New-file and Refresh stay inline; the rest moved into a "more" menu.
 
 ### 🛡️ Reliability
 
