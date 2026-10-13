@@ -747,16 +747,11 @@ private fun HybridPoliciesTab(coordinator: CloudHybridCoordinator) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        val policyTextColor = if (isSelected) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
                         Text(
                             text = policy.displayName,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = policyTextColor
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
