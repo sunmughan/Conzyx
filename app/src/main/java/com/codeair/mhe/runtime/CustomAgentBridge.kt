@@ -24,7 +24,7 @@ import org.json.JSONObject
  *
  * This is direct API chat — it answers via the configured model but does not
  * edit files or run tools. For full agentic code execution, install one of the
- * harness agents (Claude Code, DeepSeek, Cloud Code).
+ * harness agents (Claude Code, DeepSeek, Antigravity).
  */
 class CustomAgentBridge(
     private val secretFor: (ProviderProfile) -> String?,

@@ -48,7 +48,6 @@ import com.codeair.mhe.network.ModelDiscoveryResult
 import com.codeair.mhe.network.ProviderApiClient
 import com.codeair.mhe.network.GitHubRepository
 import com.codeair.mhe.runtime.ClaudeRuntimeBridge
-import com.codeair.mhe.runtime.CloudCodeRuntimeBridge
 import com.codeair.mhe.runtime.CustomAgentBridge
 import com.codeair.mhe.runtime.DshRuntimeBridge
 import com.codeair.mhe.runtime.AgentRegistry
@@ -355,9 +354,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
         },
     )
-    private val cloudCodeRuntime = CloudCodeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val customRuntime = CustomAgentBridge { profile -> vault.get(profile.kind.name) }
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, cloudCodeRuntime, customRuntime)
+    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, customRuntime)
     private fun activeRuntime(): com.codeair.mhe.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
@@ -423,9 +421,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
                         },
                     )
-                    AgentKind.CLOUD_CODE -> CloudCodeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
                     AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
-                    else -> ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
                 }
             },
             installer = installer,

@@ -72,12 +72,6 @@ enum class AgentKind(
         "Google's official coding agent · Google account",
         "39.9 MB",
     ),
-    CLOUD_CODE(
-        "cloud-code",
-        "Cloud Code",
-        "Cloud-based coding agent · multi-account with auto-failover",
-        "34.2 MB",
-    ),
     CUSTOM(
         "custom",
         "Custom",
@@ -149,7 +143,6 @@ fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
-    AgentKind.CLOUD_CODE -> emptyList()
     // Custom agent is pure bring-your-own-API: OpenAI-compatible and Claude-compatible endpoints only.
     AgentKind.CUSTOM -> listOf(ProviderKind.CUSTOM, ProviderKind.ANTHROPIC, ProviderKind.LLM_ROUTER)
 }

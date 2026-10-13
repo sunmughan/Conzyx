@@ -45,7 +45,6 @@ class AgentRegistry(drivers: List<AgentDriver>) {
             claude: RuntimeBridge,
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
-            cloudCode: RuntimeBridge,
             custom: RuntimeBridge,
         ) = AgentRegistry(
             listOf(
@@ -80,17 +79,6 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.MODEL_PICKER,
                         AgentCapability.REASONING_EFFORT,
                         AgentCapability.RESUME,
-                    ),
-                ),
-                BuiltInAgentDriver(
-                    AgentKind.CLOUD_CODE,
-                    cloudCode,
-                    setOf(
-                        AgentCapability.ACCOUNT_LOGIN,
-                        AgentCapability.PROVIDER_PICKER,
-                        AgentCapability.MODEL_PICKER,
-                        AgentCapability.RESUME,
-                        AgentCapability.INTERACTIVE_APPROVALS,
                     ),
                 ),
                 // Custom is bring-your-own-API: no binary to install, direct API chat.

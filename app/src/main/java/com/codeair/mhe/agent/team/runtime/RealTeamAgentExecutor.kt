@@ -108,7 +108,6 @@ internal fun resolveEffectiveKind(
         AgentKind.ANTIGRAVITY,
         AgentKind.CLAUDE_CODE,
         AgentKind.DEEPSEEK_HARNESS,
-        AgentKind.CLOUD_CODE,
     ).distinct()
         // Custom is chat-only (no file edits, no tools): it can never execute
         // an engineering task, so it is never a fallback candidate even when

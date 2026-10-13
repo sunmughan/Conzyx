@@ -31,10 +31,10 @@ class RuntimeResilienceTest {
     }
 
     @Test fun friendlyNetworkErrorMessageHidesRawSocketErrors() {
-        val raw = "agent executor error: generating and executing: request failed: Post \"https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse\": read tcp [2409:40d4:2016:27ce:289f:391a:2ff6:c540]:48208->[2001:4860:4847:400::]:443: read: software caused connection abort"
+        val raw = "agent executor error: generating and executing: request failed: Post \"https://api.example.com/v1internal:streamGenerateContent?alt=sse\": read tcp [2409:40d4:2016:27ce:289f:391a:2ff6:c540]:48208->[2001:4860:4847:400::]:443: read: software caused connection abort"
         val friendly = RuntimeFailureClassifier.friendlyNetworkErrorMessage(raw)
         assertFalse(friendly.contains("2409:40d4"))
-        assertFalse(friendly.contains("daily-cloudcode"))
+        assertFalse(friendly.contains("api.example.com"))
         assertTrue(friendly.contains("cellular/Wi-Fi disturbance") || friendly.contains("Network connection was interrupted"))
 
         val serverIssueFriendly = RuntimeFailureClassifier.friendlyNetworkErrorMessage("There was a network issue connecting to the server, please try again.")

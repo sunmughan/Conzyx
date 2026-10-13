@@ -39,7 +39,6 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Groups
@@ -866,10 +865,9 @@ fun AgentScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         // Scrollable tab row with FULL agent names + a distinct icon per
-                        // agent. The old fixed row truncated names ("Claude ..." vs
-                        // "Cloud C..."), which made Claude Code and Cloud Code look
-                        // like the same agent twice. Full names + icons make them
-                        // unmistakable.
+                        // agent. The old fixed row truncated names, which made two
+                        // agents look like the same agent twice. Full names + icons
+                        // make them unmistakable.
                         Row(
                             modifier = Modifier
                                 .horizontalScroll(rememberScrollState())
@@ -886,14 +884,12 @@ fun AgentScreen(
                                     AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
                                     AgentKind.CLAUDE_CODE -> "Claude Code"
-                                    AgentKind.CLOUD_CODE -> "Cloud Code"
                                     AgentKind.CUSTOM -> "Custom"
                                 }
                                 val tabIcon = when (agent) {
                                     AgentKind.ANTIGRAVITY -> Icons.Default.RocketLaunch
                                     AgentKind.DEEPSEEK_HARNESS -> Icons.Default.FlashOn
                                     AgentKind.CLAUDE_CODE -> Icons.Default.AutoAwesome
-                                    AgentKind.CLOUD_CODE -> Icons.Default.Cloud
                                     AgentKind.CUSTOM -> Icons.Default.Tune
                                 }
                                 Surface(
@@ -2375,7 +2371,7 @@ private fun AgentCustomCard(
         }
 
         Text(
-            "Custom chats directly via your API. For code execution (file edits, terminal), install Claude Code, DeepSeek, or Cloud Code.",
+            "Custom chats directly via your API. For code execution (file edits, terminal), install Claude Code or DeepSeek.",
             fontSize = 11.sp,
             lineHeight = 15.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),

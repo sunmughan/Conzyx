@@ -1514,7 +1514,6 @@ private const val CORE_RUNTIME_DOWNLOAD_MB = 69
 private const val CLAUDE_RUNTIME_DOWNLOAD_MB = 72
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
 private const val AGY_RUNTIME_DOWNLOAD_MB = 40
-private const val CLOUDCODE_RUNTIME_DOWNLOAD_MB = 35
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
 private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
 
@@ -1556,7 +1555,6 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
             AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
             AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
             AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
-            AgentKind.CLOUD_CODE -> CLOUDCODE_RUNTIME_DOWNLOAD_MB
             // Custom is bring-your-own-API: zero download.
             AgentKind.CUSTOM -> 0
         } +
@@ -1645,14 +1643,12 @@ private fun AgentChoiceRow(
         AgentKind.CLAUDE_CODE -> Color(0xFFD97757)
         AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
         AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
-        AgentKind.CLOUD_CODE -> Color(0xFF00ACC1)
         AgentKind.CUSTOM -> Color(0xFF9C6BFF)
     }
     val mark = when (agent) {
         AgentKind.CLAUDE_CODE -> "CC"
         AgentKind.DEEPSEEK_HARNESS -> "DS"
         AgentKind.ANTIGRAVITY -> "AG"
-        AgentKind.CLOUD_CODE -> "CL"
         AgentKind.CUSTOM -> "CU"
     }
     Row(

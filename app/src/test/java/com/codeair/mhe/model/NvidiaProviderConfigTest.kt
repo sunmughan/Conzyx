@@ -60,10 +60,4 @@ class NvidiaProviderConfigTest {
         assertEquals("https://api.deepseek.com/anthropic", ProviderKind.DEEPSEEK.defaultBaseUrl)
     }
 
-    @Test
-    fun `cloud code agent kind is registered`() {
-        val kind = AgentKind.fromStored("cloud-code")
-        assertEquals(AgentKind.CLOUD_CODE, kind)
-        assertTrue(providersForAgent(AgentKind.CLOUD_CODE).isEmpty())
-    }
 }
