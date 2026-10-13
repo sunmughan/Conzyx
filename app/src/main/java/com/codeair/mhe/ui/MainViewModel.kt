@@ -461,6 +461,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val pendingAssistantDelta = StringBuilder()
     private var pendingAssistantDeltaSessionId: String? = null
     private var assistantDeltaFlushJob: Job? = null
+    private var lastAssistantDeltaPersistAtMillis: Long = 0L
     private val initialAgentKind = AgentKind.fromStored(preferences.agentKind)
     private val initialPrimaryAgentKind = preferences.primaryAgentKind
         .takeIf(String::isNotBlank)
@@ -3707,10 +3708,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.value.activeProject?.id?.let { touchProject(it) }
             refreshProjectFiles()
         }
-        // Save every visible reasoning/tool transition, not only assistant text and
-        // final results. If Android kills the process, the last displayed timeline
-        // is restored as an interrupted work block rather than disappearing.
-        persistMessages(includeLiveProcess = true)
+        // Save every meaningful reasoning/tool transition and final result. Assistant
+        // token batches are persisted at most every 1.5s because each write contains the
+        // full transcript; writing every batch creates quadratic disk work for long answers.
+        if (event !is RuntimeEvent.AssistantDelta ||
+            System.currentTimeMillis() - lastAssistantDeltaPersistAtMillis >= 1_500L
+        ) {
+            persistMessages(includeLiveProcess = true)
+            if (event is RuntimeEvent.AssistantDelta) {
+                lastAssistantDeltaPersistAtMillis = System.currentTimeMillis()
+            }
+        }
     }
 
     private fun ensureCompletionMessage(state: AppUiState, totalDurationText: String): AppUiState =
