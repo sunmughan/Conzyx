@@ -410,26 +410,35 @@ private fun MarketplaceItemCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = Color(0xFFFFB300),
-                        )
-                        Spacer(Modifier.width(2.dp))
+                    if (item.rating > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = Color(0xFFFFB300),
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            Text(
+                                text = item.rating.toString(),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         Text(
-                            text = item.rating.toString(),
+                            text = "·  ${item.downloads} installs",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        // No rating system exists: never show a fabricated score.
+                        Text(
+                            text = "No ratings yet",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Text(
-                        text = "·  ${item.downloads} installs",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
 
                 if (isInstalled) {
@@ -581,8 +590,6 @@ private fun PublishMarketplaceItemDialog(
                                 author = author.trim().ifBlank { "Local Developer" },
                                 description = description.trim(),
                                 installUrl = installUrl.trim(),
-                                rating = 5.0,
-                                downloads = 1,
                                 isCustom = true,
                             )
                         )

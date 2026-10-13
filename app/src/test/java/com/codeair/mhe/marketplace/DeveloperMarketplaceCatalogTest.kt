@@ -97,4 +97,41 @@ class DeveloperMarketplaceCatalogTest {
         val afterRemoval = DeveloperMarketplaceCatalog.search("Custom Rust Linter")
         assertTrue("Should no longer find removed custom item", afterRemoval.isEmpty())
     }
+
+    @Test
+    fun curatedItemIdsAreStableAndUnique() {
+        // QA H32: curated ids must not regenerate per launch, or durable
+        // install records keyed by id can never match after restart.
+        val ids = DeveloperMarketplaceCatalog.curatedCatalog.map { it.id }
+        assertEquals("Curated ids must be unique", ids.size, ids.toSet().size)
+        assertTrue("Curated ids must be explicit stable ids", ids.all { it.startsWith("catalog-") })
+        assertEquals(
+            "Curated ids must be identical across reads (no regeneration)",
+            ids,
+            DeveloperMarketplaceCatalog.curatedCatalog.map { it.id }
+        )
+    }
+
+    @Test
+    fun curatedItemsCarryNoFabricatedSocialProof() {
+        // QA H33: no rating/review submission exists, so curated items must
+        // not carry invented ratings or download counts.
+        DeveloperMarketplaceCatalog.curatedCatalog.forEach { item ->
+            assertEquals("No fabricated rating for ${item.name}", 0.0, item.rating, 0.0)
+            assertEquals("No fabricated downloads for ${item.name}", 0, item.downloads)
+        }
+    }
+
+    @Test
+    fun marketplaceItemDefaultsToNoSocialProof() {
+        val item = MarketplaceItem(
+            name = "X",
+            category = MarketplaceCategory.SKILLS,
+            author = "A",
+            description = "d",
+            installUrl = "npx foo",
+        )
+        assertEquals(0.0, item.rating, 0.0)
+        assertEquals(0, item.downloads)
+    }
 }
