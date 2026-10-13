@@ -178,6 +178,18 @@ class McpPermissionManager(
                             if (p != null) map[sId] = p
                         }
                     }
+
+                    // Per-tool project policies: previously never persisted,
+                    // so a per-tool DENY was silently lost on restart.
+                    val projectTools = root.optJSONObject("projectTools")
+                    projectTools?.keys()?.forEach { pId ->
+                        val pObj = projectTools.getJSONObject(pId)
+                        val map = projectToolPolicies.computeIfAbsent(pId) { ConcurrentHashMap() }
+                        pObj.keys().forEach { tKey ->
+                            val p = runCatching { McpPermissionPolicy.valueOf(pObj.getString(tKey)) }.getOrNull()
+                            if (p != null) map[tKey] = p
+                        }
+                    }
                 }
             }
         }
@@ -203,6 +215,14 @@ class McpPermissionManager(
                     projects.put(pId, pObj)
                 }
                 root.put("projectServers", projects)
+
+                val projectTools = JSONObject()
+                projectToolPolicies.forEach { (pId, map) ->
+                    val pObj = JSONObject()
+                    map.forEach { (k, v) -> pObj.put(k, v.name) }
+                    projectTools.put(pId, pObj)
+                }
+                root.put("projectTools", projectTools)
 
                 SafeFileOps.atomicWriteText(permissionFile, root.toString())
             }
