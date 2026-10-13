@@ -56,8 +56,9 @@ class ProjectsCoordinator(
         preferences.saveProjects(host.state().projects)
         if (busy) {
             host.updateState {
-                it.copy(toastMessage = "${project.name} created. The current task continues in the background.")
+                it.copy(toastMessage = "${project.name} created. The current task continues in the background; open it when ready.")
             }
+            return
         }
         openProject(project)
     }
