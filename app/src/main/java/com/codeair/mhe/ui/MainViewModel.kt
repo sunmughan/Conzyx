@@ -1319,7 +1319,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun checkAgentUpdates() {
-        if (_state.value.agentUpdatesChecking || _state.value.agentUpdating != null || _state.value.isRunning) return
+        // Read-only version check: safe to run while a task runs, so no
+        // task-state gate here either.
+        if (_state.value.agentUpdatesChecking || _state.value.agentUpdating != null) return
         _state.update { it.copy(agentUpdatesChecking = true, agentUpdateMessage = "Checking official agent releases…", agentUpdatesCheckError = null) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { installer.checkAgentUpdates() } }
@@ -1397,7 +1399,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startAntigravityLogin() {
-        if (_state.value.agentInstalling != null || _state.value.isRunning) return
+        // No task-state gate: adding/signing in an account must work whether
+        // or not a task is running. Auth touches only the auth controller.
         lastOpenedAntigravityAuthUrl = null
         viewModelScope.launch { antigravityAuthController.beginLogin() }
     }
@@ -1415,7 +1418,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startAntigravityAddAccount() {
-        if (_state.value.agentInstalling != null || _state.value.isRunning) return
+        // No task-state gate: adding an account must work whether or not a
+        // task is running. Auth touches only the auth controller.
         lastOpenedAntigravityAuthUrl = null
         viewModelScope.launch { antigravityAuthController.beginAddAccount() }
     }

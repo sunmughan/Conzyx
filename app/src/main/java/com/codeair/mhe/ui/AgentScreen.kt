@@ -2427,9 +2427,7 @@ private fun AgentUpdateBlock(
                 )
             }
             if (viewedAgent != AgentKind.CUSTOM) {
-                // The ViewModel silently ignores a check while a task runs, so
-                // disable the button then instead of looking clickable-but-dead.
-                val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null && !state.isRunning
+                val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null
                 Row(
                     modifier = Modifier
                         .clickable(enabled = canCheck, onClick = onCheck)
