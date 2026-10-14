@@ -11,6 +11,11 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.Collections
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import com.codeair.mhe.mcp.isHttpsOrLoopbackHttp
 import com.codeair.mhe.model.AgentKind
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -51,6 +56,11 @@ class EnvironmentUpdateManager(
     private val components get() = File(base, "components")
     private val backups get() = File(base, "backups")
     private val downloads get() = File(context.cacheDir, "environment-updates")
+    private val activeDownloadConnections = Collections.synchronizedSet(mutableSetOf<HttpURLConnection>())
+
+    fun cancelActiveDownloads() {
+        activeDownloadConnections.toList().forEach { runCatching { it.disconnect() } }
+    }
 
     fun parseManifest(body: String): List<EnvironmentManifestComponent> {
         val root = runCatching { JSONObject(body) }.getOrNull() ?: return defaultComponents()
@@ -319,6 +329,10 @@ class EnvironmentUpdateManager(
             onProgress(RuntimeInstallProgress(item.label + " " + item.version + " is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
         } catch (error: Throwable) {
             staging.deleteRecursively()
+            if (error is CancellationException) {
+                cleanup()
+                throw error
+            }
             if (old != null && File(backups, item.id + ".zip").isFile) {
                 runCatching { restore(item, old) }
             }
@@ -482,26 +496,33 @@ class EnvironmentUpdateManager(
         expectedSha256: String,
         onBytes: suspend (Long, Long) -> Unit,
     ) {
+        check(isHttpsOrLoopbackHttp(url)) { "Environment package URL must use https (got ${url.substringBefore("://")})" }
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 20_000
         connection.readTimeout = 120_000
         connection.instanceFollowRedirects = true
         check(connection.responseCode in 200..299) { "Environment download failed: HTTP " + connection.responseCode }
         val total = connection.contentLengthLong
-        connection.inputStream.use { input ->
-            FileOutputStream(destination).use { output ->
-                val buffer = ByteArray(128 * 1024)
-                var done = 0L
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    output.write(buffer, 0, count)
-                    done += count
-                    onBytes(done, total)
+        activeDownloadConnections.add(connection)
+        try {
+            connection.inputStream.use { input ->
+                FileOutputStream(destination).use { output ->
+                    val buffer = ByteArray(128 * 1024)
+                    var done = 0L
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        done += count
+                        onBytes(done, total)
+                    }
                 }
             }
+        } finally {
+            activeDownloadConnections.remove(connection)
+            connection.disconnect()
         }
-        connection.disconnect()
         check(sha256(destination).equals(expectedSha256, true)) { "Environment package SHA-256 verification failed" }
     }
 

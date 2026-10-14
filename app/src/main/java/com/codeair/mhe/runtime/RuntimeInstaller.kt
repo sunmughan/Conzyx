@@ -12,6 +12,7 @@ import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -82,6 +83,11 @@ class RuntimeInstaller(private val context: Context) {
     private val githubCliMarker = File(rootfs, ".pocket-github-cli-version")
     private val dshAndroidCompatibilityMarker = File(rootfs, ".pocket-dsh-android-compat-version")
     private val macosMetadataRepairMarker = File(rootfs, ".pocket-macos-metadata-repair")
+    private val activeDownloadConnections = Collections.synchronizedSet(mutableSetOf<HttpURLConnection>())
+
+    fun cancelActiveDownloads() {
+        activeDownloadConnections.toList().forEach { runCatching { it.disconnect() } }
+    }
 
     fun isInstalled(): Boolean {
         val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
@@ -247,6 +253,16 @@ class RuntimeInstaller(private val context: Context) {
         }
 
         val eligibleStacks = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            val dropped = selectedStacks.filterNot { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
+            if (dropped.isNotEmpty()) {
+                onProgress(
+                    RuntimeInstallProgress(
+                        "Skipped ${dropped.joinToString { it.label }}: not included in the offline build. " +
+                            "Use the online build to install these stacks.",
+                        0.71f,
+                    )
+                )
+            }
             selectedStacks.filter { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
         } else {
             selectedStacks
@@ -454,7 +470,26 @@ class RuntimeInstaller(private val context: Context) {
      * pip version is stored in the python entry as "3.12 (pip 25.1)" —
      * the format Settings already parses with substringBefore(" (pip").
      */
-    suspend fun latestEnvironmentVersions(): Map<String, String> = coroutineScope {
+    private var cachedEnvironmentVersions: Map<String, String>? = null
+    private var cachedEnvironmentVersionsAt = 0L
+
+    fun invalidateEnvironmentVersionCache() {
+        cachedEnvironmentVersions = null
+        cachedEnvironmentVersionsAt = 0L
+    }
+
+    suspend fun latestEnvironmentVersions(): Map<String, String> {
+        val cached = cachedEnvironmentVersions
+        if (cached != null && System.currentTimeMillis() - cachedEnvironmentVersionsAt < ENVIRONMENT_VERSION_CACHE_TTL_MS) {
+            return cached
+        }
+        val fresh = fetchLatestEnvironmentVersions()
+        cachedEnvironmentVersions = fresh
+        cachedEnvironmentVersionsAt = System.currentTimeMillis()
+        return fresh
+    }
+
+    private suspend fun fetchLatestEnvironmentVersions(): Map<String, String> = coroutineScope {
         val claude = async(Dispatchers.IO) {
             runCatching { JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version") }.getOrNull()
         }
@@ -532,9 +567,9 @@ class RuntimeInstaller(private val context: Context) {
                     installRuntimeOverlay(bundle, "Installing Python $cleanExpected", 0.05f, 0.65f, onProgress)
                 }
                 onProgress(RuntimeInstallProgress("Upgrading pip, setuptools, and wheel from official PyPI", 0.70f))
-                runCatching {
-                    runGuest(runtime.proot, "python3 -m pip install --upgrade --no-warn-script-location pip setuptools wheel", 120_000L)
-                }
+                val pipUpgradeOk = runCatching {
+                    runGuestExitCode(runtime.proot, "python3 -m pip install --upgrade --no-warn-script-location pip setuptools wheel", 120_000L) == 0
+                }.getOrDefault(false)
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
                 val pipVer = runCatching {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
@@ -545,7 +580,11 @@ class RuntimeInstaller(private val context: Context) {
                 // format Settings parses and installEnvironmentStack
                 // already strips on read.
                 val finalVersion = if (pipVer != null) "$cleanExpected (pip $pipVer)" else cleanExpected
-                File(rootfs, ".pocket-python-tools-version").writeText(finalVersion)
+                if (pipUpgradeOk) {
+                    File(rootfs, ".pocket-python-tools-version").writeText(finalVersion)
+                } else {
+                    onProgress(RuntimeInstallProgress("pip upgrade did not complete; keeping the previous version marker so the update is retried later", 0.70f))
+                }
                 writeDevStackState(readDevStackState().apply { put(DevStack.PYTHON.name, true) })
                 onProgress(RuntimeInstallProgress("Python tools are ready ($finalVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
@@ -1077,7 +1116,8 @@ class RuntimeInstaller(private val context: Context) {
             onProgress = onProgress,
         )
         verifyGuest(proot, "$CLAUDE_GUEST_PATH --version", "Claude Code verification failed")
-        require(claudeMarker.readTextOrNull() == CLAUDE_BUNDLED_VERSION) {
+        claudeMarker.writeText(CLAUDE_BUNDLED_VERSION)
+        require(isAgentInstalled(com.codeair.mhe.model.AgentKind.CLAUDE_CODE)) {
             "The Claude Code runtime bundle is incomplete"
         }
     }
@@ -1262,9 +1302,9 @@ class RuntimeInstaller(private val context: Context) {
                     }
                 }
                 onProgress(RuntimeInstallProgress("Updating pip, setuptools, and wheel from official PyPI", 0.65f))
-                runCatching {
-                    runGuest(runtime.proot, "python3 -m pip install --upgrade --no-warn-script-location pip setuptools wheel", 120_000L)
-                }
+                val pipUpgradeOk = runCatching {
+                    runGuestExitCode(runtime.proot, "python3 -m pip install --upgrade --no-warn-script-location pip setuptools wheel", 120_000L) == 0
+                }.getOrDefault(false)
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
                 val pipVer = runCatching {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
@@ -1272,7 +1312,11 @@ class RuntimeInstaller(private val context: Context) {
                 // QA Medium: the installed pip version used to be computed
                 // then discarded. Same "(pip …)" format as install above.
                 val finalVer = if (pipVer != null) "${targetVersion.substringBefore(" ").trim()} (pip $pipVer)" else targetVersion
-                File(rootfs, ".pocket-python-tools-version").writeText(finalVer)
+                if (pipUpgradeOk) {
+                    File(rootfs, ".pocket-python-tools-version").writeText(finalVer)
+                } else {
+                    onProgress(RuntimeInstallProgress("pip upgrade did not complete; keeping the previous version marker so the update is retried later", 0.65f))
+                }
                 onProgress(RuntimeInstallProgress("Python tools updated ($finalVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.ANDROID -> {
@@ -2327,6 +2371,24 @@ class RuntimeInstaller(private val context: Context) {
             .trim()
     }
 
+    private suspend fun runGuestExitCode(root: File, command: String, timeoutMs: Long = 60_000L): Int {
+        val proc = process(
+            proot = root,
+            rootfs = rootfs,
+            workspace = File(rootfs, "root"),
+            environment = emptyMap(),
+            guestCommand = listOf("/usr/bin/env", "bash", "-lc", command),
+        )
+        try {
+            withTimeout(timeoutMs) {
+                while (proc.isAlive) delay(50)
+            }
+        } finally {
+            if (proc.isAlive) proc.destroy()
+        }
+        return proc.waitFor()
+    }
+
     /**
      * Ubuntu 20.04 uses a merged-/usr layout. A partially extracted or upgraded
      * runtime can lose these top-level links while all readiness markers remain,
@@ -2761,20 +2823,26 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
             existing = 0L
         }
         val total = connection.contentLengthLong.takeIf { it >= 0L }?.plus(existing) ?: -1L
-        connection.inputStream.use { input ->
-            FileOutputStream(temporary, resumed).use { output ->
-                val buffer = ByteArray(128 * 1024)
-                var downloaded = existing
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    output.write(buffer, 0, count)
-                    downloaded += count
-                    onBytes(downloaded, total)
+        activeDownloadConnections.add(connection)
+        try {
+            connection.inputStream.use { input ->
+                FileOutputStream(temporary, resumed).use { output ->
+                    val buffer = ByteArray(128 * 1024)
+                    var downloaded = existing
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        downloaded += count
+                        onBytes(downloaded, total)
+                    }
                 }
             }
+        } finally {
+            activeDownloadConnections.remove(connection)
+            connection.disconnect()
         }
-        connection.disconnect()
         val actual = digest(temporary, algorithm)
         if (!actual.equals(expectedChecksum, ignoreCase = true)) {
             temporary.delete()
@@ -3181,6 +3249,7 @@ main().catch((err) => {
     private fun File.readTextOrNull(): String? = runCatching { readText().trim() }.getOrNull()
 
     companion object {
+        const val ENVIRONMENT_VERSION_CACHE_TTL_MS = 15 * 60 * 1000L
         const val AGY_GUEST_PATH = "/root/.local/bin/agy"
         /** Codex CLI binary, symlinked from npm's global bin dir after install. */
         const val CODEX_GUEST_PATH = "/usr/local/bin/codex"

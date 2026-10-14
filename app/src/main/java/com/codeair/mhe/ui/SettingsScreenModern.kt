@@ -141,7 +141,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1233,6 +1235,7 @@ private fun EnvironmentUpdateCenter() {
     var components by remember { mutableStateOf(emptyList<EnvironmentManifestComponent>()) }
     var componentStates by remember { mutableStateOf(emptyList<EnvironmentComponentState>()) }
     var busyId by remember { mutableStateOf<String?>(null) }
+    var updateJob by remember { mutableStateOf<Job?>(null) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
@@ -1328,7 +1331,14 @@ private fun EnvironmentUpdateCenter() {
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        OutlinedButton(onClick = { refresh() }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = {
+                runtimeInspector.invalidateEnvironmentVersionCache()
+                refresh()
+            },
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             if (loading) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
             else Icon(Icons.Default.Refresh, null, Modifier.size(17.dp))
             Spacer(Modifier.width(7.dp))
@@ -1375,7 +1385,7 @@ private fun EnvironmentUpdateCenter() {
                             Button(
                                 onClick = {
                                     busyId = component.id
-                                    scope.launch {
+                                    val job = scope.launch {
                                         try {
                                             withContext(Dispatchers.IO) {
                                                 manager?.update(component) { progress ->
@@ -1384,14 +1394,18 @@ private fun EnvironmentUpdateCenter() {
                                                     }
                                                 }
                                             }
+                                            if (!isActive) return@launch
                                             operationMessage = component.label + if (installedState?.currentVersion == null) " installed successfully." else " updated successfully."
                                         } catch (error: Throwable) {
-                                            operationMessage = error.message ?: "Update failed."
+                                            operationMessage = if (error is CancellationException) "Update cancelled."
+                                            else error.message ?: "Update failed."
                                         } finally {
                                             busyId = null
                                             refreshAfterEnvironmentAction()
                                         }
                                     }
+                                    updateJob = job
+                                    job.invokeOnCompletion { if (updateJob === job) updateJob = null }
                                 },
                                 enabled = busyId == null && updateAvailable,
                                 modifier = Modifier.weight(1f),
@@ -1399,7 +1413,18 @@ private fun EnvironmentUpdateCenter() {
                                 if (busyId == component.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                                 else Text(if (installedState?.currentVersion == null) "Install" else "Update")
                             }
-                            if (installedState?.rollbackAvailable == true) {
+                            if (busyId == component.id) {
+                                OutlinedButton(
+                                    onClick = {
+                                        updateJob?.cancel(CancellationException("Environment update cancelled"))
+                                        updateJob = null
+                                        manager?.cancelActiveDownloads()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Cancel", color = MaterialTheme.colorScheme.error)
+                                }
+                            } else if (installedState?.rollbackAvailable == true) {
                                 OutlinedButton(
                                     onClick = {
                                         busyId = component.id
@@ -1622,7 +1647,7 @@ private fun AppUpdateChannelSection(
                     Button(
                         onClick = onCheckNow,
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
                     ) {
                         Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     }

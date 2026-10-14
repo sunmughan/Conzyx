@@ -43,34 +43,40 @@ object RootfsIntegrityVerifier {
         }
 
         val missing = mutableListOf<String>()
+        val corrupted = mutableListOf<String>()
 
         for (dirRel in ESSENTIAL_DIRECTORIES) {
             val dir = File(rootfsDir, dirRel)
-            if (!dir.exists() || !dir.isDirectory) {
+            if (!dir.exists()) {
                 missing.add(dirRel)
+            } else if (!dir.isDirectory) {
+                corrupted.add(dirRel)
             }
         }
 
         for (fileRel in ESSENTIAL_FILES) {
             val file = File(rootfsDir, fileRel)
-            if (!file.exists() || !file.isFile) {
+            if (!file.exists()) {
                 missing.add(fileRel)
+            } else if (!file.isFile || file.length() == 0L) {
+                corrupted.add(fileRel)
             }
         }
 
-        // Verify shell binary (/bin/sh or /usr/bin/sh or /bin/bash)
-        val shFile = File(rootfsDir, "bin/sh")
-        val bashFile = File(rootfsDir, "bin/bash")
-        val usrBashFile = File(rootfsDir, "usr/bin/bash")
-        if (!shFile.exists() && !bashFile.exists() && !usrBashFile.exists()) {
-            missing.add("bin/sh")
+        val shellFiles = listOf("bin/sh", "bin/bash", "usr/bin/bash").map { File(rootfsDir, it) }
+        when {
+            shellFiles.none { it.exists() } -> missing.add("bin/sh")
+            shellFiles.none { it.isFile && it.length() > 0 } -> corrupted.add("bin/sh")
         }
 
-        val isValid = missing.isEmpty()
+        val isValid = missing.isEmpty() && corrupted.isEmpty()
         return RootfsIntegrityReport(
             isValid = isValid,
             missingPaths = missing,
-            details = if (isValid) "Rootfs structure verified healthy." else "Missing ${missing.size} critical guest paths: ${missing.joinToString()}"
+            corruptedPaths = corrupted,
+            details = if (isValid) "Rootfs structure verified healthy."
+            else "Missing ${missing.size} critical guest paths: ${missing.joinToString()}" +
+                if (corrupted.isNotEmpty()) "; corrupted ${corrupted.size}: ${corrupted.joinToString()}" else ""
         )
     }
 
@@ -94,9 +100,9 @@ object RootfsIntegrityVerifier {
             }
         }
 
-        // 2. Recreate missing /etc/resolv.conf
+        // 2. Recreate missing or zeroed /etc/resolv.conf
         val resolv = File(rootfsDir, "etc/resolv.conf")
-        if (!resolv.exists()) {
+        if (!resolv.exists() || resolv.length() == 0L) {
             resolv.parentFile?.mkdirs()
             runCatching {
                 resolv.writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
@@ -104,9 +110,9 @@ object RootfsIntegrityVerifier {
             }
         }
 
-        // 3. Recreate missing /etc/passwd
+        // 3. Recreate missing or zeroed /etc/passwd
         val passwd = File(rootfsDir, "etc/passwd")
-        if (!passwd.exists()) {
+        if (!passwd.exists() || passwd.length() == 0L) {
             passwd.parentFile?.mkdirs()
             runCatching {
                 passwd.writeText("root:x:0:0:root:/root:/bin/bash\n")
@@ -125,14 +131,19 @@ object RootfsIntegrityVerifier {
         }
 
         val recheck = verify(rootfsDir)
-        val successfullyHealed = recheck.missingPaths.size < initialReport.missingPaths.size
+        val problemsBefore = initialReport.missingPaths.size + initialReport.corruptedPaths.size
+        val problemsAfter = recheck.missingPaths.size + recheck.corruptedPaths.size
+        val successfullyHealed = problemsAfter < problemsBefore
 
         return RootfsIntegrityReport(
             isValid = recheck.isValid,
             missingPaths = recheck.missingPaths,
+            corruptedPaths = recheck.corruptedPaths,
             healedPaths = healed,
             isHealed = successfullyHealed,
-            details = "Auto-healing completed. Healed ${healed.size} items (${healed.joinToString()}). Remaining missing: ${recheck.missingPaths.joinToString()}"
+            details = "Auto-healing completed. Healed ${healed.size} items (${healed.joinToString()}). " +
+                "Remaining missing: ${recheck.missingPaths.joinToString()}; " +
+                "remaining corrupted: ${recheck.corruptedPaths.joinToString()}"
         )
     }
 }
