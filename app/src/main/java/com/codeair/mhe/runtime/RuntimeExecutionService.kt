@@ -111,14 +111,27 @@ class RuntimeExecutionService : Service() {
                 wifiLock = wifiManager?.createWifiLock(
                     wifiLockMode,
                     "com.codeair.mhe:active-coding-wifi",
-                )?.apply { acquire(MAX_WAKE_LOCK_MS) }
+                )?.apply { acquire() }
+                // WifiLock has no acquire(timeout): emulate the wake lock's
+                // cap so a missed completion path can't hold high-perf wifi
+                // forever. The delayed release is a no-op if the lock was
+                // already released normally.
+                wifiLockHandler.removeCallbacks(wifiLockTimeoutRelease)
+                wifiLockHandler.postDelayed(wifiLockTimeoutRelease, MAX_WAKE_LOCK_MS)
             }
         }
+    }
+
+    private val wifiLockHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val wifiLockTimeoutRelease = Runnable {
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        wifiLock = null
     }
 
     private fun releaseLocks() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
+        wifiLockHandler.removeCallbacks(wifiLockTimeoutRelease)
         wifiLock?.takeIf { it.isHeld }?.release()
         wifiLock = null
     }

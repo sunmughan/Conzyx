@@ -87,7 +87,7 @@ class ConcurrentTeamDispatcher(
 
     /** Cancels the background scope; called via AgentTeamOrchestrator.shutdown(). */
     fun shutdown() {
-        scope.cancel()
+        concurrencyController?.shutdown()
     }
 
     /**
@@ -489,6 +489,12 @@ class AdaptiveConcurrencyController(context: Context) {
     fun stopMonitoring() {
         monitorJob?.cancel()
         monitorJob = null
+    }
+
+    /** Cancels the background scope; called when the owning ViewModel is cleared. */
+    fun shutdown() {
+        stopMonitoring()
+        scope.cancel()
     }
 
     private fun readTotalMemBytes(): Long {
