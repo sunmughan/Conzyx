@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -236,6 +237,17 @@ fun MultiAgentTeamBottomSheet(
                             shape = RoundedCornerShape(10.dp),
                         ) {
                             Text("Stop")
+                        }
+                    }
+
+                    if (!sessionState.isRunning && sessionState.tasks.any { it.status == TeamTaskStatus.FAILED }) {
+                        OutlinedButton(
+                            onClick = { orchestrator.retryFailedTasks() },
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Retry Failed")
                         }
                     }
                 }
