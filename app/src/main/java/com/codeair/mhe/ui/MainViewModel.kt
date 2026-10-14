@@ -92,6 +92,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -510,7 +511,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // emit late events (a Custom HTTP stream finishing after the switch);
     // those events must never leak into the new agent's chat.
     private val ignoredSessionIds = mutableSetOf<String>()
-    private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
+    // Transcript persistence queue. Bounded with DROP_OLDEST (QA H27): the
+    // old UNLIMITED channel let writes pile up in memory forever once the
+    // consumer died. Dropping is safe here because every write is a FULL
+    // snapshot — an older queued snapshot for a chat is superseded by a
+    // newer one for the same chat, and the consumer collapses the queue
+    // to the latest snapshot per chat before writing.
+    private val transcriptWrites = Channel<TranscriptWrite>(
+        capacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    // Throttle for the "transcript save failed" toast: a stuck disk must
+    // not spam a toast on every queued write.
+    private var lastTranscriptSaveErrorToastAtMillis = 0L
 
     // Runtime providers often emit many tiny text deltas. Coalesce them before
     // updating Compose state or queuing a full transcript write; otherwise large
@@ -720,7 +733,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runtimeHealthController.cleanupOrphanArtifacts()
             com.codeair.mhe.workspace.SafeFileOps.cleanStaleTempFiles(application.filesDir)
             for (write in transcriptWrites) {
-                preferences.saveMessages(write.projectId, write.chatId, write.messages)
+                // Collapse: if more writes are already queued, keep only the
+                // latest snapshot per (project, chat) — older full snapshots
+                // for the same chat are superseded, so writing them is pure
+                // wasted O(n) I/O (QA H28). One write per chat per drain.
+                val pending = mutableListOf(write)
+                while (true) {
+                    pending.add(transcriptWrites.tryReceive().getOrNull() ?: break)
+                }
+                val latestPerChat = pending
+                    .groupBy { it.projectId to it.chatId }
+                    .mapValues { it.value.last() }
+                    .values
+                for (collapsed in latestPerChat) {
+                    // QA H27: one I/O error used to kill this whole consumer
+                    // loop (no try/catch), after which writes piled up in
+                    // memory forever and the user lost everything since the
+                    // failure with no error shown. A failed write is now
+                    // logged, surfaced (throttled toast), and the loop keeps
+                    // consuming — the next write retries persistence.
+                    runCatching {
+                        preferences.saveMessages(collapsed.projectId, collapsed.chatId, collapsed.messages)
+                    }.onFailure { error ->
+                        com.codeair.mhe.AppCrashLogger.log(
+                            "Transcript save failed for ${collapsed.projectId}/${collapsed.chatId}: ${error.message}"
+                        )
+                        val now = System.currentTimeMillis()
+                        if (now - lastTranscriptSaveErrorToastAtMillis > 30_000L) {
+                            lastTranscriptSaveErrorToastAtMillis = now
+                            _state.update {
+                                it.copy(toastMessage = "Could not save chat transcript: ${error.message?.take(120) ?: "storage error"}. New messages may be lost — free up storage and reopen the chat.")
+                            }
+                        }
+                    }
+                }
             }
         }
         viewModelScope.launch { dshRuntime.events.collect(::onRuntimeEvent) }

@@ -410,8 +410,17 @@ class AppPreferences(private val context: Context) {
 
     @Synchronized
     fun saveMessages(projectId: String, chatId: String, messages: List<ChatMessage>) {
+        // QA H28: persist only the newest MAX_TRANSCRIPT_MESSAGES. The old
+        // code rewrote the ENTIRE unbounded transcript on every message
+        // (O(n^2) total I/O, growing lag + battery/disk burn). The cap
+        // bounds every write to O(1000). The in-memory chat is untouched —
+        // the visible session keeps its full history; only the file on
+        // disk is a newest-1000 retention window, so a relaunch shows the
+        // last 1000 messages. This is a documented retention policy, not
+        // silent trimming: see MAX_TRANSCRIPT_MESSAGES.
+        val trimmed = trimTranscriptForPersist(messages)
         val arr = JSONArray()
-        messages.forEach { m ->
+        trimmed.forEach { m ->
             arr.put(JSONObject().apply {
                 put("id", m.id)
                 put("fromUser", m.fromUser)
@@ -642,3 +651,19 @@ class AppPreferences(private val context: Context) {
         return if (clean.length <= 42) clean else clean.take(39).trimEnd() + "…"
     }
 }
+
+/**
+ * QA H28: maximum chat messages persisted per transcript file. Older
+ * messages beyond this window are not written to disk (the in-memory chat
+ * keeps its full history for the running session). Bounds every
+ * transcript write to O([MAX_TRANSCRIPT_MESSAGES]) instead of O(n^2)
+ * total I/O over an unbounded transcript.
+ */
+const val MAX_TRANSCRIPT_MESSAGES = 1000
+
+/**
+ * QA H28: the retention window applied by [AppPreferences.saveMessages].
+ * Pure function (no Android Context) so it is unit-tested directly.
+ */
+internal fun trimTranscriptForPersist(messages: List<ChatMessage>): List<ChatMessage> =
+    if (messages.size <= MAX_TRANSCRIPT_MESSAGES) messages else messages.takeLast(MAX_TRANSCRIPT_MESSAGES)
