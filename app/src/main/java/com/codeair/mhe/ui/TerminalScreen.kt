@@ -279,7 +279,7 @@ fun TerminalScreen(
                             shape = RoundedCornerShape(8.dp),
                             color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
                             border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
-                            modifier = Modifier.heightIn(min = 48.dp),
+                            modifier = Modifier.height(30.dp),
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -302,7 +302,7 @@ fun TerminalScreen(
                                 if (sessions.size > 1) {
                                     IconButton(
                                         onClick = { onCloseSession(session.id) },
-                                        modifier = Modifier.size(48.dp),
+                                        modifier = Modifier.size(18.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.Close,
