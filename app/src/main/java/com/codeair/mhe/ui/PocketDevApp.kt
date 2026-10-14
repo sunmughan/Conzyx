@@ -5408,7 +5408,7 @@ private fun WorkspaceScreen(
                     onInput = onTerminalInput,
                     onInterrupt = onTerminalInterrupt,
                     onClear = onTerminalClear,
-                    onToggleTheme = {},
+                    onToggleTheme = { viewModel?.toggleTheme() },
                     themeMode = state.themeMode,
                     title = "Project Terminal",
                     subtitle = "${state.projectTerminalCwd} · Ubuntu PRoot",
