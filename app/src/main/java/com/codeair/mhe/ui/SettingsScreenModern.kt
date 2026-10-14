@@ -580,13 +580,12 @@ fun SettingsScreen(
                                             )
                                         }
                                         installed && stack == DevStack.WEB -> {
-                                            OutlinedButton(
-                                                onClick = {},
-                                                enabled = false,
+                                            Text(
+                                                "Bundled in Core Rootfs",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.fillMaxWidth(),
-                                            ) {
-                                                Text("Bundled in Core Rootfs", fontSize = 12.sp)
-                                            }
+                                            )
                                         }
                                         installed -> {
                                             Row(
