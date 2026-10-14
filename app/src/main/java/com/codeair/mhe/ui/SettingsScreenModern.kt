@@ -567,8 +567,6 @@ fun SettingsScreen(
                                                             state.devStackMessage ?: "Downloading…",
                                                             fontSize = 11.sp,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
                                                         )
                                                     }
                                                 }
@@ -576,8 +574,6 @@ fun SettingsScreen(
                                                 state.devStackMessage ?: "Processing…",
                                                 fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
                                             )
                                         }
                                         installed && stack == DevStack.WEB -> {
@@ -1197,7 +1193,7 @@ fun SettingsScreen(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = when (entry.decision) {
-                                                com.codeair.mhe.security.AuditDecision.ALLOWED -> Color(0xFF4CAF50)
+                                                com.codeair.mhe.security.AuditDecision.ALLOWED -> MaterialTheme.colorScheme.tertiary
                                                 com.codeair.mhe.security.AuditDecision.BLOCKED_DANGEROUS, com.codeair.mhe.security.AuditDecision.DENIED -> MaterialTheme.colorScheme.error
                                                 else -> PocketOrange
                                             },
@@ -1638,12 +1634,16 @@ private fun AntigravityConnectionSettings(
                                             if (account.isAuthExpired) {
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
-                                                    color = Color(0xFFE65100).copy(alpha = 0.12f),
+                                                    // Medium: hardcoded burnt orange was
+                                                    // low-contrast in light theme; the
+                                                    // theme primary is the same hue,
+                                                    // darker in light mode.
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                                                 ) {
                                                     Text(
                                                         "Session Expired",
                                                         fontSize = 10.sp,
-                                                        color = Color(0xFFE65100),
+                                                        color = MaterialTheme.colorScheme.primary,
                                                         fontWeight = FontWeight.Medium,
                                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                                     )
@@ -1675,7 +1675,7 @@ private fun AntigravityConnectionSettings(
                                             onClick = onStartAddAccount,
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                         ) {
-                                            Text("Reconnect", fontSize = 11.sp, color = Color(0xFFE65100))
+                                            Text("Reconnect", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                                         }
                                     } else if (!account.isActive) {
                                         TextButton(
@@ -1868,7 +1868,9 @@ private fun ConnectionSettings(
         Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(8.dp).background(
                 when (state.apiPingStatus) {
-                    ApiPingStatus.OK -> Color(0xFF58C9A3)
+                    // Medium: one-digit-drift green (0xFF58C9A3 vs the
+                    // 0xFF58C99C FREE badge) — both now use theme tertiary.
+                    ApiPingStatus.OK -> MaterialTheme.colorScheme.tertiary
                     ApiPingStatus.FAILED -> MaterialTheme.colorScheme.error
                     ApiPingStatus.PINGING -> PocketOrange
                     ApiPingStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -1901,7 +1903,7 @@ private fun ConnectionSettings(
         Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(selectedKind.title, fontWeight = FontWeight.SemiBold)
-                Text(selectedKind.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(selectedKind.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(if (providerExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, "Choose provider")
         }
@@ -1919,7 +1921,7 @@ private fun ConnectionSettings(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(kind.title, fontWeight = FontWeight.Medium)
-                        Text(kind.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text(kind.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     SelectionDot(selectedKind == kind)
                 }

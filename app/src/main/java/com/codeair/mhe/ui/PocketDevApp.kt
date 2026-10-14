@@ -1898,14 +1898,15 @@ private fun RuntimeInstallationScreen(
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(4.dp))
-            Box(Modifier.fillMaxWidth().height(42.dp), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 42.dp), contentAlignment = Alignment.CenterStart) {
+                // Medium: the box used to be a fixed 42dp with maxLines=2,
+                // so a long startup status was cut off with no way to read
+                // it. It now grows to fit the message.
                 Text(
                     state.startupMessage,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Spacer(Modifier.height(14.dp))
@@ -3299,7 +3300,7 @@ private fun ProviderCredentialsStep(
                                 Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(option.displayName, modifier = Modifier.weight(1f, fill = false), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        if (option.isFree) Text("  FREE", color = Color(0xFF58C99C), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        if (option.isFree) Text("  FREE", color = MaterialTheme.colorScheme.tertiary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                     if (option.displayName != option.id) {
                                         Text(option.id, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -4513,7 +4514,7 @@ private fun ImportSourceButton(
         if (loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
         else Icon(icon, null, Modifier.size(17.dp))
         Spacer(Modifier.width(7.dp))
-        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -4559,6 +4560,7 @@ private fun ApiStatusChip(state: AppUiState, onSettings: () -> Unit, onPing: () 
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(4.dp))
             // Ping button
@@ -4628,6 +4630,7 @@ private fun ProjectCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text("/workspace/${project.slug}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 Text("${project.language} · ${project.formattedUpdatedAt}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
@@ -4713,6 +4716,7 @@ private fun ReadOnlyProjectScreen(
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 },
@@ -4901,6 +4905,10 @@ private fun WorkspaceScreen(
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
+    // Medium: the recovery + interrupted-session banners truncate their
+    // status text; tapping a banner expands it to the full message.
+    var recoveryExpanded by remember { mutableStateOf(false) }
+    var interruptedExpanded by remember { mutableStateOf(false) }
     // System back: from any tab other than Chat, back returns to Chat first;
     // only on Chat does back leave the project. Declared AFTER selectedTab
     // so the handler reads live tab state. Dialogs/sheets (chats, palette)
@@ -5045,12 +5053,14 @@ private fun WorkspaceScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("This command can delete files, rewrite Git history, or change the project significantly.")
-                    Surface(color = Color(0xFF14171E), shape = RoundedCornerShape(8.dp)) {
+                    // Medium: the preview used to be a hardcoded dark slab
+                    // (dark island in light mode). Theme surfaces now.
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp)) {
                         Text(
                             command,
                             Modifier.fillMaxWidth().padding(10.dp),
                             fontFamily = FontFamily.Monospace,
-                            color = Color(0xFFE2E8F0),
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
@@ -5193,18 +5203,19 @@ private fun WorkspaceScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (state.runtimeRecoveryStatus != null) {
                 Surface(
+                    onClick = { recoveryExpanded = !recoveryExpanded },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
                     shape = RoundedCornerShape(10.dp),
                 ) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(state.runtimeRecoveryStatus, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(state.runtimeRecoveryStatus, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = if (recoveryExpanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 if (state.runtimeRecoveryCanResume) "Your task state is preserved." else "Mobile Harness Extended is reconnecting without discarding the task.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
-                                maxLines = 1,
+                                maxLines = if (recoveryExpanded) Int.MAX_VALUE else 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -5225,6 +5236,7 @@ private fun WorkspaceScreen(
             }
             if (state.interruptedSession != null) {
                 Surface(
+                    onClick = { interruptedExpanded = !interruptedExpanded },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(10.dp),
@@ -5233,10 +5245,10 @@ private fun WorkspaceScreen(
                         Column(Modifier.weight(1f)) {
                             Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1)
                             Text(
-                                "Task: \"${state.interruptedSession.initialPrompt.take(60)}\" in ${state.interruptedSession.projectTitle}",
+                                "Task: \"${if (interruptedExpanded) state.interruptedSession.initialPrompt else state.interruptedSession.initialPrompt.take(60)}\" in ${state.interruptedSession.projectTitle}",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                maxLines = 1,
+                                maxLines = if (interruptedExpanded) Int.MAX_VALUE else 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -5560,7 +5572,7 @@ private fun ChatSwitcherDialog(
                                 Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(chat.title, fontWeight = if (chat.id == activeChatId) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                                    Text(chat.title, fontWeight = if (chat.id == activeChatId) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
                                         if (chat.id == activeChatId) "Current chat" else "Saved conversation",
                                         fontSize = 11.sp,
@@ -7333,16 +7345,19 @@ private fun DiffLineRow(line: DiffLine) {
         DiffLineType.CONTEXT -> " "
         DiffLineType.INFO -> "·"
     }
+    // Medium: diff colors were hardcoded dark-only values — a dark
+    // island in light mode. Theme containers are the same hues with
+    // a designed pairing for each theme.
     val background = when (line.type) {
-        DiffLineType.ADDITION -> Color(0xFF123226)
-        DiffLineType.DELETION -> Color(0xFF3A1D22)
+        DiffLineType.ADDITION -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+        DiffLineType.DELETION -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
         else -> Color.Transparent
     }
     val foreground = when (line.type) {
-        DiffLineType.ADDITION -> Color(0xFF83E6B8)
-        DiffLineType.DELETION -> Color(0xFFFFA4A4)
-        DiffLineType.INFO -> Color(0xFF8993A4)
-        DiffLineType.CONTEXT -> Color(0xFFD5DAE3)
+        DiffLineType.ADDITION -> MaterialTheme.colorScheme.onTertiaryContainer
+        DiffLineType.DELETION -> MaterialTheme.colorScheme.onErrorContainer
+        DiffLineType.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+        DiffLineType.CONTEXT -> MaterialTheme.colorScheme.onSurface
     }
     val oldNumber = line.oldLine?.toString().orEmpty().padStart(4)
     val newNumber = line.newLine?.toString().orEmpty().padStart(4)

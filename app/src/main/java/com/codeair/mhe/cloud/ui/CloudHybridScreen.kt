@@ -75,6 +75,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.cloud.CloudHybridCoordinator
@@ -499,7 +500,11 @@ private fun WorkerCard(worker: CloudWorkerSpec) {
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    // Medium: the URL text used to squeeze the health pill
+                    // off the row. The text column now takes the leftover
+                    // width and ellipsizes instead.
+                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
                 ) {
                     Surface(
                         shape = CircleShape,
@@ -516,19 +521,22 @@ private fun WorkerCard(worker: CloudWorkerSpec) {
                     }
                     Column {
                         Text(text = worker.name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(text = "${worker.region} • ${worker.endpointUrl}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = "${worker.region} • ${worker.endpointUrl}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
 
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = if (worker.healthStatus == WorkerHealthStatus.HEALTHY) Color(0xFF2E7D32) else Color(0xFFF57C00)
+                    // Medium: hardcoded green/orange pill + white text was
+                    // low-contrast in light mode; theme containers pair
+                    // correctly per theme.
+                    color = if (worker.healthStatus == WorkerHealthStatus.HEALTHY) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer
                 ) {
                     Text(
                         text = if (worker.healthStatus == WorkerHealthStatus.HEALTHY) "${worker.pingLatencyMs}ms" else worker.healthStatus.name,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = if (worker.healthStatus == WorkerHealthStatus.HEALTHY) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }

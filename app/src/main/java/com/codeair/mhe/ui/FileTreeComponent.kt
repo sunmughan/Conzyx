@@ -460,17 +460,20 @@ fun GitOperationsDialog(
                     val lines = gitOutput.lines()
                     Column(modifier = Modifier.padding(8.dp)) {
                         lines.take(200).forEach { line ->
+                            // Medium: diff greens/reds were hardcoded
+                            // dark-only values, low-contrast in light mode.
+                            // Theme containers pair correctly per theme.
                             val color = when {
                                 line.startsWith("+++") || line.startsWith("---") -> MaterialTheme.colorScheme.onSurfaceVariant
-                                line.startsWith("+") -> Color(0xFF4CAF50)
-                                line.startsWith("-") -> Color(0xFFE57373)
-                                line.startsWith("@@") -> Color(0xFF64B5F6)
+                                line.startsWith("+") -> MaterialTheme.colorScheme.onTertiaryContainer
+                                line.startsWith("-") -> MaterialTheme.colorScheme.onErrorContainer
+                                line.startsWith("@@") -> MaterialTheme.colorScheme.secondary
                                 line.startsWith("diff ") -> MaterialTheme.colorScheme.primary
                                 else -> MaterialTheme.colorScheme.onSurface
                             }
                             val bg = when {
-                                line.startsWith("+") && !line.startsWith("+++") -> Color(0xFF1B5E20).copy(alpha = 0.2f)
-                                line.startsWith("-") && !line.startsWith("---") -> Color(0xFFB71C1C).copy(alpha = 0.2f)
+                                line.startsWith("+") && !line.startsWith("+++") -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
+                                line.startsWith("-") && !line.startsWith("---") -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
                                 else -> Color.Transparent
                             }
                             Text(

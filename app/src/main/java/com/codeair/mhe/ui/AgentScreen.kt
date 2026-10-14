@@ -729,13 +729,20 @@ fun AgentScreen(
                                                 option.displayName,
                                                 fontWeight = FontWeight.SemiBold,
                                                 fontSize = 14.sp,
-                                                color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurface,
+                                                // Medium: raw PocketOrange text is
+                                                // low-contrast in light theme; the
+                                                // theme primary is the same hue,
+                                                // darker in light mode.
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
                                             if (option.isFree) {
                                                 Spacer(Modifier.width(6.dp))
-                                                Text("FREE", color = Color(0xFF58C99C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                // Medium: hardcoded mint was low-contrast
+                                                // on light surfaces; theme tertiary is
+                                                // the same hue, darker in light mode.
+                                                Text("FREE", color = MaterialTheme.colorScheme.tertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                         if (option.displayName != option.id) {
@@ -1873,7 +1880,7 @@ private fun AgentProviderCard(
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Text(kind.title, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                        Text(kind.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                        Text(kind.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     AgentSelectionDot(selectedKind == kind)
                                 }
@@ -2218,7 +2225,9 @@ private fun PremiumSummaryRow(
                     positive -> Color(0xFF2E9D72)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                maxLines = 2,
+                // Medium: the subtitle stayed capped at 2 lines even when
+                // the row was expanded — the full message was unreachable.
+                maxLines = if (expanded) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }

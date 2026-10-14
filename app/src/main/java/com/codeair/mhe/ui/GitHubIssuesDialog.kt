@@ -246,14 +246,17 @@ private fun IssueCard(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = if (issue.state == "open") Color(0xFF2E7D32).copy(alpha = 0.2f) else Color(0xFF6A1B9A).copy(alpha = 0.2f),
+                        // Medium: hardcoded dark green/purple text on a
+                        // 20% tint of itself was unreadable in dark theme.
+                        // Theme containers pair correctly per theme.
+                        color = if (issue.state == "open") MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
                     ) {
                         Text(
                             text = issue.state.uppercase(),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (issue.state == "open") Color(0xFF2E7D32) else Color(0xFF6A1B9A),
+                            color = if (issue.state == "open") MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                     }
                     Text(
@@ -326,14 +329,17 @@ private fun PullRequestCard(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = if (pr.state == "open") Color(0xFF2E7D32).copy(alpha = 0.2f) else Color(0xFF6A1B9A).copy(alpha = 0.2f),
+                        // Medium: hardcoded dark green/purple text on a
+                        // 20% tint of itself was unreadable in dark theme.
+                        // Theme containers pair correctly per theme.
+                        color = if (pr.state == "open") MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
                     ) {
                         Text(
                             text = pr.state.uppercase(),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (pr.state == "open") Color(0xFF2E7D32) else Color(0xFF6A1B9A),
+                            color = if (pr.state == "open") MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                     }
                     Text(
