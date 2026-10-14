@@ -3355,8 +3355,8 @@ internal fun activateStagingDir(staging: File, target: File, backup: File) {
 }
 
 internal fun relocateCredentialFiles(legacyDir: File, secureDir: File) {
-    if (!legacyDir.exists()) return
     secureDir.mkdirs()
+    if (!legacyDir.exists()) return
     val files = legacyDir.walkTopDown().filter { it.isFile }.toList()
     for (source in files) {
         val dest = File(secureDir, source.relativeTo(legacyDir).path)

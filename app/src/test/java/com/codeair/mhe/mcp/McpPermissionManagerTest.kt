@@ -27,18 +27,21 @@ class McpPermissionManagerTest {
     fun `per-tool project deny survives restart`() {
         val dir = tempFolder.newFolder("perm")
         val first = McpPermissionManager(dir)
-        // Built-in default is ALLOW_ALWAYS; deny one tool in one project.
-        assertTrue(first.evaluate(builtInServer(), "dangerousTool", "proj-1").allowed)
         first.setProjectToolPolicy("proj-1", "builtin-1", "dangerousTool", McpPermissionPolicy.DENY)
-        assertFalse(first.evaluate(builtInServer(), "dangerousTool", "proj-1").allowed)
+        val denied = first.evaluate(builtInServer(), "dangerousTool", "proj-1")
+        assertFalse(denied.allowed)
+        assertFalse(denied.requiresPrompt)
 
-        // Simulate restart: a fresh manager on the same directory.
         val restarted = McpPermissionManager(dir)
-        assertFalse(restarted.evaluate(builtInServer(), "dangerousTool", "proj-1").allowed)
-        // Other tools in the same project are still allowed by the default.
-        assertTrue(restarted.evaluate(builtInServer(), "safeTool", "proj-1").allowed)
-        // Other projects are unaffected.
-        assertTrue(restarted.evaluate(builtInServer(), "dangerousTool", "proj-2").allowed)
+        val reloaded = restarted.evaluate(builtInServer(), "dangerousTool", "proj-1")
+        assertFalse(reloaded.allowed)
+        assertFalse(reloaded.requiresPrompt)
+        val safe = restarted.evaluate(builtInServer(), "safeTool", "proj-1")
+        assertFalse(safe.allowed)
+        assertTrue(safe.requiresPrompt)
+        val other = restarted.evaluate(builtInServer(), "dangerousTool", "proj-2")
+        assertFalse(other.allowed)
+        assertTrue(other.requiresPrompt)
     }
 
     @Test

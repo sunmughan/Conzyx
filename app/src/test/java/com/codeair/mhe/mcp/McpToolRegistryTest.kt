@@ -91,6 +91,8 @@ class McpToolRegistryTest {
                 isBuiltIn = true
             )
         )
+        permissionManager.setGlobalServerPolicy("s1", McpPermissionPolicy.ALLOW_ALWAYS)
+        permissionManager.setGlobalServerPolicy("r1", McpPermissionPolicy.ALLOW_ALWAYS)
     }
 
     private fun toolsListRequests(): Int =
