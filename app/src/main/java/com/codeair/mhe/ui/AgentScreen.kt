@@ -362,6 +362,7 @@ fun AgentScreen(
                     .fillMaxWidth()
                     .fillMaxHeight(0.82f)
                     .padding(horizontal = 20.dp)
+                    .imePadding()
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -473,6 +474,7 @@ fun AgentScreen(
                     .fillMaxWidth()
                     .fillMaxHeight(0.82f)
                     .padding(horizontal = 20.dp)
+                    .imePadding()
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

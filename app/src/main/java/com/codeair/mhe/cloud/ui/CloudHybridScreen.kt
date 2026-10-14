@@ -567,11 +567,12 @@ private fun AddWorkerCard(
             Text("Register New Cloud Runner Node", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Runner Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Endpoint URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onAdd(name, url, region, isGpu, 0.04) }, shape = RoundedCornerShape(8.dp)) {
+            // Medium: the two buttons overflowed on narrow phones.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onAdd(name, url, region, isGpu, 0.04) }, shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f)) {
                     Text("Register Runner")
                 }
-                OutlinedButton(onClick = onCancel, shape = RoundedCornerShape(8.dp)) {
+                OutlinedButton(onClick = onCancel, shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f)) {
                     Text("Cancel")
                 }
             }

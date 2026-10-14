@@ -284,7 +284,9 @@ fun TerminalScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .then(if (compactHeader) Modifier else Modifier.imePadding()),
+                // Medium: imePadding used to be dropped in compact-header
+                // mode, so the keyboard covered the input line there.
+                .imePadding(),
         ) {
             if (sessions.isNotEmpty()) {
                 Row(

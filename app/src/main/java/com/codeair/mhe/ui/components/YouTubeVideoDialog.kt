@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -99,7 +102,11 @@ fun YouTubeVideoDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .padding(20.dp)
+                    // Medium: dialog content scrolls and lifts above the
+                    // keyboard instead of clipping on small phones.
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
             ) {
                 // Header with YouTube brand icon
                 Row(
@@ -313,7 +320,9 @@ fun YouTubeVideoDialog(
                             onDismiss()
                         }
                     },
-                    enabled = true,
+                    // Medium: the button used to be enabled with no valid
+                    // URL, and tapping it silently did nothing.
+                    enabled = videoInfo != null,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(

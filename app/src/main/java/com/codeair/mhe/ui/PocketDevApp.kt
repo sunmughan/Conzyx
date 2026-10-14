@@ -2351,7 +2351,9 @@ private fun StartupErrorScreen(
         },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(28.dp),
+            // Medium: on short screens the retry buttons used to be pushed
+            // off-screen with no way to reach them.
+            Modifier.fillMaxSize().padding(padding).padding(28.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -2801,7 +2803,9 @@ private fun ProviderSetupScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp),
+            // Medium: the provider form used to clip on short screens; the
+            // keyboard also covered the API-key field.
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).imePadding(),
         ) {
             if (onboarding) StepDots(step)
             Spacer(Modifier.height(16.dp))
@@ -4155,7 +4159,8 @@ private fun ProjectsScreen(
         },
         title = { Text("Create project") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Medium: dialog content scrolls above the keyboard.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -5718,7 +5723,9 @@ private fun FilesTab(
                         maxLines = 1,
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+                        // Medium: 7 buttons + Collapse-all overflowed on
+                        // narrow phones; the row now scrolls horizontally.
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp).horizontalScroll(rememberScrollState()),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = { targetParentDir = null; showCreateFileDialog = true }) {

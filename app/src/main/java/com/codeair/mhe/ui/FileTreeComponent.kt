@@ -165,7 +165,8 @@ fun CreateFileDialog(
         onDismissRequest = onDismiss,
         title = { Text("New File") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Medium: dialog content scrolls above the keyboard.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Creating in: $displayParent",
                     fontSize = 12.sp,
@@ -270,7 +271,8 @@ fun RenameEntryDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (entry.isDirectory) "Rename Folder" else "Rename File") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Medium: dialog content scrolls above the keyboard.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Path: ${entry.path}",
                     fontSize = 11.sp,
@@ -319,7 +321,7 @@ fun DeleteEntryDialog(
         icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         title = { Text(if (entry.isDirectory) "Delete Folder?" else "Delete File?") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = "Are you sure you want to delete \"${entry.name}\"?",
                     fontWeight = FontWeight.Medium,
@@ -367,7 +369,8 @@ fun MoveEntryDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (entry.isDirectory) "Move Folder" else "Move File") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Medium: dialog content scrolls above the keyboard.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Current path: ${entry.path}",
                     fontSize = 11.sp,

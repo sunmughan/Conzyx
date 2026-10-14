@@ -1160,6 +1160,9 @@ fun PreviewTab(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // Medium: a custom viewport wider than the screen used
+                    // to be clipped with no way to pan to it.
+                    .horizontalScroll(rememberScrollState())
                     .then(
                         if (isCustomViewport) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                         else Modifier

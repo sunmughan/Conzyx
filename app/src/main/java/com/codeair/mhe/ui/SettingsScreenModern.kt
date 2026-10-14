@@ -1052,7 +1052,8 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.85f)
-                    .padding(horizontal = 18.dp),
+                    .padding(horizontal = 18.dp)
+                    .imePadding(),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

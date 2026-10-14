@@ -1,6 +1,7 @@
 package com.codeair.mhe.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,9 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -186,7 +190,9 @@ fun GlobalSearchDialog(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 360.dp, max = 620.dp)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                // Medium: the keyboard used to cover the search field.
+                .imePadding(),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -268,7 +274,15 @@ fun GlobalSearchDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
-                    preview.filePlans.forEach { plan ->
+                    // Medium: the preview list used to be unbounded and
+                    // pushed the Replace button off-screen on many matches.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        preview.filePlans.forEach { plan ->
                         val checked = plan.filePath in selectedPreviewFiles
                         Row(
                             modifier = Modifier
@@ -308,6 +322,7 @@ fun GlobalSearchDialog(
                             }
                         }
                     }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Button(
                         onClick = { applyReplacePreview() },
@@ -324,7 +339,9 @@ fun GlobalSearchDialog(
 
             // Options filter chips
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                // Medium: chips overflowed on narrow phones with no way to
+                // reach the ones off-screen.
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

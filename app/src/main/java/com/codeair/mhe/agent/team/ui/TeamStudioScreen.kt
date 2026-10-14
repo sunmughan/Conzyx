@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1200,7 +1201,8 @@ private fun TeamCommsTab(orchestrator: AgentTeamOrchestrator) {
                 width = 1.dp,
                 color = if (inputMessage.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant
             ),
-            modifier = Modifier.fillMaxWidth()
+            // Medium: the keyboard used to cover this composer.
+            modifier = Modifier.fillMaxWidth().imePadding()
         ) {
             Column(
                 modifier = Modifier
