@@ -309,6 +309,7 @@ fun PocketDevApp(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val marketplaceInstalledIds by viewModel.marketplaceInstalledIds.collectAsStateWithLifecycle()
+    val marketplaceUpdatesAvailable by viewModel.marketplaceUpdatesAvailable.collectAsStateWithLifecycle()
     val authState by authViewModel.authState.collectAsStateWithLifecycle()
     val detectedPorts by viewModel.detectedLocalhostPorts.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -447,6 +448,9 @@ fun PocketDevApp(
             onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
             onPublishItem = { item -> viewModel.publishMarketplaceItem(item) },
             initiallyInstalledIds = marketplaceInstalledIds,
+            updatesAvailable = marketplaceUpdatesAvailable,
+            onUpdateItem = { item -> viewModel.updateMarketplaceItem(item) },
+            onScreenOpened = { viewModel.checkMarketplaceUpdates() },
         )
         return
     }
@@ -2389,6 +2393,7 @@ private fun RootScreenHost(
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
     var showPrivacyPolicy by rememberSaveable { mutableStateOf(false) }
     val marketplaceInstalledIds by viewModel.marketplaceInstalledIds.collectAsStateWithLifecycle()
+    val marketplaceUpdatesAvailable by viewModel.marketplaceUpdatesAvailable.collectAsStateWithLifecycle()
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val terminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
     val isTerminalRunning by viewModel.isTerminalRunning.collectAsStateWithLifecycle()
@@ -2536,6 +2541,9 @@ private fun RootScreenHost(
                     onUninstallItem = { item -> viewModel.uninstallMarketplaceItem(item) },
                     onPublishItem = { item -> viewModel.publishMarketplaceItem(item) },
                     initiallyInstalledIds = marketplaceInstalledIds,
+                    updatesAvailable = marketplaceUpdatesAvailable,
+                    onUpdateItem = { item -> viewModel.updateMarketplaceItem(item) },
+                    onScreenOpened = { viewModel.checkMarketplaceUpdates() },
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,

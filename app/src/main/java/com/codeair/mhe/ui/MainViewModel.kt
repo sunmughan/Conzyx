@@ -1022,6 +1022,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
+    val marketplaceUpdatesAvailable: StateFlow<Set<String>> = marketplaceCoordinator.updatesAvailable
     val visualConsoleLogs: StateFlow<List<com.codeair.mhe.visual.ConsoleLogEntry>> = visualCoordinator.visualConsoleLogs
     val visualNetworkLogs: StateFlow<List<com.codeair.mhe.visual.NetworkLogEntry>> = visualCoordinator.visualNetworkLogs
     val inspectedDomElement: StateFlow<com.codeair.mhe.visual.DomElementInfo?> = visualCoordinator.inspectedDomElement
@@ -5127,6 +5128,12 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun uninstallMarketplaceItem(item: com.codeair.mhe.marketplace.MarketplaceItem) =
         marketplaceCoordinator.uninstallMarketplaceItem(item)
+
+    fun checkMarketplaceUpdates() =
+        marketplaceCoordinator.checkMarketplaceUpdates()
+
+    fun updateMarketplaceItem(item: com.codeair.mhe.marketplace.MarketplaceItem) =
+        marketplaceCoordinator.updateMarketplaceItem(item)
 
     fun planTeamProject(goal: String) =
         teamCoordinator.planTeamProject(goal)

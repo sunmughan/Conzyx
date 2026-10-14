@@ -61,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import com.codeair.mhe.ui.theme.PocketGreen
 import com.codeair.mhe.ui.theme.PocketOrange
@@ -102,6 +103,9 @@ fun MarketplaceScreen(
      * screen reflects durable install state (not just in-memory session state).
      */
     initiallyInstalledIds: Set<String> = emptySet(),
+    updatesAvailable: Set<String> = emptySet(),
+    onUpdateItem: (MarketplaceItem) -> Unit = {},
+    onScreenOpened: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
@@ -115,6 +119,8 @@ fun MarketplaceScreen(
     val installedSet = initiallyInstalledIds
     var showPublishDialog by rememberSaveable { mutableStateOf(false) }
     var catalogVersion by remember { mutableStateOf(0) }
+
+    LaunchedEffect(Unit) { onScreenOpened() }
 
     val allItems = remember(searchQuery, selectedCategory, showOnlyInstalled, catalogVersion, installedSet, sortBy) {
         val searched = DeveloperMarketplaceCatalog.search(searchQuery)
@@ -364,8 +370,10 @@ fun MarketplaceScreen(
                     MarketplaceItemCard(
                         item = item,
                         isInstalled = isInstalled,
+                        hasUpdate = updatesAvailable.contains(item.id),
                         onInstall = { onInstallItem(item) },
                         onUninstall = { onUninstallItem(item) },
+                        onUpdate = { onUpdateItem(item) },
                         onDeleteCustom = if (item.isCustom) {
                             {
                                 DeveloperMarketplaceCatalog.removeCustomItem(item.id)
@@ -439,8 +447,10 @@ fun MarketplaceScreen(
 private fun MarketplaceItemCard(
     item: MarketplaceItem,
     isInstalled: Boolean,
+    hasUpdate: Boolean = false,
     onInstall: () -> Unit,
     onUninstall: () -> Unit = {},
+    onUpdate: () -> Unit = {},
     onDeleteCustom: (() -> Unit)? = null,
 ) {
     Card(
@@ -603,11 +613,38 @@ private fun MarketplaceItemCard(
                 }
 
                 if (isInstalled) {
-                    OutlinedButton(
-                        onClick = onUninstall,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (hasUpdate) {
+                            Text(
+                                text = "Update available",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PocketOrange,
+                            )
+                            Button(
+                                onClick = onUpdate,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = PocketOrange,
+                                    contentColor = Color.White,
+                                ),
+                            ) {
+                                Text(
+                                    text = "Update",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onUninstall,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -624,6 +661,7 @@ private fun MarketplaceItemCard(
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
+                    }
                     }
                 } else {
                     Button(

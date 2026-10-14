@@ -1,11 +1,20 @@
 package com.codeair.mhe.ui.coordinators
 
+import com.codeair.mhe.marketplace.CURATED_PRESEED_IDS
+import com.codeair.mhe.marketplace.CURATED_SEED_VERSION
 import com.codeair.mhe.marketplace.DeveloperMarketplaceCatalog
 import com.codeair.mhe.marketplace.MarketplaceCategory
 import com.codeair.mhe.marketplace.MarketplaceInstallManager
 import com.codeair.mhe.marketplace.MarketplaceInstallResult
 import com.codeair.mhe.marketplace.MarketplaceItem
 import com.codeair.mhe.marketplace.MarketplacePublishedItemsStore
+import com.codeair.mhe.marketplace.fetchBranchHeadSha
+import com.codeair.mhe.marketplace.fetchRepoDefaultBranch
+import com.codeair.mhe.marketplace.isUpdateAvailable
+import com.codeair.mhe.marketplace.parseGitHubRepo
+import com.codeair.mhe.marketplace.pendingSeedIds
+import com.codeair.mhe.marketplace.resolveUpstreamHeadSha
+import com.codeair.mhe.marketplace.updateCheckDue
 import com.codeair.mhe.marketplace.validateMarketplaceItem
 import com.codeair.mhe.mcp.McpRegistry
 import com.codeair.mhe.mcp.McpServerInfo
@@ -44,10 +53,81 @@ class MarketplaceCoordinator(
     private val _installedIds = MutableStateFlow(installManager.installedIds())
     val installedIds: StateFlow<Set<String>> = _installedIds.asStateFlow()
 
+    private val _updatesAvailable = MutableStateFlow<Set<String>>(emptySet())
+    val updatesAvailable: StateFlow<Set<String>> = _updatesAvailable.asStateFlow()
+
     init {
-        // Reload persisted published items into the catalog (dedupe by id
-        // in addCustomItem keeps restarts from duplicating them).
         publishedStore.load().forEach { DeveloperMarketplaceCatalog.addCustomItem(it) }
+        host.scope.launch(Dispatchers.IO) { seedCuratedSkills() }
+    }
+
+    private fun seedCuratedSkills() {
+        if (installManager.curatedSeedVersion() >= CURATED_SEED_VERSION) return
+        val items = DeveloperMarketplaceCatalog.getAllItems().filter { it.id in CURATED_PRESEED_IDS }
+        var seededAny = false
+        for (item in pendingSeedIds(CURATED_PRESEED_IDS, installManager.installedIds()).mapNotNull { id ->
+            items.find { it.id == id }
+        }) {
+            val sha = runCatching { resolveUpstreamHeadSha(item.installUrl) }.getOrNull().orEmpty()
+            if (installManager.seedCurated(item, sha)) seededAny = true
+        }
+        installManager.setCuratedSeedVersion(CURATED_SEED_VERSION)
+        if (seededAny) _installedIds.value = installManager.installedIds()
+    }
+
+    fun checkMarketplaceUpdates() {
+        host.scope.launch(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            if (!updateCheckDue(installManager.lastUpdateCheckAt(), now)) return@launch
+            val found = mutableSetOf<String>()
+            var anySuccess = false
+            for ((id, record) in installManager.installedPackages.value) {
+                val item = DeveloperMarketplaceCatalog.getAllItems().find { it.id == id } ?: continue
+                val repo = parseGitHubRepo(item.installUrl) ?: continue
+                val head = runCatching {
+                    val branch = fetchRepoDefaultBranch(repo.first, repo.second) ?: return@runCatching null
+                    fetchBranchHeadSha(repo.first, repo.second, branch)
+                }.getOrNull() ?: continue
+                anySuccess = true
+                if (isUpdateAvailable(record.upstreamSha, head)) {
+                    found.add(id)
+                } else if (record.upstreamSha.isBlank()) {
+                    installManager.recordUpstreamSha(id, head)
+                }
+            }
+            if (anySuccess) installManager.setLastUpdateCheckAt(now)
+            _updatesAvailable.value = found
+        }
+    }
+
+    fun updateMarketplaceItem(item: MarketplaceItem) {
+        host.scope.launch(Dispatchers.IO) {
+            val repo = parseGitHubRepo(item.installUrl)
+            val outcome = if (repo == null) {
+                "Cannot update ${item.name}: no GitHub repo linked"
+            } else {
+                val head = runCatching {
+                    val branch = fetchRepoDefaultBranch(repo.first, repo.second) ?: return@runCatching null
+                    fetchBranchHeadSha(repo.first, repo.second, branch)
+                }.getOrNull()
+                if (head.isNullOrBlank()) {
+                    "Could not reach GitHub to update ${item.name}; try again later"
+                } else {
+                    when (val result = installManager.updateToLatest(item, head)) {
+                        is MarketplaceInstallResult.Installed -> {
+                            _updatesAvailable.value = _updatesAvailable.value - item.id
+                            "Updated ${item.name} to the latest version"
+                        }
+                        is MarketplaceInstallResult.Failed -> "Update failed: ${result.reason}"
+                        else -> "Update finished for ${item.name}"
+                    }
+                }
+            }
+            _installedIds.value = installManager.installedIds()
+            withContext(Dispatchers.Main) {
+                host.updateState { it.copy(toastMessage = outcome) }
+            }
+        }
     }
 
     /**

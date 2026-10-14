@@ -38,6 +38,7 @@ data class InstalledPackage(
     val packageDir: String = "",
     /** Expected SHA-256 the download was verified against ("" = none provided). */
     val sha256: String = "",
+    val upstreamSha: String = "",
 )
 
 /** SHA-256 hex of [bytes]. Pure, unit-tested. */
@@ -181,6 +182,86 @@ class MarketplaceInstallManager(private val context: Context) {
         return true
     }
 
+    fun seedCurated(item: MarketplaceItem, upstreamSha: String): Boolean {
+        if (isInstalled(item.id)) return false
+        val targetDir = File(packagesDir, sanitizeId(item.id))
+        return try {
+            targetDir.mkdirs()
+            val manifest = JSONObject()
+                .put("id", item.id)
+                .put("name", item.name)
+                .put("author", item.author)
+                .put("category", item.category.name)
+                .put("version", DEFAULT_VERSION)
+                .put("source", "pre-seeded curated skill")
+                .put("sha256", item.sha256)
+                .put("upstreamSha", upstreamSha)
+                .put("installedAt", System.currentTimeMillis())
+            File(targetDir, "manifest.json").writeText(manifest.toString(2))
+            val record = InstalledPackage(
+                itemId = item.id,
+                name = item.name,
+                version = DEFAULT_VERSION,
+                sourceUrl = item.installUrl,
+                packageDir = targetDir.absolutePath,
+                sha256 = item.sha256,
+                upstreamSha = upstreamSha,
+            )
+            prefs.edit().putString(keyFor(item.id), toJson(record)).apply()
+            _installedPackages.value = _installedPackages.value + (item.id to record)
+            true
+        } catch (e: Exception) {
+            runCatching { targetDir.deleteRecursively() }
+            false
+        }
+    }
+
+    fun recordUpstreamSha(itemId: String, sha: String) {
+        val record = _installedPackages.value[itemId] ?: return
+        if (record.upstreamSha == sha) return
+        val updated = record.copy(upstreamSha = sha)
+        prefs.edit().putString(keyFor(itemId), toJson(updated)).apply()
+        _installedPackages.value = _installedPackages.value + (itemId to updated)
+    }
+
+    fun updateToLatest(item: MarketplaceItem, newSha: String): MarketplaceInstallResult {
+        val existing = _installedPackages.value[item.id]
+            ?: return MarketplaceInstallResult.Failed("Not installed")
+        return try {
+            val payload = downloadBytes(item.installUrl.trim())
+            check(verifyPackageHash(item.sha256, payload)) {
+                "Downloaded package hash does not match the listing (expected ${item.sha256})"
+            }
+            val dir = existing.packageDir.takeIf { it.isNotBlank() }?.let(::File)
+                ?: File(packagesDir, sanitizeId(item.id))
+            dir.mkdirs()
+            File(dir, "package.bin").writeBytes(payload)
+            val record = existing.copy(
+                installedAt = System.currentTimeMillis(),
+                sourceUrl = item.installUrl,
+                packageDir = dir.absolutePath,
+                upstreamSha = newSha,
+            )
+            prefs.edit().putString(keyFor(item.id), toJson(record)).apply()
+            _installedPackages.value = _installedPackages.value + (item.id to record)
+            MarketplaceInstallResult.Installed(dir)
+        } catch (e: Exception) {
+            MarketplaceInstallResult.Failed("Update failed: ${e.message}")
+        }
+    }
+
+    fun curatedSeedVersion(): Int = prefs.getInt(KEY_SEED_VERSION, 0)
+
+    fun setCuratedSeedVersion(version: Int) {
+        prefs.edit().putInt(KEY_SEED_VERSION, version).apply()
+    }
+
+    fun lastUpdateCheckAt(): Long = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+
+    fun setLastUpdateCheckAt(timestamp: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, timestamp).apply()
+    }
+
     private fun loadAll(): Map<String, InstalledPackage> {
         return prefs.all.mapNotNull { (key, value) ->
             if (!key.startsWith(KEY_PREFIX) || value !is String) return@mapNotNull null
@@ -200,6 +281,7 @@ class MarketplaceInstallManager(private val context: Context) {
         .put("sourceUrl", record.sourceUrl)
         .put("packageDir", record.packageDir)
         .put("sha256", record.sha256)
+        .put("upstreamSha", record.upstreamSha)
         .toString()
 
     private fun fromJson(json: String): InstalledPackage {
@@ -212,6 +294,7 @@ class MarketplaceInstallManager(private val context: Context) {
             sourceUrl = o.optString("sourceUrl"),
             packageDir = o.optString("packageDir"),
             sha256 = o.optString("sha256"),
+            upstreamSha = o.optString("upstreamSha"),
         )
     }
 
@@ -260,6 +343,8 @@ class MarketplaceInstallManager(private val context: Context) {
     companion object {
         private const val PREFS_NAME = "marketplace_installs"
         private const val KEY_PREFIX = "pkg_"
+        private const val KEY_SEED_VERSION = "curated_seed_version"
+        private const val KEY_LAST_UPDATE_CHECK = "last_update_check_at"
         // Listings carry no version field, so stamping one would be a
         // fabrication. "unknown" is honest.
         private const val DEFAULT_VERSION = "unknown"

@@ -103,6 +103,42 @@ object DeveloperMarketplaceCatalog {
             installUrl = "https://github.com/pocketdev/skills-rust-systems",
             tags = listOf("rust", "systems", "memory", "concurrency"),
         ),
+        MarketplaceItem(
+            id = "catalog-skill-rea",
+            name = "rea",
+            category = MarketplaceCategory.SKILLS,
+            author = "morluto",
+            description = "Reverse engineer anything with agents, from app behavior down to native binaries.",
+            installUrl = "https://github.com/morluto/rea",
+            tags = listOf("reverse-engineering", "agents", "security", "binaries"),
+        ),
+        MarketplaceItem(
+            id = "catalog-skill-desigma",
+            name = "desigma",
+            category = MarketplaceCategory.SKILLS,
+            author = "deepfounder-ai",
+            description = "Free Figma alternative made on Rust.",
+            installUrl = "https://github.com/deepfounder-ai/desigma",
+            tags = listOf("design", "figma", "rust", "ui"),
+        ),
+        MarketplaceItem(
+            id = "catalog-skill-flick",
+            name = "flick",
+            category = MarketplaceCategory.SKILLS,
+            author = "creatorberry",
+            description = "Give it a video or a script. Turn it into a scene-by-scene animations.",
+            installUrl = "https://github.com/creatorberry/flick",
+            tags = listOf("video", "animation", "script", "media"),
+        ),
+        MarketplaceItem(
+            id = "catalog-skill-app-store-screenshots",
+            name = "app-store-screenshots",
+            category = MarketplaceCategory.SKILLS,
+            author = "ParthJadhav",
+            description = "End to end app store screenshot creation using AI.",
+            installUrl = "https://github.com/ParthJadhav/app-store-screenshots",
+            tags = listOf("screenshots", "app-store", "ai", "marketing"),
+        ),
 
         // Templates
         MarketplaceItem(
