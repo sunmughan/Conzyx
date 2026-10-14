@@ -138,7 +138,6 @@ internal fun formatAntigravityModelName(id: String): String = when (id) {
     "gemini-3.6-flash-low" -> "Gemini 3.6 Flash (Low)"
     "gemini-3.1-pro-high" -> "Gemini 3.1 Pro (High)"
     "gemini-3.1-pro-low" -> "Gemini 3.1 Pro (Low)"
-    "gemini-4-argon" -> "Gemini 4 Argon"
     "claude-sonnet-4-6" -> "Claude Sonnet 4.6"
     "claude-opus-4-6-thinking" -> "Claude Opus 4.6 (Thinking)"
     "gpt-oss-120b-medium" -> "GPT-OSS 120B"
@@ -149,7 +148,6 @@ internal fun formatAntigravityModelName(id: String): String = when (id) {
 
 /** Returns tier classification badges for Antigravity models. */
 internal fun formatAntigravityModelTier(id: String): String = when {
-    id.contains("4-argon") -> "Frontier"
     id.contains("3.8") -> "Recommended"
     id.contains("3.6") -> "Stable"
     id.contains("3.1-pro") -> "Pro Reasoning"
@@ -268,7 +266,6 @@ fun AgentScreen(
             "gemini-3.6-flash-low",
             "gemini-3.1-pro-high",
             "gemini-3.1-pro-low",
-            "gemini-4-argon",
             "claude-sonnet-4-6",
             "claude-opus-4-6-thinking",
             "gpt-oss-120b-medium",

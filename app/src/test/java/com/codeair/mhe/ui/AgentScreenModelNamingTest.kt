@@ -19,8 +19,6 @@ class AgentScreenModelNamingTest {
     fun `known models keep their labels`() {
         assertEquals("Gemini 3.8 Flash (High)", formatAntigravityModelName("gemini-3.8-flash-high"))
         assertEquals("GPT-OSS 120B", formatAntigravityModelName("gpt-oss-120b-medium"))
-        assertEquals("Gemini 4 Argon", formatAntigravityModelName("gemini-4-argon"))
-        assertEquals("Frontier", formatAntigravityModelTier("gemini-4-argon"))
     }
 
     @Test
