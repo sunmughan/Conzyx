@@ -329,7 +329,14 @@ fun CodeEditorScreen(
 
     fun goToDefinition() {
         val sym = getSymbolUnderCursor()
-        if (sym.isBlank() || workspaceDir == null) return
+        if (sym.isBlank()) {
+            onShowToast("Place the cursor on a symbol to go to its definition.")
+            return
+        }
+        if (workspaceDir == null) {
+            onShowToast("No workspace open.")
+            return
+        }
         val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
             it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
         }
@@ -341,8 +348,15 @@ fun CodeEditorScreen(
 
     fun findReferencesForSymbol() {
         val sym = getSymbolUnderCursor()
-        val dir = workspaceDir ?: return
-        if (sym.isBlank()) return
+        val dir = workspaceDir
+        if (dir == null) {
+            onShowToast("No workspace open.")
+            return
+        }
+        if (sym.isBlank()) {
+            onShowToast("Place the cursor on a symbol to find references.")
+            return
+        }
         // QA H31: the workspace walk + per-file reads used to run on the
         // main thread (menu click). Disk work on IO, state on Main.
         scope.launch {
@@ -364,12 +378,17 @@ fun CodeEditorScreen(
             renameOldName = sym
             renameNewName = sym
             renameDialogOpen = true
+        } else {
+            onShowToast("Place the cursor on a symbol to rename it.")
         }
     }
 
     fun triggerHover() {
         val sym = getSymbolUnderCursor()
-        if (sym.isBlank()) return
+        if (sym.isBlank()) {
+            onShowToast("Place the cursor on a symbol to view its documentation.")
+            return
+        }
         val currentLine = value.text.take(value.selection.start.coerceIn(0, value.text.length)).count { it == '\n' } + 1
         val hover = lspManager.requestHover(language, filePath, currentLine, value.selection.start, value.text)
         hoverContent = hover?.contents ?: "Symbol: $sym ($language identifier)"
