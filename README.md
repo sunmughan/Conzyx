@@ -22,6 +22,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 [**Download Online APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.0.2/app-online-release.apk) &nbsp;·&nbsp;
 [**Download Offline APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.0.2/app-offline-release.apk) &nbsp;·&nbsp;
+[**Pitch Deck (PDF)**](docs/Conzyx-Pitch-Deck.pdf) &nbsp;·&nbsp;
 [**Installation**](#-installation) &nbsp;·&nbsp;
 [**Build from Source**](#-building-from-source) &nbsp;·&nbsp;
 [**Configuration**](#-configuration)
