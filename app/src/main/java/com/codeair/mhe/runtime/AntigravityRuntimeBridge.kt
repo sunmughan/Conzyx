@@ -296,7 +296,7 @@ class AntigravityRuntimeBridge(
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         val apiConfig = geminiApiConfig()
         if (apiConfig != null) {
-            return startGeminiApiSession(sessionId, projectId, projectSlug, prompt, conversationHistory, apiConfig)
+            return@withContext startGeminiApiSession(sessionId, projectId, projectSlug, prompt, conversationHistory, apiConfig)
         }
         if (!installer.isAgentInstalled(com.codeair.mhe.model.AgentKind.ANTIGRAVITY)) {
             emitFailure(sessionId, "Antigravity CLI is not installed. Open Settings → Coding agent to install it.")
