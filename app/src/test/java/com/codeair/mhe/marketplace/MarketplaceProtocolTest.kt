@@ -9,6 +9,64 @@ import org.junit.Test
 class MarketplaceProtocolTest {
 
     @Test
+    fun transportRetriesOn429ThenSucceeds() {
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        try {
+            server.createContext("/api/v1/listings") { exchange ->
+                val n = calls.incrementAndGet()
+                if (n == 1) {
+                    val body = "rate limited".toByteArray()
+                    exchange.sendResponseHeaders(429, body.size.toLong())
+                    exchange.responseBody.use { it.write(body) }
+                } else {
+                    val body = "{\"listings\":[]}".toByteArray()
+                    exchange.responseHeaders.add("Content-Type", "application/json")
+                    exchange.sendResponseHeaders(200, body.size.toLong())
+                    exchange.responseBody.use { it.write(body) }
+                }
+                exchange.close()
+            }
+            server.start()
+            val baseUrl = "http://localhost:${server.address.port}"
+            val res = UrlConnectionMarketplaceTransport().send(
+                baseUrl,
+                MarketplaceTransportRequest("GET", "/api/v1/listings")
+            )
+            assertEquals(200, res.statusCode)
+            assertTrue(res.body.contains("listings"))
+            assertEquals(2, calls.get())
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun transportStopsRetryingAfterMaxAttempts() {
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        try {
+            server.createContext("/api/v1/listings") { exchange ->
+                calls.incrementAndGet()
+                val body = "server error".toByteArray()
+                exchange.sendResponseHeaders(503, body.size.toLong())
+                exchange.responseBody.use { it.write(body) }
+                exchange.close()
+            }
+            server.start()
+            val baseUrl = "http://localhost:${server.address.port}"
+            val res = UrlConnectionMarketplaceTransport().send(
+                baseUrl,
+                MarketplaceTransportRequest("GET", "/api/v1/listings")
+            )
+            assertEquals(503, res.statusCode)
+            assertEquals(3, calls.get())
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun listingStatusParsesLeniently() {
         assertEquals(ListingStatus.PUBLISHED, ListingStatus.parse("published"))
         assertEquals(ListingStatus.UNPUBLISHED, ListingStatus.parse("UNPUBLISHED"))

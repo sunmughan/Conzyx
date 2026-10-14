@@ -48,28 +48,40 @@ class UrlConnectionMarketplaceTransport(
 ) : MarketplaceHttpTransport {
 
     override fun send(baseUrl: String, request: MarketplaceTransportRequest): MarketplaceTransportResponse {
-        return try {
-            val url = java.net.URL(baseUrl.trimEnd('/') + request.path)
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                connectTimeout = connectTimeoutMs
-                readTimeout = readTimeoutMs
-                requestMethod = request.method
-                instanceFollowRedirects = true
-                request.headers.forEach { (k, v) -> setRequestProperty(k, v) }
-                if (request.body != null) {
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    outputStream.use { it.write(request.body.toByteArray(Charsets.UTF_8)) }
+        var attempt = 0
+        while (true) {
+            try {
+                val url = java.net.URL(baseUrl.trimEnd('/') + request.path)
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = connectTimeoutMs
+                    readTimeout = readTimeoutMs
+                    requestMethod = request.method
+                    instanceFollowRedirects = true
+                    request.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+                    if (request.body != null) {
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        outputStream.use { it.write(request.body.toByteArray(Charsets.UTF_8)) }
+                    }
+                    connect()
                 }
-                connect()
+                val code = conn.responseCode
+                if (com.codeair.mhe.network.HttpRetry.isRetryable(code) &&
+                    attempt < com.codeair.mhe.network.HttpRetry.MAX_ATTEMPTS - 1
+                ) {
+                    val retryAfter = conn.getHeaderField("Retry-After")
+                    conn.disconnect()
+                    com.codeair.mhe.network.HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                    attempt++
+                    continue
+                }
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val text = stream?.readBytes()?.toString(Charsets.UTF_8).orEmpty()
+                conn.disconnect()
+                return MarketplaceTransportResponse(code, text)
+            } catch (e: Exception) {
+                return MarketplaceTransportResponse(-1, "transport error: ${e.message}")
             }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.readBytes()?.toString(Charsets.UTF_8).orEmpty()
-            conn.disconnect()
-            MarketplaceTransportResponse(code, text)
-        } catch (e: Exception) {
-            MarketplaceTransportResponse(-1, "transport error: ${e.message}")
         }
     }
 }
