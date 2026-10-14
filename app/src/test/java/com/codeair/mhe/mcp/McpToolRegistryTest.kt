@@ -239,6 +239,21 @@ class McpToolRegistryTest {
     }
 
     @Test
+    fun `resolveEnv drops plaintext env shadowed by secret names`() {
+        registry.installServer(
+            testStdioServer("s4").copy(
+                isBuiltIn = true,
+                env = mapOf("PLAIN" to "1", "API_KEY" to "plaintext-leak"),
+                secretEnvNames = listOf("API_KEY")
+            )
+        )
+        credentialStore.setCredential("s4", "API_KEY", "sekret!")
+        val env = toolRegistry().resolveEnv(registry.getServer("s4")!!)
+        assertEquals("1", env["PLAIN"])
+        assertEquals("sekret!", env["API_KEY"])
+    }
+
+    @Test
     fun `resolveEnv fails honestly on missing secret`() {
         registry.installServer(
             testStdioServer("s3").copy(isBuiltIn = true, secretEnvNames = listOf("MISSING_KEY"))
@@ -286,5 +301,42 @@ class McpToolRegistryTest {
         assertFalse(entry.success)
         assertEquals("ALLOWED", entry.permissionDecision)
         assertTrue(entry.error!!.contains("connection reset"))
+    }
+
+    @Test
+    fun `first custom server spawn is audited with warning`() {
+        registry.installServer(testStdioServer("custom1").copy(isBuiltIn = false))
+        toolRegistry().discover("custom1")
+        val spawns = auditLogger.getEntriesForServer("custom1")
+            .filter { it.toolName == "FIRST_CUSTOM_SERVER_SPAWN" }
+        assertEquals(1, spawns.size)
+        assertTrue(spawns[0].success)
+        assertEquals("WARNING_FIRST_SPAWN", spawns[0].permissionDecision)
+        assertTrue(spawns[0].error!!.contains("no sandbox"))
+        assertTrue(registry.hasSpawnedBefore("custom1"))
+    }
+
+    @Test
+    fun `custom server spawn warns only once`() {
+        registry.installServer(testStdioServer("custom2").copy(isBuiltIn = false))
+        toolRegistry().discover("custom2")
+        toolRegistry().discover("custom2", forceRefresh = true)
+        val warnings = auditLogger.getEntriesForServer("custom2")
+            .filter { it.toolName == "FIRST_CUSTOM_SERVER_SPAWN" }
+        assertEquals(1, warnings.size)
+        val respawns = auditLogger.getEntriesForServer("custom2")
+            .filter { it.toolName == "SERVER_SPAWN" }
+        assertEquals(1, respawns.size)
+    }
+
+    @Test
+    fun `built-in server spawn is audited without warning`() {
+        toolRegistry().discover("s1")
+        val spawns = auditLogger.getEntriesForServer("s1")
+            .filter { it.toolName == "SERVER_SPAWN" }
+        assertEquals(1, spawns.size)
+        assertEquals("SPAWNED", spawns[0].permissionDecision)
+        assertEquals(null, spawns[0].error)
+        assertTrue(spawns[0].resultPreview.contains("fake-cmd"))
     }
 }

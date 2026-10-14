@@ -20,9 +20,36 @@ class McpRegistry(
     private val configFile = File(root, "mcp_servers.json")
     private val servers = ConcurrentHashMap<String, McpServerInfo>()
     private val lock = Any()
+    private val spawnMarkerFile = File(root, "mcp_spawn_markers.json")
+    private val spawnedServerIds = mutableSetOf<String>()
 
     init {
         loadPersisted()
+        loadSpawnMarkers()
+    }
+
+    fun hasSpawnedBefore(serverId: String): Boolean = synchronized(lock) {
+        spawnedServerIds.contains(serverId)
+    }
+
+    fun markSpawned(serverId: String) = synchronized(lock) {
+        if (spawnedServerIds.add(serverId)) {
+            runCatching {
+                SafeFileOps.atomicWriteText(spawnMarkerFile, JSONArray(spawnedServerIds.toList()).toString())
+            }
+        }
+    }
+
+    private fun loadSpawnMarkers() {
+        synchronized(lock) {
+            runCatching {
+                val text = spawnMarkerFile.takeIf { it.exists() }?.readText().orEmpty()
+                if (text.isNotBlank()) {
+                    val array = JSONArray(text)
+                    for (i in 0 until array.length()) spawnedServerIds.add(array.getString(i))
+                }
+            }
+        }
     }
 
     /**

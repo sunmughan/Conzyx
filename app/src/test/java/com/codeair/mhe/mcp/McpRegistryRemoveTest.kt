@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -98,5 +99,33 @@ class McpRegistryRemoveTest {
         val second = registry.installFromTemplate("filesystem")
 
         assertEquals(first.id, second.id)
+    }
+
+    @Test
+    fun installFromTemplateRejectsSecretNamesInEnvOverrides() {
+        try {
+            registry.installFromTemplate("github", mapOf("GITHUB_PERSONAL_ACCESS_TOKEN" to "shhh"))
+            fail("expected IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("GITHUB_PERSONAL_ACCESS_TOKEN"))
+        }
+        assertNull(registry.getServer("github"))
+    }
+
+    @Test
+    fun installFromTemplateAcceptsNonSecretEnvOverrides() {
+        val installed = registry.installFromTemplate("github", mapOf("GH_HOST" to "ghe.example.com"))
+        assertEquals("ghe.example.com", installed.env["GH_HOST"])
+        assertTrue(installed.secretEnvNames.contains("GITHUB_PERSONAL_ACCESS_TOKEN"))
+    }
+
+    @Test
+    fun spawnMarkersPersistAcrossReloads() {
+        assertFalse(registry.hasSpawnedBefore("custom-x"))
+        registry.markSpawned("custom-x")
+        assertTrue(registry.hasSpawnedBefore("custom-x"))
+        val reloaded = McpRegistry(File(dir, "registry"))
+        assertTrue(reloaded.hasSpawnedBefore("custom-x"))
+        assertFalse(reloaded.hasSpawnedBefore("other"))
     }
 }

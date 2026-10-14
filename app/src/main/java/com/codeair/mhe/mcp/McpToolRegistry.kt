@@ -47,7 +47,8 @@ class McpToolRegistry(
      * honestly instead of starting a misconfigured server.
      */
     fun resolveEnv(server: McpServerInfo): Map<String, String> {
-        val resolved = server.env.toMutableMap()
+        val secretNames = server.secretEnvNames.toSet()
+        val resolved = server.env.filterKeys { it !in secretNames }.toMutableMap()
         val missing = mutableListOf<String>()
         for (name in server.secretEnvNames) {
             val value = credentialStore.getCredential(server.id, name)
@@ -69,6 +70,23 @@ class McpToolRegistry(
         synchronized(lock) {
             return sessions.getOrPut(server.id) { sessionFactory(server) }
         }
+    }
+
+    private fun auditServerSpawn(server: McpServerInfo, projectId: String?) {
+        val firstCustomSpawn = !server.isBuiltIn && !registry.hasSpawnedBefore(server.id)
+        if (firstCustomSpawn) registry.markSpawned(server.id)
+        auditLogger.log(
+            McpAuditEntry(
+                serverId = server.id,
+                toolName = if (firstCustomSpawn) "FIRST_CUSTOM_SERVER_SPAWN" else "SERVER_SPAWN",
+                argumentsJson = "{}",
+                success = true,
+                resultPreview = "Spawned ${if (server.isBuiltIn) "built-in" else "custom"} server process: ${server.command}",
+                permissionDecision = if (firstCustomSpawn) "WARNING_FIRST_SPAWN" else "SPAWNED",
+                error = if (firstCustomSpawn) "First spawn of custom MCP server '${server.name}'. It runs as this app with the app's full privileges; no sandbox is applied. Review its command before use." else null,
+                projectId = projectId
+            )
+        )
     }
 
     /**
@@ -93,11 +111,13 @@ class McpToolRegistry(
             remoteClientFactory(server, config).listTools()
         } else {
             val session = sessionFor(server)
+            val wasRunning = session.state == McpSessionState.RUNNING
             if (!session.ensureRunning(resolveEnv(server))) {
                 throw McpTransportException(
                     "MCP server '${server.id}' could not be started: ${session.diagnostics().takeLast(3).joinToString("; ")}"
                 )
             }
+            if (!wasRunning) auditServerSpawn(server, projectId)
             session.listTools()
         }
         synchronized(lock) {
@@ -157,9 +177,11 @@ class McpToolRegistry(
                 remoteClientFactory(server, config).callTool(toolName, arguments)
             } else {
                 val session = sessionFor(server)
+                val wasRunning = session.state == McpSessionState.RUNNING
                 if (!session.ensureRunning(resolveEnv(server))) {
                     throw McpTransportException("MCP server '${server.id}' could not be started")
                 }
+                if (!wasRunning) auditServerSpawn(server, projectId)
                 session.callTool(toolName, arguments)
             }
         } catch (t: Exception) {

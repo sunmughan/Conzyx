@@ -2509,25 +2509,26 @@ class RuntimeInstaller(private val context: Context) {
         hook.writeText(
             """#!/bin/sh
 REQ_DIR="/pocket-bridge"
-REQ_ID="claude-$$-$(date +%s%N 2>/dev/null || date +%s)"
-REQ_FILE="$REQ_DIR/$REQ_ID.request"
-RESP_FILE="$REQ_DIR/$REQ_ID.response"
-mkdir -p "$REQ_DIR"
-cat > "$REQ_FILE"
-for i in $(seq 1 1200); do
-  if [ -f "$RESP_FILE" ]; then break; fi
+REQ_ID="claude-${'$'}${'$'}-${'$'}(date +%s%N 2>/dev/null || date +%s)"
+REQ_FILE="${'$'}REQ_DIR/${'$'}REQ_ID.request"
+RESP_FILE="${'$'}REQ_DIR/${'$'}REQ_ID.response"
+mkdir -p "${'$'}REQ_DIR"
+cat > "${'$'}REQ_FILE.tmp"
+mv -f "${'$'}REQ_FILE.tmp" "${'$'}REQ_FILE"
+for i in ${'$'}(seq 1 1200); do
+  if [ -f "${'$'}RESP_FILE" ]; then break; fi
   sleep 0.1
 done
 DECISION="deny"
-if [ -f "$RESP_FILE" ]; then
-  case "$(head -c 16 "$RESP_FILE" 2>/dev/null)" in
+if [ -f "${'$'}RESP_FILE" ]; then
+  case "${'$'}(head -c 16 "${'$'}RESP_FILE" 2>/dev/null)" in
     allow*) DECISION="allow" ;;
   esac
-  rm -f "$REQ_FILE" "$RESP_FILE"
+  rm -f "${'$'}REQ_FILE" "${'$'}RESP_FILE"
 else
-  rm -f "$REQ_FILE"
+  rm -f "${'$'}REQ_FILE"
 fi
-printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"$DECISION\"}}}"
+printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"${'$'}DECISION\"}}}"
 """,
         )
         Os.chmod(hook.absolutePath, 0b111101101)
@@ -2537,8 +2538,8 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
             .put(
                 "permissions",
                 JSONObject()
-                    .put("allow", claudeWorkspaceToolRules())
-                    .put("defaultMode", "acceptEdits"),
+                    .put("allow", claudeReadOnlyToolRules())
+                    .put("defaultMode", "default"),
             )
             .put(
                 "hooks",
@@ -2586,11 +2587,7 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         stateFile.writeText(state.toString())
     }
 
-    private fun claudeWorkspaceToolRules() = org.json.JSONArray().apply {
-        put("Bash")
-        put("Edit")
-        put("Write")
-        put("NotebookEdit")
+    private fun claudeReadOnlyToolRules() = org.json.JSONArray().apply {
         put("Read")
         put("Glob")
         put("Grep")

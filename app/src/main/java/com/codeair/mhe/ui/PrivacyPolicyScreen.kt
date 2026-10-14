@@ -45,9 +45,9 @@ Mobile Harness Extended may handle information you choose to provide or generate
 
 Projects, conversations, attachments, imported repositories, editor content, terminal history, checkpoints, runtime files, and diagnostics are stored in the app's private storage on your device unless you explicitly use a feature that sends information elsewhere.
 
-Provider credentials are protected using Android Keystore-backed encryption before they are persisted.
+AI-provider API keys and MCP server secrets are protected using Android Keystore-backed encryption before they are persisted. OAuth tokens used by integrated command-line tools (GitHub, Antigravity) are stored in the app's private on-device Linux environment.
 
-Mobile Harness Extended does not currently include advertising or analytics SDKs and does not operate a first-party user account system.
+Mobile Harness Extended does not include advertising SDKs and does not operate a first-party user account system. It does include Firebase Crashlytics for crash reporting, described below.
 
 ## Code, projects, and AI requests
 
@@ -65,7 +65,10 @@ The app may connect to external services to:
 - Access Git/GitHub repositories and repository metadata when you request repository operations
 - Download Linux/runtime components, development toolchains, package dependencies, and agent assets required by the selected configuration
 - Check for Mobile Harness Extended app updates and retrieve release metadata
+- Send crash and diagnostic reports to Firebase Crashlytics
 - Load web previews or other network resources when you explicitly use those features
+
+Crash reports may include stack traces, device information (such as Android version and device model), and file paths from the app's private storage. Crash reporting is always on; there is no in-app opt-out.
 
 Those services may receive standard network information such as your IP address, request time, requested resource, and user-agent information. The third-party service's own privacy policy and terms govern information it receives.
 
