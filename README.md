@@ -8,7 +8,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 <br/>
 
-[![Release v3.0.1](https://img.shields.io/badge/Release-v3.0.1-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v3.0.1)
+[![Release v3.0.2](https://img.shields.io/badge/Release-v3.0.2-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v3.0.2)
 [![CI](https://img.shields.io/github/actions/workflow/status/sunmughan/Mobile-Harness-Extended/android.yml?branch=v3&style=flat-square&label=CI)](https://github.com/sunmughan/Mobile-Harness-Extended/actions)
 [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#-system-requirements)
 [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#-system-requirements)
@@ -18,8 +18,8 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 <br/>
 
-[**Download Online APK**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v3.0.1/app-online-release.apk) &nbsp;·&nbsp;
-[**Download Offline APK**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v3.0.1/app-offline-release.apk) &nbsp;·&nbsp;
+[**Download Online APK**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v3.0.2/app-online-release.apk) &nbsp;·&nbsp;
+[**Download Offline APK**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v3.0.2/app-offline-release.apk) &nbsp;·&nbsp;
 [**Installation**](#-installation) &nbsp;·&nbsp;
 [**Build from Source**](#-building-from-source) &nbsp;·&nbsp;
 [**Configuration**](#-configuration)
@@ -64,6 +64,7 @@ Both editions share the same application ID (`com.codeair.mhe`) and the same fea
 ### 📝 Mobile IDE
 
 - **Multi-tab code workspace** with pinned tabs and state restoration across Android backgrounding
+- **Built-in file manager**: browse, create, rename, and organize project files without leaving the app
 - **Touch-optimized coding toolbar**: auto-pairing brackets, indent controls, comment toggling, quick cursor navigation
 - **Universal command palette** for instant navigation between files, chats, terminals, git diffs, and tools
 - **Global search and replace** with regex, case sensitivity, and preview-before-replace
@@ -78,7 +79,9 @@ Both editions share the same application ID (`com.codeair.mhe`) and the same fea
 
 ### 🧠 AI Coding Assistance
 
+- **In-app AI chat**: conversational assistant for coding questions, explanations, and project help, right inside the app
 - **Multi-provider gateway**: Anthropic Claude, DeepSeek, OpenRouter, and OpenAI-compatible endpoints with automatic 401/quota failover across accounts
+- **Multiple Google accounts** with auto round-robin switching when quota or rate limits are hit
 - **Intent classification** (bug fix, feature, refactor, review, explanation, test writing)
 - **Context engine** with token-budget-aware relevance ranking over symbols, diffs, and error traces
 - **Persistent project memory** retaining architectural decisions and bug history across sessions
@@ -160,7 +163,7 @@ The app runs 100% in rootless userspace. No root, no custom ROM, no special perm
 
 ## 📲 Installation
 
-1. Go to the [v3.0.1 release page](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v3.0.1).
+1. Go to the [v3.0.2 release page](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v3.0.2).
 2. Download the edition you want:
    - `app-online-release.apk` - lightweight, downloads runtimes on demand
    - `app-offline-release.apk` - everything bundled, works offline after install
@@ -168,7 +171,7 @@ The app runs 100% in rootless userspace. No root, no custom ROM, no special perm
 4. Open the APK and tap **Install**.
 5. (Online edition) On first launch, the app downloads the verified Linux runtime stacks. Keep the app open and on Wi-Fi during this step.
 
-To update, simply install the newer APK over the existing one. Your projects and settings are preserved (the release APKs are signed with the same permanent release key, so in-place updates always work).
+To update, simply install the newer APK over the existing one. Your projects and settings are preserved (the release APKs are signed with the same permanent release key, so in-place updates always work). The app also checks for new releases on its own and notifies you when an update is available.
 
 ---
 
@@ -378,7 +381,7 @@ Mobile-Harness-Extended/
 
 ```
 +-------------------------------------------------------------------+
-|              Mobile Harness Extended (v3.0.1)                      |
+|              Mobile Harness Extended (v3.0.2)                      |
 |                                                                    |
 |  +------------------+  +-----------------+  +------------------+   |
 |  | Mobile IDE       |  | Visual DevTools |  | Android App      |   |
