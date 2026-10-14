@@ -6,6 +6,7 @@ import com.codeair.mhe.cloud.exec.CloudExecutionClient
 import com.codeair.mhe.cloud.exec.CloudExecutionOrchestrator
 import com.codeair.mhe.cloud.exec.CloudPayloadUploader
 import com.codeair.mhe.cloud.exec.CloudTransportResponse
+import com.codeair.mhe.cloud.exec.StreamedDownload
 import com.codeair.mhe.cloud.model.CloudWorkerSpec
 import com.codeair.mhe.cloud.model.ExecutionTarget
 import com.codeair.mhe.cloud.model.HybridExecutionJob
@@ -65,7 +66,16 @@ class CloudExecutionOrchestratorTest {
     /** Scripted happy-path transport: upload -> submit -> RUNNING -> SUCCEEDED -> artifact. */
     private fun happyTransport(): FakeCloudTransport {
         val statusCalls = AtomicInteger(0)
-        return FakeCloudTransport { req ->
+        return FakeCloudTransport(
+            downloadHandler = { req, dest ->
+                if (req.path == "/api/v1/jobs/remote-1/artifacts/art-1" && req.method == "GET") {
+                    dest.writeBytes(payload)
+                    StreamedDownload(200, null, payload.size.toLong())
+                } else {
+                    StreamedDownload(404, "not found", 0)
+                }
+            },
+            handler = { req ->
             val p = req.path
             when {
                 p.startsWith("/api/v1/payloads/") && req.method == "GET" -> CloudTransportResponse(404, "{}")
@@ -81,11 +91,10 @@ class CloudExecutionOrchestratorTest {
                         200,
                         """{"artifacts":[{"id":"art-1","filename":"app.apk","sizeBytes":${payload.size},"sha256":"$payloadSha256"}]}"""
                     )
-                p == "/api/v1/jobs/remote-1/artifacts/art-1" && req.method == "GET" ->
-                    CloudTransportResponse(200, "ok", payload)
                 else -> CloudTransportResponse(404, "{}")
             }
-        }
+            }
+        )
     }
 
     private fun orchestratorWith(transport: FakeCloudTransport, costController: CloudCostController = CloudCostController()): CloudExecutionOrchestrator {
