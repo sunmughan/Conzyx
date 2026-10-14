@@ -57,6 +57,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.codeair.mhe.ui.theme.PocketGreen
 import com.codeair.mhe.ui.theme.PocketOrange
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -108,8 +109,13 @@ fun MarkdownText(
     }
 
     if (blocks.isEmpty() && markdown.isNotBlank()) {
+        val fallbackText = if (markdown.length > 2_000) {
+            markdown.take(2_000) + "\n\n… (content truncated)"
+        } else {
+            markdown
+        }
         Text(
-            text = markdown.take(2_000),
+            text = fallbackText,
             modifier = modifier,
             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
             color = color,
@@ -210,7 +216,7 @@ private fun QuoteBlock(quote: MarkdownBlock.BlockQuote, onOpenUri: ((String) -> 
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(24.dp)
+                .fillMaxHeight()
                 .background(PocketOrange, RoundedCornerShape(2.dp)),
         )
         Spacer(Modifier.width(10.dp))
@@ -313,16 +319,16 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF14171E),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color(0xFF2A2E39), RoundedCornerShape(12.dp)),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
     ) {
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1C202B))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
@@ -331,7 +337,7 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                     text = block.language.ifBlank { "code" },
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF94A3B8),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -362,7 +368,7 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                         Icon(
                             imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                             contentDescription = if (copied) "Copied" else "Copy code",
-                            tint = if (copied) Color(0xFF4ADE80) else Color(0xFF94A3B8),
+                            tint = if (copied) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(14.dp),
                         )
                     }
@@ -380,7 +386,7 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
-                    color = Color(0xFFE2E8F0),
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
