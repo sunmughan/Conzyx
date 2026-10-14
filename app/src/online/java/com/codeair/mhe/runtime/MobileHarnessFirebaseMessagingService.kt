@@ -34,10 +34,10 @@ class MobileHarnessFirebaseMessagingService : FirebaseMessagingService() {
         )
     }
 
-    @Suppress("OVERRIDE_DEPRECATION")
-    override fun onNewToken(token: String) {
-        PushTokenStore.save(this, token)
-    }
+    // QA Medium: the FCM registration token used to be persisted here via
+    // PushTokenStore, but nothing ever read it and no server ever received
+    // it — the store is deleted, so there is nothing to save. (Push
+    // delivery does not depend on local token persistence.)
 
     companion object {
         private const val MAX_TITLE_LENGTH = 120

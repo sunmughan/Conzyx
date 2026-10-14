@@ -145,7 +145,9 @@ class ProviderApiClient {
         connectTimeoutMs: Int = 12_000,
         readTimeoutMs: Int = 20_000,
     ): HttpResult {
-        return runCatching {
+        // Explicit type arg: the while(true) tail would otherwise widen
+        // the inferred Result type to Any.
+        return runCatching<HttpResult> {
             // QA Medium: one transient 429/5xx used to be final. Retry
             // with backoff, honoring the server's Retry-After header.
             var attempt = 0
