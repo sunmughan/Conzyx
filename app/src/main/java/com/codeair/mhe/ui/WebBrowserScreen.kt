@@ -123,6 +123,60 @@ private val BrowserTabsStateSaver = Saver<MutableState<List<BrowserTab>>, List<S
     restore = { saved -> mutableStateOf(restoreTabsFromJson(saved)) },
 )
 
+private fun saveHistoryToJson(items: List<BrowserHistoryItem>): List<String> {
+    return items.map { item ->
+        org.json.JSONObject()
+            .put("title", item.title)
+            .put("url", item.url)
+            .put("timestamp", item.timestamp)
+            .toString()
+    }
+}
+
+private fun restoreHistoryFromJson(saved: List<String>): List<BrowserHistoryItem> {
+    return saved.mapNotNull { encoded ->
+        runCatching {
+            val json = org.json.JSONObject(encoded)
+            BrowserHistoryItem(
+                title = json.optString("title"),
+                url = json.optString("url"),
+                timestamp = json.optLong("timestamp", System.currentTimeMillis()),
+            )
+        }.getOrNull()
+    }
+}
+
+private fun saveBookmarksToJson(items: List<BrowserBookmark>): List<String> {
+    return items.map { item ->
+        org.json.JSONObject()
+            .put("title", item.title)
+            .put("url", item.url)
+            .toString()
+    }
+}
+
+private fun restoreBookmarksFromJson(saved: List<String>): List<BrowserBookmark> {
+    return saved.mapNotNull { encoded ->
+        runCatching {
+            val json = org.json.JSONObject(encoded)
+            BrowserBookmark(
+                title = json.optString("title"),
+                url = json.optString("url"),
+            )
+        }.getOrNull()
+    }
+}
+
+private val BrowserHistoryStateSaver = Saver<MutableState<List<BrowserHistoryItem>>, List<String>>(
+    save = { state -> saveHistoryToJson(state.value) },
+    restore = { saved -> mutableStateOf(restoreHistoryFromJson(saved)) },
+)
+
+private val BrowserBookmarksStateSaver = Saver<MutableState<List<BrowserBookmark>>, List<String>>(
+    save = { state -> saveBookmarksToJson(state.value) },
+    restore = { saved -> mutableStateOf(restoreBookmarksFromJson(saved)) },
+)
+
 private data class BrowserHistoryItem(
     val title: String,
     val url: String,
@@ -280,8 +334,8 @@ fun PreviewTab(
     var findMatchTotal by remember { mutableIntStateOf(0) }
 
     // History & Bookmarks state
-    var historyList by remember { mutableStateOf(listOf<BrowserHistoryItem>()) }
-    var bookmarksList by remember { mutableStateOf(listOf<BrowserBookmark>()) }
+    var historyList by rememberSaveable(saver = BrowserHistoryStateSaver) { mutableStateOf(listOf<BrowserHistoryItem>()) }
+    var bookmarksList by rememberSaveable(saver = BrowserBookmarksStateSaver) { mutableStateOf(listOf<BrowserBookmark>()) }
 
     // Custom Extension / User Script runner
     var customScriptText by remember { mutableStateOf("") }

@@ -123,8 +123,9 @@ fun TerminalScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var commandInput by remember { mutableStateOf(TextFieldValue()) }
-    var commandHistory by remember { mutableStateOf(emptyList<String>()) }
-    var historyIndex by remember { mutableStateOf(-1) }
+    var commandHistory by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var historyIndex by rememberSaveable { mutableStateOf(-1) }
+    var escClearedBuffer by rememberSaveable { mutableStateOf("") }
     var altActive by rememberSaveable { mutableStateOf(false) }
     var ctrlActive by rememberSaveable { mutableStateOf(false) }
     val terminalScrollState = rememberScrollState()
