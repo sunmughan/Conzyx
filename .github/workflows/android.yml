@@ -384,7 +384,7 @@ jobs:
           AAB_SIZE=$(stat -c '%s' "$AAB")
           export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
           cat > release-notes.md <<EOF
-          ## Mobile Harness Extended $TAG
+          ## Conzyx $TAG
 
           ### Highlights in this build
           - **Multimodal YouTube Video Understanding via Gemini**:
@@ -420,8 +420,8 @@ jobs:
           The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
           EOF
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "Mobile Harness Extended $TAG" --notes-file release-notes.md
-          gh release edit "$TAG" --title "Mobile Harness Extended $TAG" --notes-file release-notes.md
+            gh release create "$TAG" --title "Conzyx $TAG" --notes-file release-notes.md
+          gh release edit "$TAG" --title "Conzyx $TAG" --notes-file release-notes.md
           python3 - <<'PY'
           import json, os
           with open("dist/runtime-bundles/manifest.json") as handle:
@@ -452,7 +452,7 @@ jobs:
               "versionName": version_name,
               "channel": "stable",
               "notes": (
-                  f"Mobile Harness Extended {tag} — verified latest runtime assets and toolchain update controls. "
+                  f"Conzyx {tag} — verified latest runtime assets and toolchain update controls. "
                   "Runtime bundles are resolved from the latest non-prerelease upstream runtime release and SHA-256 verified during CI. "
                   "PHP uses the online Ubuntu package path with the PHP 8.4 package source and latest Composer release."
               ),
