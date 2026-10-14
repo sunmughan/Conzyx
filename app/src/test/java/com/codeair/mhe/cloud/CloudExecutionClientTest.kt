@@ -21,7 +21,6 @@ import java.security.MessageDigest
 class FakeCloudTransport(
     private val downloadHandler: (CloudTransportRequest, File) -> StreamedDownload =
         { _, dest -> dest.writeBytes(ByteArray(0)); StreamedDownload(200, null, 0) },
-    // NOTE: handler is last so existing trailing-lambda call sites keep binding here.
     private val handler: (CloudTransportRequest) -> CloudTransportResponse = { CloudTransportResponse(404, "{}") },
 ) : CloudHttpTransport {
     val seen = mutableListOf<CloudTransportRequest>()
