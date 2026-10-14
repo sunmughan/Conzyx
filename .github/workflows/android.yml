@@ -199,8 +199,9 @@ jobs:
         run: ./gradlew --no-daemon --stacktrace assembleOfflineRelease
 
 
-      - name: Compile online release AAB (Play Store)
-        run: ./gradlew --no-daemon --stacktrace bundleOnlineRelease -PplayBuild=true
+      # TEMP-DISABLED for bugfix phase (user 2026-10-14): AAB not needed until testing is production-ready
+#       - name: Compile online release AAB (Play Store)
+#         run: ./gradlew --no-daemon --stacktrace bundleOnlineRelease -PplayBuild=true
 
 
       - name: Verify release APK signatures and alignment
@@ -342,172 +343,174 @@ jobs:
           if-no-files-found: warn
           path: emulator-logs/
 
-      - name: Upload release APKs
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-harness-release-apks
-          if-no-files-found: warn
-          path: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/bundle/**/*.aab
+      # TEMP-DISABLED for bugfix phase (user 2026-10-14): no artifact upload until testing is production-ready
+#       - name: Upload release APKs
+#         continue-on-error: true
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: mobile-harness-release-apks
+#           if-no-files-found: warn
+#           path: |
+#             app/build/outputs/apk/**/*.apk
+#             app/build/outputs/bundle/**/*.aab
 
       # Every successful main-branch build publishes the freshly verified online/offline APKs to the current release.
       # Header layout release 1.0.12.
       # Release publication marker for the verified build.
 
-      - name: Publish release assets
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2' || github.ref == 'refs/heads/v3'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euxo pipefail
-          VERSION_NAME=$(sed -n 's/.*val appVersionName = .*?: "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
-          VERSION_CODE=$(awk -F'= ' '/versionCode = / {print $2; exit}' app/build.gradle.kts)
-          TAG="v$VERSION_NAME"
-          ONLINE="app-online-release.apk"
-          OFFLINE="app-offline-release.apk"
-          AAB="app-online-release.aab"
-          cp app/build/outputs/apk/online/release/app-online-release.apk "$ONLINE"
-          cp app/build/outputs/apk/offline/release/app-offline-release.apk "$OFFLINE"
-          cp app/build/outputs/bundle/onlineRelease/app-online-release.aab "$AAB"
-          ONLINE_SHA=$(sha256sum "$ONLINE" | awk '{print $1}')
-          OFFLINE_SHA=$(sha256sum "$OFFLINE" | awk '{print $1}')
-          AAB_SHA=$(sha256sum "$AAB" | awk '{print $1}')
-          ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
-          OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
-          AAB_SIZE=$(stat -c '%s' "$AAB")
-          export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
-          cat > release-notes.md <<EOF
+      # TEMP-DISABLED for bugfix phase (user 2026-10-14): no release publication until testing is production-ready
+#       - name: Publish release assets
+#         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2' || github.ref == 'refs/heads/v3'
+#         env:
+#           GH_TOKEN: ${{ github.token }}
+#         shell: bash
+#         run: |
+#           set -euxo pipefail
+#           VERSION_NAME=$(sed -n 's/.*val appVersionName = .*?: "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+#           VERSION_CODE=$(awk -F'= ' '/versionCode = / {print $2; exit}' app/build.gradle.kts)
+#           TAG="v$VERSION_NAME"
+#           ONLINE="app-online-release.apk"
+#           OFFLINE="app-offline-release.apk"
+#           AAB="app-online-release.aab"
+#           cp app/build/outputs/apk/online/release/app-online-release.apk "$ONLINE"
+#           cp app/build/outputs/apk/offline/release/app-offline-release.apk "$OFFLINE"
+#           cp app/build/outputs/bundle/onlineRelease/app-online-release.aab "$AAB"
+#           ONLINE_SHA=$(sha256sum "$ONLINE" | awk '{print $1}')
+#           OFFLINE_SHA=$(sha256sum "$OFFLINE" | awk '{print $1}')
+#           AAB_SHA=$(sha256sum "$AAB" | awk '{print $1}')
+#           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
+#           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
+#           AAB_SIZE=$(stat -c '%s' "$AAB")
+#           export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
+#           cat > release-notes.md <<EOF
           ## Mobile Harness Extended $TAG
 
           ### Highlights in this build
-          - **Multimodal YouTube Video Understanding via Gemini**:
-            - Dedicated YouTube action button positioned next to the Mic icon in the chat prompt bar (\`ChatTab\`).
-            - Strict URL validation engine (\`YouTubeUrlValidator\`) enforcing valid YouTube URLs (\`watch?v=\`, \`youtu.be/\`, \`shorts/\`, \`live/\`) with clean video ID extraction and strict non-YouTube domain rejection.
-            - Interactive \`YouTubeVideoDialog\` with one-tap clipboard paste, live validation badges, focus presets (*Full Deep Summary*, *Key Takeaways & Timestamps*, *Action Items & Tutorial*, *Code & Technical Walkthrough*), and custom query input.
-            - Multi-modal prompt orchestrator sending deep video comprehension requests directly to Google Gemini models.
-          - **Expanded High-Impact & Daily-Life Skills Suite (17 Skills)**:
-            - Added \`anyps5-director\` (native PS5 ELF relinker & Vulkan SPIR-V shader recompiler without emulation).
-            - Added \`youtube-video-intel\` (deep multimodal video understanding and chaptering).
-            - Added \`fridge-vision-chef\` (computer vision meal planning and macro calculator from fridge/pantry photos).
-            - Added \`receipt-expense-sleuth\` (OCR invoice & receipt auditor with hidden subscription spike detection).
-            - Added \`contract-legal-buster\` (rental lease & contract auditor with plain-language risk scoring).
-            - Added \`smarthome-iot-commander\` (Home Assistant / ESPHome smart home orchestrator).
-            - Added \`academic-paper-architect\` (PhD research paper and journal writing assistant with LaTeX/BibTeX templates and peer-review rebuttals).
-            - Added \`document-transmuter\` (universal Markdown, PDF, DOCX, LaTeX conversion engine).
-            - Added \`marp-presentation-deck\` (Marp/RevealJS interactive presentation slide generator).
-            - Added \`creative-image-director\` (cinematographic prompt engineering and SVG vector synthesis).
-            - Added \`viral-growth-creator\` (social media and account growth engine for YouTube, X threads, and LinkedIn carousels).
-            - Added \`fullstack-dev-accelerator\` (fullstack architecture design, AST refactoring, unit tests, CI/CD pipelines).
-            - All skills configured with canonical GitHub upstream sources for one-tap in-app updates in the Skills screen.
-          - **Standalone Systems In-App Browser Shortcuts**:
-            - Direct quick-launch cards in Chromium preview homescreen for Hermes 3D, OpenGym, TikTok 5.6B Videos, GitFrames, Auto-Social, and Munder Difflin.
-          - **Clean Architecture & Repository Cleanup**:
-            - Completely purged deprecated experimental e-commerce code.
-            - Removed committed release notes \`.md\` files from git history and enforced \`.gitignore\` exclusion; release notes are now published directly to GitHub Releases.
+#           - **Multimodal YouTube Video Understanding via Gemini**:
+#             - Dedicated YouTube action button positioned next to the Mic icon in the chat prompt bar (\`ChatTab\`).
+#             - Strict URL validation engine (\`YouTubeUrlValidator\`) enforcing valid YouTube URLs (\`watch?v=\`, \`youtu.be/\`, \`shorts/\`, \`live/\`) with clean video ID extraction and strict non-YouTube domain rejection.
+#             - Interactive \`YouTubeVideoDialog\` with one-tap clipboard paste, live validation badges, focus presets (*Full Deep Summary*, *Key Takeaways & Timestamps*, *Action Items & Tutorial*, *Code & Technical Walkthrough*), and custom query input.
+#             - Multi-modal prompt orchestrator sending deep video comprehension requests directly to Google Gemini models.
+#           - **Expanded High-Impact & Daily-Life Skills Suite (17 Skills)**:
+#             - Added \`anyps5-director\` (native PS5 ELF relinker & Vulkan SPIR-V shader recompiler without emulation).
+#             - Added \`youtube-video-intel\` (deep multimodal video understanding and chaptering).
+#             - Added \`fridge-vision-chef\` (computer vision meal planning and macro calculator from fridge/pantry photos).
+#             - Added \`receipt-expense-sleuth\` (OCR invoice & receipt auditor with hidden subscription spike detection).
+#             - Added \`contract-legal-buster\` (rental lease & contract auditor with plain-language risk scoring).
+#             - Added \`smarthome-iot-commander\` (Home Assistant / ESPHome smart home orchestrator).
+#             - Added \`academic-paper-architect\` (PhD research paper and journal writing assistant with LaTeX/BibTeX templates and peer-review rebuttals).
+#             - Added \`document-transmuter\` (universal Markdown, PDF, DOCX, LaTeX conversion engine).
+#             - Added \`marp-presentation-deck\` (Marp/RevealJS interactive presentation slide generator).
+#             - Added \`creative-image-director\` (cinematographic prompt engineering and SVG vector synthesis).
+#             - Added \`viral-growth-creator\` (social media and account growth engine for YouTube, X threads, and LinkedIn carousels).
+#             - Added \`fullstack-dev-accelerator\` (fullstack architecture design, AST refactoring, unit tests, CI/CD pipelines).
+#             - All skills configured with canonical GitHub upstream sources for one-tap in-app updates in the Skills screen.
+#           - **Standalone Systems In-App Browser Shortcuts**:
+#             - Direct quick-launch cards in Chromium preview homescreen for Hermes 3D, OpenGym, TikTok 5.6B Videos, GitFrames, Auto-Social, and Munder Difflin.
+#           - **Clean Architecture & Repository Cleanup**:
+#             - Completely purged deprecated experimental e-commerce code.
+#             - Removed committed release notes \`.md\` files from git history and enforced \`.gitignore\` exclusion; release notes are now published directly to GitHub Releases.
 
           ### Release files
-          - **Online Release:** app-online-release.apk
-          - **Offline Release:** app-offline-release.apk
-          - **Play Store Bundle:** app-online-release.aab (signed, upload-ready for Google Play)
+#           - **Online Release:** app-online-release.apk
+#           - **Offline Release:** app-offline-release.apk
+#           - **Play Store Bundle:** app-online-release.aab (signed, upload-ready for Google Play)
 
-          The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
-          EOF
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "Mobile Harness Extended $TAG" --notes-file release-notes.md
-          gh release edit "$TAG" --title "Mobile Harness Extended $TAG" --notes-file release-notes.md
-          python3 - <<'PY'
-          import json, os
-          with open("dist/runtime-bundles/manifest.json") as handle:
-              bundles = json.load(handle)
-          version_code = int(os.environ["VERSION_CODE"])
-          version_name = os.environ["VERSION_NAME"]
-          tag = os.environ["TAG"]
+#           The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
+#           EOF
+#           gh release view "$TAG" >/dev/null 2>&1 || \
+#             gh release create "$TAG" --title "Mobile Harness Extended $TAG" --notes-file release-notes.md
+#           gh release edit "$TAG" --title "Mobile Harness Extended $TAG" --notes-file release-notes.md
+#           python3 - <<'PY'
+#           import json, os
+#           with open("dist/runtime-bundles/manifest.json") as handle:
+#               bundles = json.load(handle)
+#           version_code = int(os.environ["VERSION_CODE"])
+#           version_name = os.environ["VERSION_NAME"]
+#           tag = os.environ["TAG"]
 
-          def component(cid, label, key, notes):
-              item = bundles[key]
-              return {
-                  "id": cid,
-                  "label": label,
-                  "version": item["version"],
-                  "packageUrl": "",
-                  "sha256": item["sha256"],
-                  "sizeBytes": item["sizeBytes"],
-                  "status": "stable",
-                  "minRuntimeGeneration": 1,
-                  "activeLink": "",
-                  "healthCommand": "",
-                  "notes": notes,
-              }
+#           def component(cid, label, key, notes):
+#               item = bundles[key]
+#               return {
+#                   "id": cid,
+#                   "label": label,
+#                   "version": item["version"],
+#                   "packageUrl": "",
+#                   "sha256": item["sha256"],
+#                   "sizeBytes": item["sizeBytes"],
+#                   "status": "stable",
+#                   "minRuntimeGeneration": 1,
+#                   "activeLink": "",
+#                   "healthCommand": "",
+#                   "notes": notes,
+#               }
 
-          manifest = {
-              "schemaVersion": 2,
-              "versionCode": version_code,
-              "versionName": version_name,
-              "channel": "stable",
-              "notes": (
-                  f"Mobile Harness Extended {tag} — verified latest runtime assets and toolchain update controls. "
-                  "Runtime bundles are resolved from the latest non-prerelease upstream runtime release and SHA-256 verified during CI. "
-                  "PHP uses the online Ubuntu package path with the PHP 8.4 package source and latest Composer release."
-              ),
-              "artifacts": {
-                  "online": {
-                      "url": f"https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/{tag}/app-online-release.apk",
-                      "sha256": os.environ["ONLINE_SHA"],
-                      "sizeBytes": int(os.environ["ONLINE_SIZE"]),
-                  },
-                  "offline": {
-                      "url": f"https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/{tag}/app-offline-release.apk",
-                      "sha256": os.environ["OFFLINE_SHA"],
-                      "sizeBytes": int(os.environ["OFFLINE_SIZE"]),
-                  },
-              },
-              "components": [
-                  component("core", "Core tools", "core", "Latest verified ARM64 core runtime bundle."),
-                  component("python", "Python", "python", "Latest verified ARM64 Python runtime bundle."),
-                  component("android", "Android SDK / Build Tools / Gradle", "android", "Latest verified ARM64 Android runtime bundle."),
-                  component("claude", "Claude Code", "claude", "Latest verified ARM64 Claude Code bundle."),
-                  component("deepseek", "DeepSeek Harness", "dsh", "Latest verified ARM64 DeepSeek Harness bundle."),
-                  component("antigravity", "Antigravity CLI", "agy", "Latest verified ARM64 Antigravity CLI bundle."),
-                  {
-                      "id": "php",
-                      "label": "PHP",
-                      "version": "8.4",
-                      "packageUrl": "",
-                      "sha256": "",
-                      "sizeBytes": 0,
-                      "status": "online-only",
-                      "minRuntimeGeneration": 1,
-                      "activeLink": "",
-                      "healthCommand": "php --version && composer --version",
-                      "notes": "PHP 8.4 package source via Ondřej PHP PPA for the Ubuntu 20.04 ARM64 runtime; Composer uses the official latest-stable release.",
-                  },
-              ],
-          }
-          with open("mobile-harness-update.json", "w") as handle:
-              json.dump(manifest, handle, indent=2)
-              handle.write("\n")
-          PY
+#           manifest = {
+#               "schemaVersion": 2,
+#               "versionCode": version_code,
+#               "versionName": version_name,
+#               "channel": "stable",
+#               "notes": (
+#                   f"Mobile Harness Extended {tag} — verified latest runtime assets and toolchain update controls. "
+#                   "Runtime bundles are resolved from the latest non-prerelease upstream runtime release and SHA-256 verified during CI. "
+#                   "PHP uses the online Ubuntu package path with the PHP 8.4 package source and latest Composer release."
+#               ),
+#               "artifacts": {
+#                   "online": {
+#                       "url": f"https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/{tag}/app-online-release.apk",
+#                       "sha256": os.environ["ONLINE_SHA"],
+#                       "sizeBytes": int(os.environ["ONLINE_SIZE"]),
+#                   },
+#                   "offline": {
+#                       "url": f"https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/{tag}/app-offline-release.apk",
+#                       "sha256": os.environ["OFFLINE_SHA"],
+#                       "sizeBytes": int(os.environ["OFFLINE_SIZE"]),
+#                   },
+#               },
+#               "components": [
+#                   component("core", "Core tools", "core", "Latest verified ARM64 core runtime bundle."),
+#                   component("python", "Python", "python", "Latest verified ARM64 Python runtime bundle."),
+#                   component("android", "Android SDK / Build Tools / Gradle", "android", "Latest verified ARM64 Android runtime bundle."),
+#                   component("claude", "Claude Code", "claude", "Latest verified ARM64 Claude Code bundle."),
+#                   component("deepseek", "DeepSeek Harness", "dsh", "Latest verified ARM64 DeepSeek Harness bundle."),
+#                   component("antigravity", "Antigravity CLI", "agy", "Latest verified ARM64 Antigravity CLI bundle."),
+#                   {
+#                       "id": "php",
+#                       "label": "PHP",
+#                       "version": "8.4",
+#                       "packageUrl": "",
+#                       "sha256": "",
+#                       "sizeBytes": 0,
+#                       "status": "online-only",
+#                       "minRuntimeGeneration": 1,
+#                       "activeLink": "",
+#                       "healthCommand": "php --version && composer --version",
+#                       "notes": "PHP 8.4 package source via Ondřej PHP PPA for the Ubuntu 20.04 ARM64 runtime; Composer uses the official latest-stable release.",
+#                   },
+#               ],
+#           }
+#           with open("mobile-harness-update.json", "w") as handle:
+#               json.dump(manifest, handle, indent=2)
+#               handle.write("\n")
+#           PY
 
-          gh release upload "$TAG" "$ONLINE" "$OFFLINE" "$AAB" mobile-harness-update.json --clobber
-          gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
-          gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
+#           gh release upload "$TAG" "$ONLINE" "$OFFLINE" "$AAB" mobile-harness-update.json --clobber
+#           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
+#           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
           # The app's first-run install and runtime-bundle updates resolve
           # bundles from this repo's own releases (RUNTIME_RELEASE_BASE_URL /
           # latestRuntimeBundle) — never from the upstream author's repo. The
           # tar.zst files below are the SHA-256-verified bundles fetched at
           # the start of this job. Skip re-upload when the asset is already
           # on the release so routine pushes don't re-push ~700 MB.
-          EXISTING_ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
-          for bundle in dist/runtime-bundles/*.tar.zst; do
-            name=$(basename "$bundle")
-            if printf '%s\n' "$EXISTING_ASSETS" | grep -qx "$name"; then
-              echo "Bundle already on release $TAG: $name"
-            else
-              gh release upload "$TAG" "$bundle"
-            fi
-          done
+#           EXISTING_ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+#           for bundle in dist/runtime-bundles/*.tar.zst; do
+#             name=$(basename "$bundle")
+#             if printf '%s\n' "$EXISTING_ASSETS" | grep -qx "$name"; then
+#               echo "Bundle already on release $TAG: $name"
+#             else
+#               gh release upload "$TAG" "$bundle"
+#             fi
+#           done
 
 # publish-current-release
