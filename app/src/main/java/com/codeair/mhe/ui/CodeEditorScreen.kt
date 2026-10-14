@@ -343,17 +343,21 @@ fun CodeEditorScreen(
             onShowToast("Place the cursor on a symbol to go to its definition.")
             return
         }
-        if (workspaceDir == null) {
+        val dir = workspaceDir
+        if (dir == null) {
             onShowToast("No workspace open.")
             return
         }
-        val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
-            it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+        scope.launch {
+            val target = withContext(Dispatchers.IO) {
+                val files = dir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
+                    it.relativeTo(dir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+                }
+                val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+                SemanticCodeEngine.findDefinitions(sym, summaries, exactMatch = true).firstOrNull()
+            } ?: return@launch
+            onNavigateToFileLine?.invoke(File(dir, target.first).absolutePath, target.second.line)
         }
-        val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
-        val defs = SemanticCodeEngine.findDefinitions(sym, summaries, exactMatch = true)
-        val target = defs.firstOrNull() ?: return
-        onNavigateToFileLine?.invoke(File(workspaceDir, target.first).absolutePath, target.second.line)
     }
 
     fun findReferencesForSymbol() {
@@ -414,36 +418,46 @@ fun CodeEditorScreen(
     fun findImplementationsForSymbol() {
         val sym = getSymbolUnderCursor()
         if (sym.isBlank()) return
-        val graph = if (workspaceDir != null) {
-            val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 800_000 }.take(40).associate {
-                it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+        val dir = workspaceDir
+        scope.launch {
+            val graph = withContext(Dispatchers.IO) {
+                if (dir != null) {
+                    val files = dir.walkTopDown().filter { it.isFile && it.length() < 800_000 }.take(40).associate {
+                        it.relativeTo(dir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+                    }
+                    val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+                    SymbolGraph.buildFromSummaries(summaries)
+                } else {
+                    val summary = SemanticCodeEngine.parseFile(filePath, value.text)
+                    SymbolGraph.buildFromSummaries(listOf(summary))
+                }
             }
-            val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
-            SymbolGraph.buildFromSummaries(summaries)
-        } else {
-            val summary = SemanticCodeEngine.parseFile(filePath, value.text)
-            SymbolGraph.buildFromSummaries(listOf(summary))
+            activeImplementations = graph.getImplementations(sym)
+            implementationsOpen = true
         }
-        activeImplementations = graph.getImplementations(sym)
-        implementationsOpen = true
     }
 
     fun showCallHierarchyForSymbol() {
         val sym = getSymbolUnderCursor()
         if (sym.isBlank()) return
-        val graph = if (workspaceDir != null) {
-            val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 800_000 }.take(40).associate {
-                it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+        val dir = workspaceDir
+        scope.launch {
+            val graph = withContext(Dispatchers.IO) {
+                if (dir != null) {
+                    val files = dir.walkTopDown().filter { it.isFile && it.length() < 800_000 }.take(40).associate {
+                        it.relativeTo(dir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+                    }
+                    val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+                    SymbolGraph.buildFromSummaries(summaries)
+                } else {
+                    val summary = SemanticCodeEngine.parseFile(filePath, value.text)
+                    SymbolGraph.buildFromSummaries(listOf(summary))
+                }
             }
-            val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
-            SymbolGraph.buildFromSummaries(summaries)
-        } else {
-            val summary = SemanticCodeEngine.parseFile(filePath, value.text)
-            SymbolGraph.buildFromSummaries(listOf(summary))
+            activeCallers = graph.getCallers(sym)
+            activeCallees = graph.getCallees(sym)
+            callHierarchyOpen = true
         }
-        activeCallers = graph.getCallers(sym)
-        activeCallees = graph.getCallees(sym)
-        callHierarchyOpen = true
     }
 
     fun toggleFoldAtCursor() {
@@ -1016,13 +1030,13 @@ fun CodeEditorScreen(
                                         onApplyRename(preview)
                                         // Refresh the open buffer from disk.
                                         try {
-                                            val f = File(filePath)
-                                            if (f.exists()) {
-                                                val newContent = f.readText()
-                                                value = TextFieldValue(newContent)
-                                                savedText = newContent
-                                                lastReportedText = newContent
-                                            }
+                                            val newContent = withContext(Dispatchers.IO) {
+                                                val f = File(filePath)
+                                                if (f.exists()) f.readText() else null
+                                            } ?: return@launch
+                                            value = TextFieldValue(newContent)
+                                            savedText = newContent
+                                            lastReportedText = newContent
                                         } catch (_: Exception) {}
                                     }
                                 }
