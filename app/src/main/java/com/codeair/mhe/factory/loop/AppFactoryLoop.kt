@@ -102,7 +102,8 @@ class AppFactoryLoop(
         // --- SCAFFOLD ---
         val scaffoldStarted = System.currentTimeMillis()
         val scaffolded = runCatching { scaffolder(projectDir, blueprint) }
-        if (scaffolded.isFailure || scaffolded.getOrNull().isNullOrEmpty()) {
+        val scaffoldedFiles = scaffolded.getOrNull().orEmpty()
+        if (scaffolded.isFailure || scaffoldedFiles.isEmpty()) {
             record(
                 FactoryStageResult(
                     stage = FactoryStage.SCAFFOLD, success = false,
@@ -115,7 +116,7 @@ class AppFactoryLoop(
         record(
             FactoryStageResult(
                 stage = FactoryStage.SCAFFOLD, success = true,
-                message = "Generated ${scaffolded.getOrNull()!!.size} files for ${blueprint.framework.displayName}.",
+                message = "Generated ${scaffoldedFiles.size} files for ${blueprint.framework.displayName}.",
                 durationMs = System.currentTimeMillis() - scaffoldStarted,
             )
         )

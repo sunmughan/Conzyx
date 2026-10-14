@@ -27,70 +27,70 @@ class AppPreferences(private val context: Context) {
 
     var onboardingComplete: Boolean
         get() = preferences.getBoolean("onboarding_complete", false)
-        set(value) { preferences.edit().putBoolean("onboarding_complete", value).apply() }
+        set(value) { preferences.edit().putBoolean("onboarding_complete", value).commit() }
 
     var appTourCompleted: Boolean
         get() = preferences.getBoolean("app_tour_completed_v3", false)
-        set(value) { preferences.edit().putBoolean("app_tour_completed_v3", value).apply() }
+        set(value) { preferences.edit().putBoolean("app_tour_completed_v3", value).commit() }
 
     /** One-time studio onboarding: shown on first open of each studio, never again after Skip/Exit. */
     var appFactoryOnboardingSeen: Boolean
         get() = preferences.getBoolean("app_factory_onboarding_seen", false)
-        set(value) { preferences.edit().putBoolean("app_factory_onboarding_seen", value).apply() }
+        set(value) { preferences.edit().putBoolean("app_factory_onboarding_seen", value).commit() }
 
     var teamStudioOnboardingSeen: Boolean
         get() = preferences.getBoolean("team_studio_onboarding_seen", false)
-        set(value) { preferences.edit().putBoolean("team_studio_onboarding_seen", value).apply() }
+        set(value) { preferences.edit().putBoolean("team_studio_onboarding_seen", value).commit() }
 
     var cloudHybridOnboardingSeen: Boolean
         get() = preferences.getBoolean("cloud_hybrid_onboarding_seen", false)
-        set(value) { preferences.edit().putBoolean("cloud_hybrid_onboarding_seen", value).apply() }
+        set(value) { preferences.edit().putBoolean("cloud_hybrid_onboarding_seen", value).commit() }
 
     var runtimeSetupComplete: Boolean
         get() = preferences.getBoolean("runtime_setup_complete", false)
-        set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).apply() }
+        set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).commit() }
 
     var backgroundSetupComplete: Boolean
         get() = preferences.getBoolean("background_setup_complete", false)
-        set(value) { preferences.edit().putBoolean("background_setup_complete", value).apply() }
+        set(value) { preferences.edit().putBoolean("background_setup_complete", value).commit() }
 
     /** Coding agent engine the user picked during setup. Absent = pre-agent-choice install → Claude. */
     var agentKind: String
         get() = preferences.getString("agent_kind", AgentKind.CLAUDE_CODE.stableId) ?: AgentKind.CLAUDE_CODE.stableId
-        set(value) { preferences.edit().putString("agent_kind", value).apply() }
+        set(value) { preferences.edit().putString("agent_kind", value).commit() }
 
     /** Agent chosen for the initial runtime installation; used as the leading UI tab. */
     var primaryAgentKind: String
         get() = preferences.getString("primary_agent_kind", "") ?: ""
-        set(value) { preferences.edit().putString("primary_agent_kind", value).apply() }
+        set(value) { preferences.edit().putString("primary_agent_kind", value).commit() }
 
     var antigravityModel: String
         get() = preferences.getString("agent_antigravity_model", "") ?: ""
-        set(value) { preferences.edit().putString("agent_antigravity_model", value).apply() }
+        set(value) { preferences.edit().putString("agent_antigravity_model", value).commit() }
 
     var antigravityEffort: String
         get() = preferences.getString("agent_antigravity_effort", "high") ?: "high"
-        set(value) { preferences.edit().putString("agent_antigravity_effort", value).apply() }
+        set(value) { preferences.edit().putString("agent_antigravity_effort", value).commit() }
 
     var antigravitySignedIn: Boolean
         get() = preferences.getBoolean("agent_antigravity_signed_in", false)
-        set(value) { preferences.edit().putBoolean("agent_antigravity_signed_in", value).apply() }
+        set(value) { preferences.edit().putBoolean("agent_antigravity_signed_in", value).commit() }
 
     var antigravityAccountEmail: String
         get() = preferences.getString("agent_antigravity_account_email", "") ?: ""
-        set(value) { preferences.edit().putString("agent_antigravity_account_email", value).apply() }
+        set(value) { preferences.edit().putString("agent_antigravity_account_email", value).commit() }
 
     var antigravityAutoRoundRobin: Boolean
         get() = preferences.getBoolean("agent_antigravity_auto_round_robin", true)
-        set(value) { preferences.edit().putBoolean("agent_antigravity_auto_round_robin", value).apply() }
+        set(value) { preferences.edit().putBoolean("agent_antigravity_auto_round_robin", value).commit() }
 
     var antigravityAccountsJson: String
         get() = preferences.getString("agent_antigravity_accounts_json", "[]") ?: "[]"
-        set(value) { preferences.edit().putString("agent_antigravity_accounts_json", value).apply() }
+        set(value) { preferences.edit().putString("agent_antigravity_accounts_json", value).commit() }
 
     var githubLogin: String
         get() = preferences.getString("github_login", "") ?: ""
-        set(value) { preferences.edit().putString("github_login", value).apply() }
+        set(value) { preferences.edit().putString("github_login", value).commit() }
 
     fun saveAgentConversation(agent: AgentKind, projectId: String, chatId: String, conversationId: String?) {
         val key = agentConversationKey(agent, projectId, chatId)
@@ -109,7 +109,7 @@ class AppPreferences(private val context: Context) {
                 key.startsWith("agent_conversation_v2_${stable}_")
         }
         if (keys.isEmpty()) return
-        preferences.edit().apply { keys.forEach(::remove) }.apply()
+        preferences.edit().apply { keys.forEach(::remove) }.commit()
     }
 
     private fun agentConversationKey(agent: AgentKind, projectId: String, chatId: String): String {
@@ -122,23 +122,23 @@ class AppPreferences(private val context: Context) {
     /** Pinned dsh version recorded when DeepSeek Harness was installed. */
     var dshVersion: String
         get() = preferences.getString("dsh_version", "") ?: ""
-        set(value) { preferences.edit().putString("dsh_version", value).apply() }
+        set(value) { preferences.edit().putString("dsh_version", value).commit() }
 
     var themeMode: String
         get() = preferences.getString("theme_mode", "dark") ?: "dark"
-        set(value) { preferences.edit().putString("theme_mode", value).apply() }
+        set(value) { preferences.edit().putString("theme_mode", value).commit() }
 
     var legacySeededCredentialRemoved: Boolean
         get() = preferences.getBoolean("legacy_seeded_credential_removed", false)
-        set(value) { preferences.edit().putBoolean("legacy_seeded_credential_removed", value).apply() }
+        set(value) { preferences.edit().putBoolean("legacy_seeded_credential_removed", value).commit() }
 
     var testProviderDefaultsVersion: Int
         get() = preferences.getInt("test_provider_defaults_version", 0)
-        set(value) { preferences.edit().putInt("test_provider_defaults_version", value).apply() }
+        set(value) { preferences.edit().putInt("test_provider_defaults_version", value).commit() }
 
     var lastAppUpdateCheckMillis: Long
         get() = preferences.getLong("last_app_update_check_millis", 0L)
-        set(value) { preferences.edit().putLong("last_app_update_check_millis", value).apply() }
+        set(value) { preferences.edit().putLong("last_app_update_check_millis", value).commit() }
 
     /**
      * Debug-only manifest URL override. Empty in release builds; populated via
@@ -147,17 +147,17 @@ class AppPreferences(private val context: Context) {
      */
     var debugUpdateManifestUrl: String
         get() = preferences.getString("debug_update_manifest_url", "") ?: ""
-        set(value) { preferences.edit().putString("debug_update_manifest_url", value).apply() }
+        set(value) { preferences.edit().putString("debug_update_manifest_url", value).commit() }
 
     /** Custom manifest URL or proxy endpoint override for in-app updates. */
     var updateManifestUrlOverride: String
         get() = preferences.getString("update_manifest_url_override", "") ?: ""
-        set(value) { preferences.edit().putString("update_manifest_url_override", value).apply() }
+        set(value) { preferences.edit().putString("update_manifest_url_override", value).commit() }
 
     /** Optional Personal Access Token / Bearer token for accessing private GitHub repository releases. */
     var updateAuthToken: String
         get() = preferences.getString("update_auth_token", "") ?: ""
-        set(value) { preferences.edit().putString("update_auth_token", value).apply() }
+        set(value) { preferences.edit().putString("update_auth_token", value).commit() }
 
     /** Development stacks the user picked during onboarding (names of DevStack). */
     var selectedDevStacks: Set<String>
@@ -171,20 +171,20 @@ class AppPreferences(private val context: Context) {
         set(value) {
             val arr = JSONArray()
             value.sorted().forEach(arr::put)
-            preferences.edit().putString("selected_dev_stacks", arr.toString()).apply()
+            preferences.edit().putString("selected_dev_stacks", arr.toString()).commit()
         }
 
     var autoUpdateToolsAndSkills: Boolean
         get() = preferences.getBoolean("auto_update_tools_and_skills", false)
-        set(value) { preferences.edit().putBoolean("auto_update_tools_and_skills", value).apply() }
+        set(value) { preferences.edit().putBoolean("auto_update_tools_and_skills", value).commit() }
 
     var lastToolsAutoUpdateCheckMillis: Long
         get() = preferences.getLong("last_tools_auto_update_check_millis", 0L)
-        set(value) { preferences.edit().putLong("last_tools_auto_update_check_millis", value).apply() }
+        set(value) { preferences.edit().putLong("last_tools_auto_update_check_millis", value).commit() }
 
     var executionMode: String
         get() = preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name
-        set(value) { preferences.edit().putString("execution_mode", value).apply() }
+        set(value) { preferences.edit().putString("execution_mode", value).commit() }
 
 
     fun saveProvider(profile: ProviderProfile, agent: AgentKind? = null) {
@@ -205,7 +205,7 @@ class AppPreferences(private val context: Context) {
                 .putString("${prefix}openrouter_order", profile.openRouterProviderOrder)
                 .putBoolean("${prefix}openrouter_allow_fallbacks", profile.openRouterAllowFallbacks)
         }
-        editor.apply()
+        editor.commit()
     }
 
     fun loadProvider(vault: ApiKeyVault, agent: AgentKind? = null): ProviderProfile {
@@ -252,7 +252,7 @@ class AppPreferences(private val context: Context) {
             savedModel in setOf("deepseek-chat", "deepseek-reasoner")
         ) {
             kind.defaultModel.also {
-                preferences.edit().putString("${sourcePrefix}model", it).apply()
+                preferences.edit().putString("${sourcePrefix}model", it).commit()
             }
         } else {
             savedModel
@@ -301,7 +301,7 @@ class AppPreferences(private val context: Context) {
                 put("kind", p.kind.name)
             })
         }
-        preferences.edit().putString("projects_json", arr.toString()).apply()
+        preferences.edit().putString("projects_json", arr.toString()).commit()
     }
 
     fun loadProjects(): List<Project> {
@@ -505,14 +505,14 @@ class AppPreferences(private val context: Context) {
 
     var lastActiveProjectId: String?
         get() = preferences.getString("last_active_project_id", null)?.takeIf { it.isNotBlank() }
-        set(value) { preferences.edit().putString("last_active_project_id", value).apply() }
+        set(value) { preferences.edit().putString("last_active_project_id", value).commit() }
 
     fun getLastActiveChatId(projectId: String): String? {
         return preferences.getString("last_active_chat_id_$projectId", null)?.takeIf { it.isNotBlank() }
     }
 
     fun setLastActiveChatId(projectId: String, chatId: String?) {
-        preferences.edit().putString("last_active_chat_id_$projectId", chatId).apply()
+        preferences.edit().putString("last_active_chat_id_$projectId", chatId).commit()
     }
 
     fun renameProjectChat(projectId: String, chatId: String, newTitle: String) {
@@ -643,7 +643,7 @@ class AppPreferences(private val context: Context) {
     fun setOpenEditorTabs(projectId: String, tabs: List<String>) {
         val arr = org.json.JSONArray()
         tabs.forEach { arr.put(it) }
-        preferences.edit().putString("open_editor_tabs_$projectId", arr.toString()).apply()
+        preferences.edit().putString("open_editor_tabs_$projectId", arr.toString()).commit()
     }
 
     private fun String.toChatTitle(): String {

@@ -208,8 +208,9 @@ class FirebaseAuthRepository(
     override suspend fun deleteAccount(password: String?): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val user = auth.currentUser ?: error("No authenticated user")
-            if (!password.isNullOrBlank() && user.email != null) {
-                val credential = EmailAuthProvider.getCredential(user.email!!, password)
+            val email = user.email
+            if (!password.isNullOrBlank() && email != null) {
+                val credential = EmailAuthProvider.getCredential(email, password)
                 user.reauthenticate(credential).await()
             }
             user.delete().await()

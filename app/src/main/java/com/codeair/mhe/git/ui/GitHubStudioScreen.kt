@@ -570,8 +570,9 @@ private fun CommitsTab(
     val clipboard = LocalClipboardManager.current
     var selectedCommitForReset by remember { mutableStateOf<GitCommitInfo?>(null) }
 
-    if (selectedCommitForReset != null) {
-        val target = selectedCommitForReset!!
+    val commitForReset = selectedCommitForReset
+    if (commitForReset != null) {
+        val target = commitForReset
         AlertDialog(
             onDismissRequest = { selectedCommitForReset = null },
             title = { Text("Reset Branch to ${target.shortHash}") },
@@ -620,7 +621,7 @@ private fun CommitsTab(
             Text("Commit Log (${commits.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
 
-        items(commits) { commit ->
+        items(commits, key = { it.hash }) { commit ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
@@ -766,7 +767,7 @@ private fun IssuesSection(issues: List<GitHubIssue>, onCreateIssue: (String, Str
             }
         }
 
-        items(issues) { issue ->
+        items(issues, key = { it.number }) { issue ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -805,7 +806,7 @@ private fun PullRequestsSection(
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(prs) { pr ->
+        items(prs, key = { it.number }) { pr ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -843,7 +844,7 @@ private fun ActionsSection(runs: List<GitHubWorkflowRun>) {
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(runs) { run ->
+        items(runs, key = { it.id }) { run ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(

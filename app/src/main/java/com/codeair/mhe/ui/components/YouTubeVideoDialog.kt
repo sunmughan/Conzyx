@@ -193,7 +193,7 @@ fun YouTubeVideoDialog(
                                         urlInput = clip
                                     }
                                 },
-                                modifier = Modifier.size(28.dp),
+                                modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentPaste,

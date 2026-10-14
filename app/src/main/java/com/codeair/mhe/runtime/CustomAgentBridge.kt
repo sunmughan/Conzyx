@@ -302,9 +302,9 @@ class CustomAgentBridge(
                     runCatching { onDelta(delta) }
                 }
             }
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                val trimmed = line!!.trim()
+            while (true) {
+                val line = reader.readLine() ?: break
+                val trimmed = line.trim()
                 if (trimmed.isEmpty()) {
                     flushEvent()
                     continue

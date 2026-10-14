@@ -87,7 +87,7 @@ class CustomProviderStore(context: Context) {
     private fun persist(configs: List<CustomProviderConfig>) {
         val array = JSONArray()
         configs.forEach { array.put(it.toJson()) }
-        prefs.edit().putString("configs_json", array.toString()).apply()
+        prefs.edit().putString("configs_json", array.toString()).commit()
         mutableConfigs.value = configs
     }
 

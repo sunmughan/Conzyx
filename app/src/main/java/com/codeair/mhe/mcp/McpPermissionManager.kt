@@ -51,7 +51,37 @@ class McpPermissionManager(
         loadPersisted()
     }
 
+    private val oneTimeApprovals = ConcurrentHashMap<String, Unit>()
+
     fun evaluate(
+        server: McpServerInfo,
+        toolName: String? = null,
+        projectId: String? = null
+    ): McpPermissionDecision {
+        val decision = evaluatePolicy(server, toolName, projectId)
+        if (!decision.allowed && decision.requiresPrompt && toolName != null &&
+            consumeOneTimeApproval(server.id, toolName, projectId)
+        ) {
+            return decision.copy(
+                allowed = true,
+                requiresPrompt = false,
+                reason = "One-time approval granted by the user"
+            )
+        }
+        return decision
+    }
+
+    fun grantOneTimeApproval(serverId: String, toolName: String, projectId: String? = null) {
+        oneTimeApprovals[approvalKey(serverId, toolName, projectId)] = Unit
+    }
+
+    private fun consumeOneTimeApproval(serverId: String, toolName: String, projectId: String?): Boolean =
+        oneTimeApprovals.remove(approvalKey(serverId, toolName, projectId)) != null
+
+    private fun approvalKey(serverId: String, toolName: String, projectId: String?): String =
+        "${projectId.orEmpty()}|$serverId::$toolName"
+
+    private fun evaluatePolicy(
         server: McpServerInfo,
         toolName: String? = null,
         projectId: String? = null

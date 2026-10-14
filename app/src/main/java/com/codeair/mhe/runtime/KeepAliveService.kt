@@ -76,12 +76,14 @@ class KeepAliveService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val openIntent = PendingIntent.getActivity(
-            this,
-            0,
-            packageManager.getLaunchIntentForPackage(packageName),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val openIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
+            PendingIntent.getActivity(
+                this,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Mobile Harness Extended")

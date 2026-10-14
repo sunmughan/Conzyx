@@ -13,6 +13,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
+/** How the user approved a single MCP tool run from the UI. */
+enum class McpToolApproval {
+    ONE_TIME,
+    ALWAYS_ALLOW
+}
+
 /**
  * MCP (Model Context Protocol) domain coordinator (Milestone 1).
  *
@@ -159,6 +165,46 @@ class McpCoordinator(
 
     fun setMcpGlobalPermission(serverId: String, policy: com.codeair.mhe.mcp.McpPermissionPolicy) {
         mcpPermissionManager.setGlobalServerPolicy(serverId, policy)
+    }
+
+    fun mcpToolDecision(
+        serverId: String,
+        toolName: String,
+        projectId: String? = host.state().activeProject?.id
+    ): com.codeair.mhe.mcp.McpPermissionDecision {
+        val server = mcpRegistry.getServer(serverId)
+            ?: return com.codeair.mhe.mcp.McpPermissionDecision(
+                allowed = false,
+                requiresPrompt = false,
+                reason = "MCP server '$serverId' is not installed"
+            )
+        return mcpPermissionManager.evaluate(server, toolName, projectId)
+    }
+
+    fun grantOneTimeMcpToolApproval(
+        serverId: String,
+        toolName: String,
+        projectId: String? = host.state().activeProject?.id
+    ) {
+        mcpPermissionManager.grantOneTimeApproval(serverId, toolName, projectId)
+    }
+
+    fun allowMcpToolAlways(
+        serverId: String,
+        toolName: String,
+        projectId: String? = host.state().activeProject?.id
+    ) {
+        if (projectId != null) {
+            mcpPermissionManager.setProjectToolPolicy(
+                projectId, serverId, toolName,
+                com.codeair.mhe.mcp.McpPermissionPolicy.ALLOW_ALWAYS
+            )
+        } else {
+            mcpPermissionManager.setGlobalToolPolicy(
+                serverId, toolName,
+                com.codeair.mhe.mcp.McpPermissionPolicy.ALLOW_ALWAYS
+            )
+        }
     }
 
     fun loadMcpAuditLogs(limit: Int = 100) {

@@ -114,7 +114,7 @@ fun GitDiffViewer(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(fileDiffs) { fileDiff ->
+                items(fileDiffs, key = { it.newPath ?: it.oldPath ?: "unknown" }) { fileDiff ->
                     val pathKey = fileDiff.newPath ?: fileDiff.oldPath ?: "unknown"
                     val isExpanded = expandedStates[pathKey] ?: true
 

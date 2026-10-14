@@ -542,8 +542,9 @@ fun CodeEditorScreen(
         val text = value.text
         if (text.isEmpty()) return -1
 
-        val range = if (searchInSelection && selectionRangeAtSearch != null) {
-            selectionRangeAtSearch!!
+        val selectionRange = selectionRangeAtSearch
+        val range = if (searchInSelection && selectionRange != null) {
+            selectionRange
         } else {
             TextRange(0, text.length)
         }

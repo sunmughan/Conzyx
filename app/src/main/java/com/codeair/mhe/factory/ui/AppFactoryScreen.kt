@@ -503,7 +503,7 @@ private fun ScaffoldTab(
                     Text("Scaffolded Files (${scaffoldedFiles.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
 
-                items(scaffoldedFiles) { file ->
+                items(scaffoldedFiles, key = { it.absolutePath }) { file ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

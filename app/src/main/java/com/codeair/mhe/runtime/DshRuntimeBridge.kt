@@ -132,8 +132,9 @@ class DshRuntimeBridge(
             openRouterGateway = if (
                 provider.kind == ProviderKind.LLM_ROUTER && provider.openRouterProviders.isNotEmpty()
             ) OpenRouterRoutingGateway(provider, secret).start() else null
-            val route = if (openRouterGateway != null && baseRoute.custom != null) {
-                baseRoute.copy(custom = baseRoute.custom.copy(baseUrl = openRouterGateway!!.url))
+            val gateway = openRouterGateway
+            val route = if (gateway != null && baseRoute.custom != null) {
+                baseRoute.copy(custom = baseRoute.custom.copy(baseUrl = gateway.url))
             } else {
                 baseRoute
             }

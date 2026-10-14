@@ -90,6 +90,7 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.BufferOverflow
@@ -368,6 +369,9 @@ data class AppUiState(
     val mcpSelectedServerId: String? = null,
     val mcpBusy: Boolean = false,
     val mcpMessage: String? = null,
+    val mcpRunResult: com.codeair.mhe.runtime.McpToolCallResult? = null,
+    val mcpRunTarget: String? = null,
+    val mcpRunRunning: Boolean = false,
     val appFactoryBlueprint: com.codeair.mhe.factory.model.AppBlueprint? = null,
     val appFactoryGeneratingBlueprint: Boolean = false,
     val appFactoryScaffolding: Boolean = false,
@@ -1255,6 +1259,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setMcpGlobalPermission(serverId: String, policy: com.codeair.mhe.mcp.McpPermissionPolicy) =
         mcpCoordinator.setMcpGlobalPermission(serverId, policy)
 
+    fun mcpToolDecision(serverId: String, toolName: String): com.codeair.mhe.mcp.McpPermissionDecision =
+        mcpCoordinator.mcpToolDecision(serverId, toolName)
+
+    fun runMcpTool(
+        server: com.codeair.mhe.mcp.McpServerInfo,
+        toolName: String,
+        argsJson: String,
+        approval: com.codeair.mhe.ui.coordinators.McpToolApproval,
+    ) {
+        val projectId = _state.value.activeProject?.id
+        val arguments = runCatching { org.json.JSONObject(argsJson) }.getOrElse {
+            _state.update { it.copy(toastMessage = "Invalid JSON arguments: ${it.message}") }
+            return
+        }
+        val decision = mcpCoordinator.mcpToolDecision(server.id, toolName, projectId)
+        if (!decision.allowed && !decision.requiresPrompt) {
+            _state.update { it.copy(toastMessage = "Tool not allowed: ${decision.reason}") }
+            return
+        }
+        if (approval == com.codeair.mhe.ui.coordinators.McpToolApproval.ALWAYS_ALLOW) {
+            mcpCoordinator.allowMcpToolAlways(server.id, toolName, projectId)
+        } else if (decision.requiresPrompt) {
+            mcpCoordinator.grantOneTimeMcpToolApproval(server.id, toolName, projectId)
+        }
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    mcpRunRunning = true,
+                    mcpRunTarget = "${server.name} -> $toolName",
+                    mcpRunResult = null
+                )
+            }
+            val result = mcpCoordinator.executeMcpTool(server, toolName, arguments, projectId)
+            _state.update { it.copy(mcpRunRunning = false, mcpRunResult = result) }
+        }
+    }
+
+    fun clearMcpRunResult() {
+        _state.update { it.copy(mcpRunResult = null, mcpRunTarget = null) }
+    }
+
     fun loadMcpAuditLogs(limit: Int = 100) =
         mcpCoordinator.loadMcpAuditLogs(limit)
 
@@ -1475,6 +1520,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
+            if (!isActive) return@launch
             result.onSuccess {
                 if (kind == AgentKind.DEEPSEEK_HARNESS) preferences.dshVersion = installer.dshVersion
                 selectAgent(kind)
@@ -1577,6 +1623,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
+            if (!isActive) return@launch
             _state.update { current ->
                 current.copy(
                     installedAgentVersions = installer.installedAgentVersions(),

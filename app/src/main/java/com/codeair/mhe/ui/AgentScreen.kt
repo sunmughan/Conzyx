@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1517,6 +1518,7 @@ private fun AgentAntigravityCard(
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                 .clickable { onLogout() }
                                 .padding(horizontal = 6.dp, vertical = 4.dp),
                         )

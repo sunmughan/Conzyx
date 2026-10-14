@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -48,6 +49,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -75,10 +77,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.mcp.McpAuditEntry
 import com.codeair.mhe.mcp.McpCatalogTemplate
+import com.codeair.mhe.mcp.McpPermissionDecision
 import com.codeair.mhe.mcp.McpServerInfo
+import com.codeair.mhe.runtime.McpToolCallResult
 import com.codeair.mhe.runtime.McpToolDefinition
 import com.codeair.mhe.runtime.SkillInfo
 import com.codeair.mhe.runtime.SkillSearchResult
+import com.codeair.mhe.ui.coordinators.McpToolApproval
+import org.json.JSONObject
+
+@Composable
+private fun successGreen(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
 
 @Composable
 private fun successGreen(): Color =
@@ -112,11 +122,20 @@ fun SkillsScreen(
     onRemoveMcpServer: (String) -> Unit = {},
     onDiscoverMcpTools: (McpServerInfo) -> Unit = {},
     onClearMcpAuditLogs: () -> Unit = {},
+    onCheckMcpToolPermission: (String, String) -> McpPermissionDecision =
+        { _, _ -> McpPermissionDecision(allowed = false, requiresPrompt = false, reason = "") },
+    onRunMcpTool: (McpServerInfo, String, String, McpToolApproval) -> Unit = { _, _, _, _ -> },
+    mcpRunResult: McpToolCallResult? = null,
+    mcpRunTarget: String? = null,
+    mcpRunRunning: Boolean = false,
+    onClearMcpRunResult: () -> Unit = {},
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var githubUrl by rememberSaveable { mutableStateOf("") }
     var showAddCustomMcpDialog by rememberSaveable { mutableStateOf(false) }
+    var runDialogServer by remember { mutableStateOf<McpServerInfo?>(null) }
+    var runDialogTool by remember { mutableStateOf<McpToolDefinition?>(null) }
 
     val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onImportZip)
@@ -202,7 +221,7 @@ fun SkillsScreen(
                             Button(
                                 onClick = { onSearch(query) },
                                 enabled = query.trim().length >= 2 && !busy,
-                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             ) {
@@ -253,7 +272,7 @@ fun SkillsScreen(
                                         githubUrl = ""
                                     },
                                     enabled = githubUrl.startsWith("https://github.com/") && !busy,
-                                    modifier = Modifier.weight(1f).height(36.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 ) {
@@ -262,7 +281,7 @@ fun SkillsScreen(
                                 OutlinedButton(
                                     onClick = { zipLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                                     enabled = !busy,
-                                    modifier = Modifier.weight(1f).height(36.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 ) {
@@ -300,7 +319,7 @@ fun SkillsScreen(
                             OutlinedButton(
                                 onClick = onCheckUpdates,
                                 enabled = !busy,
-                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             ) {
@@ -443,7 +462,11 @@ fun SkillsScreen(
                             busy = mcpBusy,
                             onToggle = { onToggleMcpServer(server.id, it) },
                             onDiscoverTools = { onDiscoverMcpTools(server) },
-                            onRemove = { onRemoveMcpServer(server.id) }
+                            onRemove = { onRemoveMcpServer(server.id) },
+                            onRunTool = { tool ->
+                                runDialogServer = server
+                                runDialogTool = tool
+                            }
                         )
                     }
                 }
@@ -535,6 +558,69 @@ fun SkillsScreen(
             }
         )
     }
+
+    val pendingServer = runDialogServer
+    val pendingTool = runDialogTool
+    if (pendingServer != null && pendingTool != null) {
+        McpRunToolDialog(
+            server = pendingServer,
+            tool = pendingTool,
+            onDismiss = {
+                runDialogServer = null
+                runDialogTool = null
+            },
+            onCheckPermission = { onCheckMcpToolPermission(pendingServer.id, pendingTool.name) },
+            onConfirm = { argsJson, approval ->
+                onRunMcpTool(pendingServer, pendingTool.name, argsJson, approval)
+                runDialogServer = null
+                runDialogTool = null
+            }
+        )
+    }
+
+    if (mcpRunRunning || mcpRunResult != null) {
+        AlertDialog(
+            onDismissRequest = { if (!mcpRunRunning) onClearMcpRunResult() },
+            title = { Text(mcpRunTarget ?: "Tool result") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (mcpRunRunning) {
+                        Text("Running...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        val result = mcpRunResult
+                        if (result != null) {
+                            if (result.success) {
+                                Text(
+                                    result.content.ifBlank { "Done." },
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            } else {
+                                Text(
+                                    "Error: ${result.error ?: "unknown"}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                "Finished in ${result.durationMs}ms",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onClearMcpRunResult, enabled = !mcpRunRunning) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -544,7 +630,8 @@ private fun McpServerCard(
     busy: Boolean,
     onToggle: (Boolean) -> Unit,
     onDiscoverTools: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onRunTool: (McpToolDefinition) -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -590,7 +677,7 @@ private fun McpServerCard(
                 OutlinedButton(
                     onClick = onDiscoverTools,
                     enabled = !busy && server.enabled,
-                    modifier = Modifier.weight(1f).height(34.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     shape = RoundedCornerShape(6.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -619,7 +706,16 @@ private fun McpServerCard(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("• ${tool.name}", fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
                                 if (tool.description.isNotBlank()) {
-                                    Text(" — ${tool.description}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(" — ${tool.description}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                } else {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                                TextButton(
+                                    onClick = { onRunTool(tool) },
+                                    enabled = !busy && server.enabled,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text("Run", fontSize = 11.sp)
                                 }
                             }
                         }
@@ -628,6 +724,91 @@ private fun McpServerCard(
             }
         }
     }
+}
+
+@Composable
+private fun McpRunToolDialog(
+    server: McpServerInfo,
+    tool: McpToolDefinition,
+    onDismiss: () -> Unit,
+    onCheckPermission: () -> McpPermissionDecision,
+    onConfirm: (String, McpToolApproval) -> Unit
+) {
+    var argsText by remember { mutableStateOf("{\n\n}") }
+    var confirming by remember { mutableStateOf(false) }
+    var permissionError by remember { mutableStateOf<String?>(null) }
+
+    fun tryRun(approval: McpToolApproval) {
+        if (runCatching { JSONObject(argsText) }.isFailure) {
+            permissionError = "Arguments must be valid JSON."
+            return
+        }
+        val decision = onCheckPermission()
+        if (!decision.allowed && !decision.requiresPrompt) {
+            permissionError = "Tool not allowed: ${decision.reason}"
+            return
+        }
+        if (decision.requiresPrompt && !confirming && approval == McpToolApproval.ONE_TIME) {
+            confirming = true
+            return
+        }
+        onConfirm(argsText, approval)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (confirming) "Confirm tool run" else "Run ${tool.name}") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (confirming) {
+                    Text(
+                        "This tool requires your confirmation before it can run on ${server.name}. " +
+                            "Review the arguments, then choose how to approve it.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        argsText,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    if (tool.description.isNotBlank()) {
+                        Text(tool.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedTextField(
+                        value = argsText,
+                        onValueChange = { argsText = it; permissionError = null },
+                        label = { Text("Arguments (JSON)") },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    )
+                }
+                if (permissionError != null) {
+                    Text(permissionError!!, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            if (confirming) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { confirming = false }) { Text("Back") }
+                    Button(onClick = { tryRun(McpToolApproval.ONE_TIME) }) { Text("Allow once") }
+                    Button(onClick = { tryRun(McpToolApproval.ALWAYS_ALLOW) }) { Text("Always allow") }
+                }
+            } else {
+                Button(onClick = { tryRun(McpToolApproval.ONE_TIME) }) { Text("Run") }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
@@ -682,7 +863,7 @@ private fun McpCatalogCard(
                     onClick = onInstall,
                     enabled = !busy,
                     shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.height(34.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
                     Text("Install", fontSize = 11.sp)

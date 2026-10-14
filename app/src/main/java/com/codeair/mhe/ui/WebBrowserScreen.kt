@@ -542,21 +542,26 @@ fun PreviewTab(
                             }
 
                             // Embedded Go button on the right
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
+                            Box(
                                 modifier = Modifier
-                                    .size(30.dp)
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                     .clip(CircleShape)
                                     .clickable(onClick = navigate),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = "Go",
-                                        modifier = Modifier.size(15.dp),
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                    )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(30.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = "Go",
+                                            modifier = Modifier.size(15.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -579,7 +584,7 @@ fun PreviewTab(
                         color = if (showTabsStrip) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         border = BorderStroke(1.dp, if (showTabsStrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { showTabsStrip = !showTabsStrip },
                     ) {
@@ -645,7 +650,7 @@ fun PreviewTab(
                                 showAiDebuggerDialog = true
                             }
                         },
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
@@ -1492,7 +1497,7 @@ fun PreviewTab(
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
-                        items(historyList) { item ->
+                        items(historyList, key = { "${it.url}#${it.timestamp}" }) { item ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

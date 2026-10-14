@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -434,7 +435,7 @@ private fun HybridWorkersTab(coordinator: CloudHybridCoordinator) {
             ) {
                 OutlinedButton(
                     onClick = { showAddDialog = true },
-                    modifier = Modifier.height(44.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {
@@ -442,7 +443,7 @@ private fun HybridWorkersTab(coordinator: CloudHybridCoordinator) {
                 }
                 Button(
                     onClick = { coordinator.pingWorkers() },
-                    modifier = Modifier.height(44.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {

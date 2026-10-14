@@ -70,6 +70,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -2604,6 +2605,12 @@ private fun RootScreenHost(
                     onRemoveMcpServer = viewModel::removeMcpServer,
                     onDiscoverMcpTools = viewModel::discoverMcpTools,
                     onClearMcpAuditLogs = viewModel::clearMcpAuditLogs,
+                    onCheckMcpToolPermission = viewModel::mcpToolDecision,
+                    onRunMcpTool = viewModel::runMcpTool,
+                    mcpRunResult = state.mcpRunResult,
+                    mcpRunTarget = state.mcpRunTarget,
+                    mcpRunRunning = state.mcpRunRunning,
+                    onClearMcpRunResult = viewModel::clearMcpRunResult,
                 )
                 RootScreen.MARKETPLACE -> MarketplaceScreen(
                     onBack = { screen = RootScreen.PROJECTS },
@@ -4248,7 +4255,7 @@ private fun ProjectsScreen(
                                 },
                                 modifier = Modifier.size(48.dp),
                             ) {
-                                Icon(Icons.Default.Close, "Remove folder", modifier = Modifier.size(48.dp))
+                                Icon(Icons.Default.Close, "Remove folder", modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -5151,7 +5158,7 @@ private fun WorkspaceScreen(
                                                 }
                                             },
                                             enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier.size(48.dp),
                                         ) {
                                             if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                                             else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
@@ -6654,13 +6661,18 @@ private fun ChatTab(
 
                             if (isRunning) {
                                 Box(
+                                    modifier = Modifier
+                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                        .clickable(onClick = onStop),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
                                         modifier = Modifier
                                             .size(36.dp)
                                             .background(
                                                 color = MaterialTheme.colorScheme.error,
                                                 shape = CircleShape,
-                                            )
-                                            .clickable(onClick = onStop),
+                                            ),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
@@ -6670,14 +6682,11 @@ private fun ChatTab(
                                             modifier = Modifier.size(18.dp),
                                         )
                                     }
+                                }
                             } else {
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
-                                        .background(
-                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                            shape = CircleShape,
-                                        )
+                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                         .clickable(
                                             enabled = canSend,
                                             onClick = {
@@ -6690,12 +6699,22 @@ private fun ChatTab(
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowUpward,
-                                        contentDescription = "Send",
-                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(19.dp),
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(
+                                                color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                                shape = CircleShape,
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowUpward,
+                                            contentDescription = "Send",
+                                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(19.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -6714,7 +6733,11 @@ private fun LiveClaudeProcess(
     finishedAtMillis: Long?,
     thinkingActive: Boolean,
 ) {
-    val elapsedSeconds = startedAtMillis?.let { rememberLiveElapsedSeconds(it).toLong() } ?: 0L
+    val elapsedSeconds = if (processItems.isEmpty() && startedAtMillis != null) {
+        rememberLiveElapsedSeconds(startedAtMillis).toLong()
+    } else {
+        startedAtMillis?.let { ((System.currentTimeMillis() - it) / 1000L).coerceAtLeast(0) } ?: 0L
+    }
     ClaudeActivityDisclosure(
         items = processItems,
         headline = activityHeadline(processItems, elapsedSeconds, thinkingActive),
@@ -6917,7 +6940,7 @@ private fun ActivitySummaryRow(
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().sizeIn(minHeight = 48.dp).clickable(onClick = onToggle).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
