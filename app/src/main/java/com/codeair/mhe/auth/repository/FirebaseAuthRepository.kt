@@ -78,7 +78,18 @@ class FirebaseAuthRepository(
                     .build()
                 runCatching { user.updateProfile(profileUpdate).await() }
             }
+            // QA Medium: a failed verification send used to be swallowed,
+            // stranding the user at "check your email" with no email ever
+            // sent and no retry. The account exists at this point, so the
+            // failure is reported with the resend path instead of a bare
+            // success.
             runCatching { user.sendEmailVerification().await() }
+                .onFailure { error ->
+                    throw Exception(
+                        "Account created, but the verification email could not be sent (${error.message ?: "unknown error"}). " +
+                            "Use 'Resend verification email' in Settings to try again."
+                    )
+                }
             user.reload().await()
             mapFirebaseUser(user)
         }.recoverCatching { throwable ->

@@ -6,6 +6,7 @@ import com.codeair.mhe.model.DevStack
 import com.codeair.mhe.runtime.RuntimeInstallEvent
 import com.codeair.mhe.runtime.RuntimeInstaller
 import com.codeair.mhe.runtime.SkillManager
+import com.codeair.mhe.runtime.SkillUpdateInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,12 +38,12 @@ class SkillsCoordinator(
         host.updateState { it.copy(skillsBusy = true, skillsMessage = "Checking installed skills for updates…") }
         host.scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { skillManager.checkUpdates() } }
-            result.onSuccess { updates ->
+            result.onSuccess { check ->
                 host.updateState {
                     it.copy(
                         skillsBusy = false,
-                        skillUpdates = updates.mapTo(mutableSetOf()) { update -> update.name },
-                        skillsMessage = if (updates.isEmpty()) "All remotely sourced skills are up to date." else updates.size.toString() + " skill update" + (if (updates.size == 1) "" else "s") + " available.",
+                        skillUpdates = check.updates.mapTo(mutableSetOf()) { update -> update.name },
+                        skillsMessage = skillUpdatesMessage(check.updates, check.failed),
                     )
                 }
             }.onFailure { error ->
@@ -133,9 +134,10 @@ class SkillsCoordinator(
             withContext(Dispatchers.IO) {
                 // 1. Universal Skills auto-update
                 runCatching {
-                    val updates = skillManager.checkUpdates()
-                    if (updates.isNotEmpty()) {
-                        updates.forEach { updateInfo ->
+                    val check = skillManager.checkUpdates()
+                    check.failed.forEach { name -> failures.add("Skill $name: update check failed") }
+                    if (check.updates.isNotEmpty()) {
+                        check.updates.forEach { updateInfo ->
                             val skill = skillManager.installed().firstOrNull { it.name == updateInfo.name }
                             if (skill != null) {
                                 runCatching {
@@ -149,7 +151,7 @@ class SkillsCoordinator(
 
                 // 2. Agents / Coding CLI Tools auto-update
                 runCatching {
-                    val agentUpdates = installer.checkAgentUpdates()
+                    val agentUpdates = installer.checkAgentUpdates().updates
                     agentUpdates.forEach { (kind, updateInfo) ->
                         if (!host.state().isRunning && host.state().agentUpdating == null) {
                             runCatching {
@@ -203,5 +205,27 @@ class SkillsCoordinator(
                 )
             }
         }
+    }
+}
+
+/**
+ * QA Medium: the skill-update-check message. A failed check must never
+ * report "up to date": with no updates and any failed check, the message
+ * says the check could not complete; partial failures are appended.
+ */
+internal fun skillUpdatesMessage(
+    updates: List<SkillUpdateInfo>,
+    failed: List<String>,
+): String {
+    val failedSuffix = if (failed.isNotEmpty()) {
+        " · Could not check ${failed.joinToString()}"
+    } else {
+        ""
+    }
+    return if (updates.isEmpty()) {
+        if (failed.isEmpty()) "All remotely sourced skills are up to date."
+        else "Could not check for skill updates$failedSuffix"
+    } else {
+        updates.size.toString() + " skill update" + (if (updates.size == 1) "" else "s") + " available.$failedSuffix"
     }
 }

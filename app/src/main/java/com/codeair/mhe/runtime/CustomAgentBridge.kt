@@ -243,7 +243,10 @@ class CustomAgentBridge(
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             if (code !in 200..299) {
-                val response = stream.bufferedReader().use { it.readText() }
+                // QA Medium: errorStream is null when the connection fails
+                // before any response exists — reading it NPE'd and lost
+                // the HTTP code. A null stream reads as an empty body.
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 throw IllegalStateException(friendlyError(response, code).take(200))
             }
             val isEventStream = (conn.contentType ?: "").contains("text/event-stream")
@@ -254,18 +257,36 @@ class CustomAgentBridge(
             // Runs inside startSession's withContext(Dispatchers.IO), so these
             // blocking reads stay off the main thread.
             val reader = stream.bufferedReader()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                val trimmed = line!!.trim()
-                if (!trimmed.startsWith("data:")) continue
-                val payload = trimmed.removePrefix("data:").trim()
-                if (payload.isEmpty() || payload == "[DONE]") continue
+            // QA Medium: legal SSE splits one event's JSON across several
+            // consecutive `data:` lines — each line alone is not valid
+            // JSON and used to be silently dropped. Lines are accumulated
+            // per event (blank line = event boundary) and parsed joined.
+            val eventData = StringBuilder()
+            fun flushEvent() {
+                if (eventData.isEmpty()) return
+                val payload = eventData.toString()
+                eventData.clear()
+                if (payload == "[DONE]") return
                 val delta = runCatching { extractDelta(JSONObject(payload)) }.getOrDefault("")
                 if (delta.isNotEmpty()) {
                     accumulated.append(delta)
                     runCatching { onDelta(delta) }
                 }
             }
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                val trimmed = line!!.trim()
+                if (trimmed.isEmpty()) {
+                    flushEvent()
+                    continue
+                }
+                if (!trimmed.startsWith("data:")) continue
+                val payload = trimmed.removePrefix("data:").trim()
+                if (payload.isEmpty()) continue
+                if (eventData.isNotEmpty()) eventData.append('\n')
+                eventData.append(payload)
+            }
+            flushEvent()
             return accumulated.toString() to true
         } finally {
             conn.disconnect()

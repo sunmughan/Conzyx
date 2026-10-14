@@ -25,7 +25,12 @@ class CloudLogStreamer(
     private val client: CloudExecutionClient,
     private val pollIntervalMs: Long = 1500L,
     private val maxFrames: Int = 5000,
-    private val timeoutMs: Long = 30 * 60 * 1000L
+    private val timeoutMs: Long = 30 * 60 * 1000L,
+    // QA Medium: one transient poll failure used to abort the whole stream.
+    // A few consecutive failures are now retried with backoff; the stream
+    // fails only when [maxConsecutiveFailures] polls fail in a row.
+    private val maxConsecutiveFailures: Int = 3,
+    private val retryDelayMs: Long = 1000L,
 ) {
     private val cancelled = AtomicBoolean(false)
 
@@ -48,19 +53,33 @@ class CloudLogStreamer(
         }
         var seq = 0L
         var frames = 0
+        var consecutiveFailures = 0
         val deadline = startedAt + timeoutMs
         while (!cancelled.get() && frames < maxFrames && System.currentTimeMillis() < deadline) {
             val res = client.fetchLogs(worker, remoteJobId, seq)
             if (res.status != OperationStatus.SUCCESS) {
-                return LogStreamResult(
-                    OperationResult.failure(
-                        error = "Log streaming failed at seq $seq: ${res.error}",
-                        startedAt = startedAt,
-                        logs = res.logs
-                    ),
-                    frames, seq, wasCancelled = cancelled.get()
-                )
+                consecutiveFailures++
+                if (consecutiveFailures >= maxConsecutiveFailures) {
+                    return LogStreamResult(
+                        OperationResult.failure(
+                            error = "Log streaming failed at seq $seq after $consecutiveFailures attempts: ${res.error}",
+                            startedAt = startedAt,
+                            logs = res.logs
+                        ),
+                        frames, seq, wasCancelled = cancelled.get()
+                    )
+                }
+                // Transient poll failure: keep the cursor, back off
+                // briefly, and retry instead of aborting the stream.
+                try {
+                    Thread.sleep(retryDelayMs * consecutiveFailures)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+                continue
             }
+            consecutiveFailures = 0
             val nextSeq = res.artifacts.firstOrNull()
                 ?.removePrefix("nextSeq=")?.toLongOrNull() ?: (seq + res.logs.size)
             for (line in res.logs) {

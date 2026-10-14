@@ -40,35 +40,57 @@ class AppUpdater(
      */
     private val isPlayBuild: Boolean = BuildConfig.IS_PLAY_BUILD,
 ) {
-    fun check(): AppUpdateInfo? {
+    /**
+     * QA Medium: an update check used to swallow every error and report
+     * "no update" — offline looked exactly like "up to date", and a forced
+     * check toasted "up to date" on a network failure. The check now
+     * distinguishes the three outcomes so callers can say "check failed"
+     * instead of "up to date".
+     */
+    sealed interface AppUpdateCheckResult {
+        data object UpToDate : AppUpdateCheckResult
+        data class Available(val info: AppUpdateInfo) : AppUpdateCheckResult
+        data class Failed(val error: String) : AppUpdateCheckResult
+    }
+
+    fun check(): AppUpdateCheckResult {
         // Play builds never check a side-channel manifest: no GitHub update
         // is ever offered on a build distributed through Google Play.
-        if (!isSelfUpdateAllowed(isPlayBuild)) return null
+        if (!isSelfUpdateAllowed(isPlayBuild)) return AppUpdateCheckResult.UpToDate
         val urlsToTry = if (manifestUrlOverride.isNotBlank()) {
             listOf(manifestUrlOverride)
         } else {
             listOf(
                 BuildConfig.APP_UPDATE_MANIFEST_URL,
+                // QA Medium: the upstream author's manifest used to be a
+                // third fallback here — a repo this project does not
+                // control presenting update offers. Removed: only this
+                // project's own manifest and its own releases API answer.
                 "https://api.github.com/repos/sunmughan/Mobile-Harness-Extended/releases/latest",
-                "https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/mobile-harness-update.json",
             )
         }
 
+        var lastError: Throwable? = null
         for (manifestUrl in urlsToTry) {
             if (!manifestUrl.startsWith("https://")) continue
             try {
-                if (manifestUrl.contains("api.github.com/repos/") && manifestUrl.endsWith("/releases/latest")) {
-                    val update = checkGitHubReleaseApi(manifestUrl)
-                    if (update != null) return update
+                val update = if (manifestUrl.contains("api.github.com/repos/") && manifestUrl.endsWith("/releases/latest")) {
+                    checkGitHubReleaseApi(manifestUrl)
                 } else {
-                    val update = checkStandardManifest(manifestUrl)
-                    if (update != null) return update
+                    checkStandardManifest(manifestUrl)
                 }
-            } catch (_: Throwable) {
-                // Try next URL fallback
+                if (update != null) return AppUpdateCheckResult.Available(update)
+            } catch (e: Throwable) {
+                // Try the next URL; if nothing answers, the failure below
+                // is reported instead of masquerading as "up to date".
+                lastError = e
             }
         }
-        return null
+        return if (lastError != null) {
+            AppUpdateCheckResult.Failed(lastError.message?.take(200) ?: "Update check failed")
+        } else {
+            AppUpdateCheckResult.UpToDate
+        }
     }
 
     private fun checkStandardManifest(manifestUrl: String): AppUpdateInfo? {
@@ -83,7 +105,8 @@ class AppUpdater(
         val code = connection.responseCode
         if (code !in 200..299) {
             connection.disconnect()
-            return null
+            // QA Medium: a failed fetch used to read as "no update".
+            throw java.io.IOException("Update manifest fetch failed: HTTP $code")
         }
         val body = connection.inputStream.bufferedReader().use { it.readText() }
         connection.disconnect()
@@ -119,7 +142,8 @@ class AppUpdater(
         val code = connection.responseCode
         if (code !in 200..299) {
             connection.disconnect()
-            return null
+            // QA Medium: a failed fetch used to read as "no update".
+            throw java.io.IOException("GitHub releases fetch failed: HTTP $code")
         }
         val body = connection.inputStream.bufferedReader().use { it.readText() }
         connection.disconnect()
@@ -133,8 +157,13 @@ class AppUpdater(
             if (asset.optString("name") == "mobile-harness-update.json") {
                 val assetApiUrl = asset.optString("url")
                 val manifestContent = fetchStringWithAuth(assetApiUrl)
-                if (manifestContent != null) {
-                    val root = JSONObject(manifestContent)
+                    // QA Medium: an unreadable manifest used to read as
+                    // "no update". The release HAS a manifest asset — if it
+                    // cannot be fetched, that is a check failure.
+                    ?: throw java.io.IOException("Could not download the release manifest asset")
+                val root = runCatching { JSONObject(manifestContent) }.getOrNull()
+                    ?: throw java.io.IOException("Release manifest asset is not valid JSON")
+                run {
                     val versionCode = root.optLong("versionCode")
                     if (versionCode <= BuildConfig.VERSION_CODE) return null
                     val artifact = resolveArtifactForVariant(root, BuildConfig.APP_VARIANT) ?: continue

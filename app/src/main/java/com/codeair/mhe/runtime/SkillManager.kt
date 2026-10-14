@@ -147,12 +147,24 @@ class SkillManager(
         }
     }
 
-    fun checkUpdates(): List<SkillUpdateInfo> {
+    /**
+     * QA Medium: a skill update check used to swallow per-skill errors, so
+     * offline looked exactly like "no updates". Failures are now reported
+     * alongside any updates that did come back.
+     */
+    data class SkillUpdateCheckResult(
+        val updates: List<SkillUpdateInfo> = emptyList(),
+        val failed: List<String> = emptyList(),
+    )
+
+    fun checkUpdates(): SkillUpdateCheckResult {
         val updates = mutableListOf<SkillUpdateInfo>()
+        val failed = mutableListOf<String>()
         installed().filter { it.source.startsWith("https://github.com/", ignoreCase = true) }.forEach { skill ->
             runCatching { if (githubSkillChanged(skill)) updates += SkillUpdateInfo(skill.name, skill.source) }
+                .onFailure { failed += skill.name }
         }
-        return updates
+        return SkillUpdateCheckResult(updates, failed)
     }
 
     fun update(skill: SkillInfo): List<SkillInfo> {

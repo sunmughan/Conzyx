@@ -166,6 +166,29 @@ private data class TranscriptWrite(
 internal fun isEmptyQuickProject(kind: ProjectKind, userMessages: Int, userFiles: Int): Boolean =
     kind == ProjectKind.QUICK_PROJECT && userMessages == 0 && userFiles == 0
 
+/**
+ * QA Medium: the agent-update-check message. A failed check must never
+ * report "up to date": with no updates and any failed check, the message
+ * says the check could not complete; partial failures are appended to
+ * the updates line so a found update is not hidden either.
+ */
+internal fun agentUpdatesCheckMessage(
+    updates: Map<AgentKind, AgentUpdateInfo>,
+    failedChecks: List<AgentKind>,
+): String {
+    val failedSuffix = if (failedChecks.isNotEmpty()) {
+        " · Could not check ${failedChecks.joinToString { it.title }}"
+    } else {
+        ""
+    }
+    return if (updates.isEmpty()) {
+        if (failedChecks.isEmpty()) "All installed agents are up to date"
+        else "Could not check for agent updates$failedSuffix"
+    } else {
+        "${updates.size} agent update${if (updates.size == 1) "" else "s"} available$failedSuffix"
+    }
+}
+
 private data class ImportedZipProject(
     val project: Project,
     val sourceAttachment: ChatAttachment,
@@ -1463,12 +1486,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = withContext(Dispatchers.IO) { runCatching { installer.checkAgentUpdates() } }
             _state.update {
                 it.copy(
-                    agentUpdates = result.getOrDefault(emptyMap()),
+                    agentUpdates = result.getOrNull()?.updates.orEmpty(),
                     agentUpdatesChecking = false,
                     agentUpdatesChecked = true,
-                    agentUpdatesCheckError = result.exceptionOrNull()?.message?.take(200),
+                    agentUpdatesCheckError = result.exceptionOrNull()?.message?.take(200)
+                        ?: result.getOrNull()?.failedChecks?.takeIf { failed -> failed.isNotEmpty() }
+                            ?.let { failed -> "Could not check updates for ${failed.joinToString { kind -> kind.title }}" },
                     agentUpdateMessage = result.fold(
-                        onSuccess = { updates -> if (updates.isEmpty()) "All installed agents are up to date" else "${updates.size} agent update${if (updates.size == 1) "" else "s"} available" },
+                        onSuccess = { check -> agentUpdatesCheckMessage(check.updates, check.failedChecks) },
                         onFailure = { error -> error.message?.take(200) ?: "Could not check agent updates" },
                     ),
                 )

@@ -310,15 +310,35 @@ class RuntimeCoordinator(
         }
         if (!force && System.currentTimeMillis() - preferences.lastAppUpdateCheckMillis < 24L * 60L * 60L * 1000L) return
         host.scope.launch(Dispatchers.IO) {
-            val update = runCatching { appUpdater().check() }.getOrNull()
-            preferences.lastAppUpdateCheckMillis = System.currentTimeMillis()
-            if (update != null) {
-                host.updateState {
-                    it.copy(appUpdate = update, appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null)
+            val result = runCatching { appUpdater().check() }.getOrElse {
+                AppUpdater.AppUpdateCheckResult.Failed(it.message?.take(200) ?: "Update check failed")
+            }
+            when (result) {
+                is AppUpdater.AppUpdateCheckResult.Available -> {
+                    preferences.lastAppUpdateCheckMillis = System.currentTimeMillis()
+                    host.updateState {
+                        it.copy(appUpdate = result.info, appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null)
+                    }
                 }
-            } else if (force) {
-                host.updateState {
-                    it.copy(toastMessage = "Mobile Harness Extended is up to date (${BuildConfig.APP_VARIANT} · v${BuildConfig.VERSION_NAME})")
+                is AppUpdater.AppUpdateCheckResult.UpToDate -> {
+                    preferences.lastAppUpdateCheckMillis = System.currentTimeMillis()
+                    if (force) {
+                        host.updateState {
+                            it.copy(toastMessage = "Mobile Harness Extended is up to date (${BuildConfig.APP_VARIANT} · v${BuildConfig.VERSION_NAME})")
+                        }
+                    }
+                }
+                is AppUpdater.AppUpdateCheckResult.Failed -> {
+                    // QA Medium: a failed check used to be recorded as
+                    // checked for 24h AND reported "up to date" on a forced
+                    // check. Neither happens now: the timestamp is left
+                    // alone so the next check retries, and a forced check
+                    // says the check failed.
+                    if (force) {
+                        host.updateState {
+                            it.copy(toastMessage = "Could not check for updates: ${result.error}")
+                        }
+                    }
                 }
             }
         }

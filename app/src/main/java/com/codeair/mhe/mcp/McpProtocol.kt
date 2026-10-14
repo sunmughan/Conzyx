@@ -175,14 +175,39 @@ object McpProtocol {
     }
 
     /**
-     * Extracts the first JSON-RPC payload from an SSE stream body:
-     * the first non-empty data line. Returns null when no data line exists.
+     * QA Medium: legal SSE splits one event's JSON across several
+     * consecutive `data:` lines — joined with "\n" per the SSE spec, a
+     * blank line ends the event. Returns one payload per event, skipping
+     * [DONE] terminators. The old per-line parsing returned the first
+     * line alone, which is not valid JSON for a split event, so the
+     * payload was silently dropped.
      */
-    fun firstSsePayload(body: String): String? {
-        for (rawLine in body.lines()) {
-            val payload = parseSseDataLine(rawLine)
-            if (payload != null) return payload
+    fun parseSseEvents(body: String): List<String> {
+        val events = mutableListOf<String>()
+        val current = StringBuilder()
+        fun flush() {
+            if (current.isEmpty()) return
+            val payload = current.toString()
+            current.clear()
+            if (payload != "[DONE]") events += payload
         }
-        return null
+        for (rawLine in body.lines()) {
+            val trimmed = rawLine.trim()
+            if (trimmed.isEmpty()) {
+                flush()
+                continue
+            }
+            val payload = parseSseDataLine(rawLine) ?: continue
+            if (current.isNotEmpty()) current.append('\n')
+            current.append(payload)
+        }
+        flush()
+        return events
     }
+
+    /**
+     * Extracts the first JSON-RPC payload from an SSE stream body:
+     * the first non-empty data event. Returns null when no data event exists.
+     */
+    fun firstSsePayload(body: String): String? = parseSseEvents(body).firstOrNull()
 }

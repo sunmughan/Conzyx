@@ -49,6 +49,46 @@ class CloudLogStreamerTest {
     }
 
     @Test
+    fun `transient poll failures are retried, stream continues`() {
+        var calls = 0
+        val transport = FakeCloudTransport {
+            calls++
+            if (calls <= 2) {
+                CloudTransportResponse(500, "transient blip")
+            } else {
+                CloudTransportResponse(200, """{"logs":[{"seq":0,"line":"recovered"}],"nextSeq":1}""")
+            }
+        }
+        val streamer = CloudLogStreamer(
+            CloudExecutionClient(transport),
+            pollIntervalMs = 10L,
+            retryDelayMs = 1L,
+        )
+        val received = mutableListOf<String>()
+        val result = streamer.streamLogs(worker, "remote-1", onLogChunk = { received.add(it) }, isTerminal = { true })
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        assertEquals(listOf("recovered"), received)
+    }
+
+    @Test
+    fun `persistent poll failures fail after bounded retries`() {
+        var calls = 0
+        val transport = FakeCloudTransport {
+            calls++
+            CloudTransportResponse(500, "still down")
+        }
+        val streamer = CloudLogStreamer(
+            CloudExecutionClient(transport),
+            pollIntervalMs = 10L,
+            retryDelayMs = 1L,
+        )
+        val result = streamer.streamLogs(worker, "remote-1", isTerminal = { true })
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertEquals(3, calls)
+        assertTrue(result.result.error.orEmpty().contains("after 3 attempts"))
+    }
+
+    @Test
     fun blankAuthKeyIsNotConfigured() {
         val streamer = CloudLogStreamer(CloudExecutionClient(FakeCloudTransport()), pollIntervalMs = 10L)
         val result = streamer.streamLogs(worker.copy(authKey = ""), "remote-1", isTerminal = { true })

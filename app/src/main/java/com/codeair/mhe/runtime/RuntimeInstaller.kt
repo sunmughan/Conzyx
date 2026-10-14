@@ -623,37 +623,59 @@ class RuntimeInstaller(private val context: Context) {
     }
 
     /** Checks each installed agent against its own authoritative release source. */
-    suspend fun checkAgentUpdates(): Map<com.codeair.mhe.model.AgentKind, AgentUpdateInfo> {
+    /**
+     * QA Medium: an update check used to swallow per-agent fetch failures
+     * ([runCatching] + [getOrNull]), so offline looked exactly like "all
+     * installed agents are up to date" (empty map). Failures are now
+     * reported alongside any updates that did come back, so the UI can
+     * say "could not check" instead of "up to date".
+     */
+    data class AgentUpdateCheckResult(
+        val updates: Map<com.codeair.mhe.model.AgentKind, AgentUpdateInfo> = emptyMap(),
+        val failedChecks: List<com.codeair.mhe.model.AgentKind> = emptyList(),
+    )
+
+    suspend fun checkAgentUpdates(): AgentUpdateCheckResult {
         val installed = installedAgentVersions()
-        return buildMap {
-            installed[com.codeair.mhe.model.AgentKind.CLAUDE_CODE]?.let { current ->
-                runCatching {
-                    JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version")
-                }.getOrNull()?.takeIf { isVersionNewer(it, current) }?.let { latest ->
-                    put(com.codeair.mhe.model.AgentKind.CLAUDE_CODE, AgentUpdateInfo(current, latest))
-                }
-            }
-            installed[com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS]?.let { current ->
-                runCatching {
-                    JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version")
-                }.getOrNull()?.takeIf { isVersionNewer(it, current) }?.let { latest ->
-                    put(com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS, AgentUpdateInfo(current, latest))
-                }
-            }
-            installed[com.codeair.mhe.model.AgentKind.ANTIGRAVITY]?.let { current ->
-                runCatching { fetchAgyManifest().getString("version") }.getOrNull()
-                    ?.takeIf { isVersionNewer(it, current) }?.let { latest ->
-                        put(com.codeair.mhe.model.AgentKind.ANTIGRAVITY, AgentUpdateInfo(current, latest))
-                    }
-            }
-            installed[com.codeair.mhe.model.AgentKind.CODEX]?.let { current ->
-                runCatching {
-                    JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version")
-                }.getOrNull()?.takeIf { isVersionNewer(it, current) }?.let { latest ->
-                    put(com.codeair.mhe.model.AgentKind.CODEX, AgentUpdateInfo(current, latest))
-                }
+        val updates = mutableMapOf<com.codeair.mhe.model.AgentKind, AgentUpdateInfo>()
+        val failed = mutableListOf<com.codeair.mhe.model.AgentKind>()
+        installed[com.codeair.mhe.model.AgentKind.CLAUDE_CODE]?.let { current ->
+            runCatching {
+                JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version")
+            }.onSuccess { latest ->
+                if (isVersionNewer(latest, current)) updates[com.codeair.mhe.model.AgentKind.CLAUDE_CODE] = AgentUpdateInfo(current, latest)
+            }.onFailure {
+                failed += com.codeair.mhe.model.AgentKind.CLAUDE_CODE
             }
         }
+        installed[com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS]?.let { current ->
+            runCatching {
+                JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version")
+            }.onSuccess { latest ->
+                if (isVersionNewer(latest, current)) updates[com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS] = AgentUpdateInfo(current, latest)
+            }.onFailure {
+                failed += com.codeair.mhe.model.AgentKind.DEEPSEEK_HARNESS
+            }
+        }
+        installed[com.codeair.mhe.model.AgentKind.ANTIGRAVITY]?.let { current ->
+            runCatching { fetchAgyManifest().getString("version") }
+                .onSuccess { latest ->
+                    if (isVersionNewer(latest, current)) updates[com.codeair.mhe.model.AgentKind.ANTIGRAVITY] = AgentUpdateInfo(current, latest)
+                }
+                .onFailure {
+                    failed += com.codeair.mhe.model.AgentKind.ANTIGRAVITY
+                }
+        }
+        installed[com.codeair.mhe.model.AgentKind.CODEX]?.let { current ->
+            runCatching {
+                JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version")
+            }.onSuccess { latest ->
+                if (isVersionNewer(latest, current)) updates[com.codeair.mhe.model.AgentKind.CODEX] = AgentUpdateInfo(current, latest)
+            }.onFailure {
+                failed += com.codeair.mhe.model.AgentKind.CODEX
+            }
+        }
+        return AgentUpdateCheckResult(updates, failed)
     }
 
     suspend fun updateAgent(
