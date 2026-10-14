@@ -1425,7 +1425,7 @@ private fun AgentAntigravityCard(
                                     }
                                     IconButton(
                                         onClick = { onRemoveAccount(account.email) },
-                                        modifier = Modifier.size(28.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.Close,

@@ -70,7 +70,7 @@ fun FileEntryContextMenu(
 
     IconButton(
         onClick = { expanded = true },
-        modifier = Modifier.size(28.dp),
+        modifier = Modifier.size(48.dp),
     ) {
         Icon(
             Icons.Default.MoreVert,

@@ -150,7 +150,7 @@ fun YouTubeVideoDialog(
                         onClick = onDismiss,
                         // Align the close target with the card's top/right inset while keeping
                         // a comfortable touch target and a full-size, consistent close glyph.
-                        modifier = Modifier.size(40.dp).offset(x = 8.dp, y = (-8).dp),
+                        modifier = Modifier.size(48.dp).offset(x = 8.dp, y = (-8).dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,

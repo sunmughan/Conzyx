@@ -1054,7 +1054,7 @@ private fun TaskDagCard(
                     }
                 }
 
-                IconButton(onClick = onToggleStatus, modifier = Modifier.size(24.dp)) {
+                IconButton(onClick = onToggleStatus, modifier = Modifier.size(48.dp)) {
                     when (task.status) {
                         TeamTaskStatus.COMPLETED -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = contentColor)
                         TeamTaskStatus.IN_PROGRESS -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = contentColor)

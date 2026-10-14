@@ -1493,7 +1493,7 @@ fun CodeEditorScreen(
                         IconButton(
                             onClick = { if (currentTabIdx > 0) onSelectTab(openTabs[currentTabIdx - 1]) },
                             enabled = currentTabIdx > 0,
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
@@ -1540,7 +1540,7 @@ fun CodeEditorScreen(
                                     }
                                     IconButton(
                                         onClick = { onCloseTab(tabPath) },
-                                        modifier = Modifier.size(20.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.Close,
@@ -1556,7 +1556,7 @@ fun CodeEditorScreen(
                     IconButton(
                         onClick = { if (currentTabIdx >= 0 && currentTabIdx < openTabs.size - 1) onSelectTab(openTabs[currentTabIdx + 1]) },
                         enabled = currentTabIdx >= 0 && currentTabIdx < openTabs.size - 1,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowForward,
@@ -1760,7 +1760,7 @@ fun CodeEditorScreen(
                                     IconButton(
                                         enabled = !savingSecondary,
                                         onClick = saveSecondary,
-                                        modifier = Modifier.size(24.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         if (savingSecondary) {
                                             CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -1811,7 +1811,7 @@ fun CodeEditorScreen(
                                     onClick = {
                                         if (secondaryDirty) secondaryDiscardForClose = true else splitScreenOpen = false
                                     },
-                                    modifier = Modifier.size(24.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         Icons.Default.Close,

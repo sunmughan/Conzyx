@@ -99,9 +99,11 @@ class McpPermissionManager(
             return toDecision(globalServerPolicy, "global server policy")
         }
 
-        // 7. Built-in defaults: built-in safe servers default to ALLOW_ALWAYS, third-party default to REQUIRE_PROMPT
+        // 7. Built-in defaults: built-in servers default to REQUIRE_PROMPT because
+        // they run as the app UID with ambient authority (no sandbox). The user
+        // explicitly opts in on first use; the choice then persists as policy.
         return if (server.isBuiltIn) {
-            McpPermissionDecision(allowed = true, requiresPrompt = false, reason = "Built-in server default")
+            McpPermissionDecision(allowed = false, requiresPrompt = true, reason = "Built-in server requires user confirmation on first use")
         } else {
             McpPermissionDecision(allowed = false, requiresPrompt = true, reason = "Custom server requires user confirmation")
         }

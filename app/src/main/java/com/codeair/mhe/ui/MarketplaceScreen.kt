@@ -392,7 +392,7 @@ private fun MarketplaceItemCard(
                     if (onDeleteCustom != null) {
                         IconButton(
                             onClick = onDeleteCustom,
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 Icons.Default.Delete,

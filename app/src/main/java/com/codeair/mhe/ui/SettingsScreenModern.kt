@@ -816,6 +816,11 @@ fun SettingsScreen(
                     onClick = { toggle(SettingsSection.PERMISSIONS) },
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "These toggles are enforced for Claude Code only. Antigravity and DeepSeek run headless with their CLI defaults (full access, no per-action prompts). The emergency kill switch below blocks new sessions for all agents.",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1777,7 +1782,7 @@ private fun AccountSectionContent(
                 Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(error, fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
-                IconButton(onClick = viewModel::dismissError, modifier = Modifier.size(22.dp)) {
+                IconButton(onClick = viewModel::dismissError, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Close, "Dismiss", modifier = Modifier.size(14.dp))
                 }
             }
@@ -1797,7 +1802,7 @@ private fun AccountSectionContent(
                 Icon(Icons.Default.Check, null, tint = Color(0xFF2E9D72), modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(success, fontSize = 12.sp, color = Color(0xFF2E9D72), modifier = Modifier.weight(1f))
-                IconButton(onClick = viewModel::dismissSuccess, modifier = Modifier.size(22.dp)) {
+                IconButton(onClick = viewModel::dismissSuccess, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Close, "Dismiss", modifier = Modifier.size(14.dp))
                 }
             }

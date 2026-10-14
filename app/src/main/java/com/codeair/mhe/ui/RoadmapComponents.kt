@@ -273,7 +273,7 @@ fun ScratchpadCard(
                 }
                 IconButton(
                     onClick = onCollapse,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowUp,
@@ -675,7 +675,7 @@ private fun RoadmapStepRow(
         if (!isCompleted) {
             IconButton(
                 onClick = onAddComment,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Comment,

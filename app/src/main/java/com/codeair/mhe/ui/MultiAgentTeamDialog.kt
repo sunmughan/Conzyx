@@ -128,10 +128,10 @@ fun MultiAgentTeamBottomSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        IconButton(onClick = { fullStudioMode = true }, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = { fullStudioMode = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Default.AutoAwesome, contentDescription = "Studio View", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                         }
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
                         }
                     }

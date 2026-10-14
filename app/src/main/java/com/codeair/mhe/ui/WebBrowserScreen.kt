@@ -403,7 +403,7 @@ fun PreviewTab(
                             // Embedded Reload button on the left (2.2.2 layout)
                             IconButton(
                                 onClick = { webView?.reload() ?: navigate() },
-                                modifier = Modifier.size(32.dp),
+                                modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
@@ -458,7 +458,7 @@ fun PreviewTab(
                                         address = ""
                                         addressError = null
                                     },
-                                    modifier = Modifier.size(28.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
@@ -504,7 +504,7 @@ fun PreviewTab(
                     // Refresh
                     IconButton(
                         onClick = { webView?.reload() ?: navigate() },
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
@@ -538,7 +538,7 @@ fun PreviewTab(
                     Box {
                         IconButton(
                             onClick = { showViewportDropdown = true },
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = if (activeViewportPreset.isMobile) Icons.Default.Smartphone else if (activeViewportPreset.id == "ipad") Icons.Default.Tablet else Icons.Default.Laptop,
@@ -599,7 +599,7 @@ fun PreviewTab(
                     // Desktop site toggle
                     IconButton(
                         onClick = toggleDesktopSite,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.DesktopWindows,
@@ -616,7 +616,7 @@ fun PreviewTab(
                             webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(isInspectorActive), null)
                             Toast.makeText(context, if (isInspectorActive) "DOM Inspector enabled: Tap element" else "DOM Inspector disabled", Toast.LENGTH_SHORT).show()
                         },
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.HighlightAlt,
@@ -630,7 +630,7 @@ fun PreviewTab(
                     Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
                         IconButton(
                             onClick = { showDevToolsSheet = true },
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DeveloperMode,
@@ -653,7 +653,7 @@ fun PreviewTab(
                     Box {
                         IconButton(
                             onClick = { showMoreMenu = true },
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
@@ -905,7 +905,7 @@ fun PreviewTab(
                                     )
                                     IconButton(
                                         onClick = { closeTab(tab.id) },
-                                        modifier = Modifier.size(18.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
@@ -921,7 +921,7 @@ fun PreviewTab(
                         // Add new tab '+' button
                         IconButton(
                             onClick = { openNewTab(null) },
-                            modifier = Modifier.size(28.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(Icons.Default.Add, "New Tab", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         }
@@ -971,13 +971,13 @@ fun PreviewTab(
                             }
                             IconButton(
                                 onClick = { webView?.findNext(false) },
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(Icons.Default.KeyboardArrowUp, "Previous match", modifier = Modifier.size(16.dp))
                             }
                             IconButton(
                                 onClick = { webView?.findNext(true) },
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(Icons.Default.KeyboardArrowDown, "Next match", modifier = Modifier.size(16.dp))
                             }
@@ -987,7 +987,7 @@ fun PreviewTab(
                                     findQuery = ""
                                     webView?.clearMatches()
                                 },
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(Icons.Default.Close, "Dismiss find", modifier = Modifier.size(14.dp))
                             }

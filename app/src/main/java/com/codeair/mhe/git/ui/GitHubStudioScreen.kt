@@ -659,7 +659,7 @@ private fun CommitsTab(
                     ) {
                         IconButton(
                             onClick = { clipboard.setText(AnnotatedString(commit.hash)) },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = "Copy Hash", modifier = Modifier.size(16.dp))
                         }

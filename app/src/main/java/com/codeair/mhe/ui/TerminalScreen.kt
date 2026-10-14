@@ -212,7 +212,7 @@ fun TerminalScreen(
                             Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(subtitle, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = onClear, modifier = Modifier.size(38.dp)) {
+                        IconButton(onClick = onClear, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "Clear output", modifier = Modifier.size(20.dp))
                         }
                         if (showThemeAction) {
@@ -327,7 +327,7 @@ fun TerminalScreen(
                                 if (sessions.size > 1) {
                                     IconButton(
                                         onClick = { onCloseSession(session.id) },
-                                        modifier = Modifier.size(18.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.Close,
@@ -342,7 +342,7 @@ fun TerminalScreen(
                     }
                     IconButton(
                         onClick = onNewSession,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             Icons.Default.Add,
@@ -399,9 +399,9 @@ fun TerminalScreen(
                                 searchQuery = ""
                                 searchOpen = false
                             },
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close search", modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Close search", modifier = Modifier.size(48.dp))
                         }
                     }
                 }
@@ -688,7 +688,7 @@ private fun TerminalKeyButton(
 
 @Composable
 private fun TerminalIconKeyButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
         Icon(icon, contentDescription = description, modifier = Modifier.size(18.dp))
     }
 }

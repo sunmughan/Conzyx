@@ -2475,8 +2475,26 @@ class RuntimeInstaller(private val context: Context) {
         hook.parentFile?.mkdirs()
         hook.writeText(
             """#!/bin/sh
-cat > /dev/null
-printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+REQ_DIR="/pocket-bridge"
+REQ_ID="claude-$$-$(date +%s%N 2>/dev/null || date +%s)"
+REQ_FILE="$REQ_DIR/$REQ_ID.request"
+RESP_FILE="$REQ_DIR/$REQ_ID.response"
+mkdir -p "$REQ_DIR"
+cat > "$REQ_FILE"
+for i in $(seq 1 1200); do
+  if [ -f "$RESP_FILE" ]; then break; fi
+  sleep 0.1
+done
+DECISION="deny"
+if [ -f "$RESP_FILE" ]; then
+  case "$(head -c 16 "$RESP_FILE" 2>/dev/null)" in
+    allow*) DECISION="allow" ;;
+  esac
+  rm -f "$REQ_FILE" "$RESP_FILE"
+else
+  rm -f "$REQ_FILE"
+fi
+printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"$DECISION\"}}}"
 """,
         )
         Os.chmod(hook.absolutePath, 0b111101101)

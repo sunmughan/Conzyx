@@ -370,7 +370,7 @@ fun VisualDevToolsSheet(
                                                     onClick = {
                                                         clipboardManager.setText(AnnotatedString(inspectedElement.selector))
                                                     },
-                                                    modifier = Modifier.size(24.dp),
+                                                    modifier = Modifier.size(48.dp),
                                                 ) {
                                                     Icon(Icons.Default.ContentCopy, contentDescription = "Copy selector", Modifier.size(14.dp))
                                                 }

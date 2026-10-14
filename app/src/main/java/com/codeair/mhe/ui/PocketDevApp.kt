@@ -4232,9 +4232,9 @@ private fun ProjectsScreen(
                                     selectedFolderUri = null
                                     selectedFolderName = null
                                 },
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(48.dp),
                             ) {
-                                Icon(Icons.Default.Close, "Remove folder", modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, "Remove folder", modifier = Modifier.size(48.dp))
                             }
                         }
                     }
@@ -4566,7 +4566,7 @@ private fun ApiStatusChip(state: AppUiState, onSettings: () -> Unit, onPing: () 
             // Ping button
             IconButton(
                 onClick = onPing,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 if (state.apiPingStatus == ApiPingStatus.PINGING) {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = PocketOrange)
@@ -5136,19 +5136,19 @@ private fun WorkspaceScreen(
                                     }
                                     IconButton(
                                         onClick = { showChats = true },
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(Icons.Default.History, "Project chats", modifier = Modifier.size(20.dp))
                                     }
                                     IconButton(
                                         onClick = { showCommandPalette = true },
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(Icons.Default.MoreVert, "Command palette", modifier = Modifier.size(20.dp))
                                     }
                                     IconButton(
                                         onClick = onBack,
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects", modifier = Modifier.size(20.dp))
                                     }
@@ -5266,7 +5266,7 @@ private fun WorkspaceScreen(
                         Spacer(Modifier.width(4.dp))
                         IconButton(
                             onClick = onDismissInterruptedSession,
-                            modifier = Modifier.size(28.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
                         }
@@ -5585,7 +5585,7 @@ private fun ChatSwitcherDialog(
                                             renamingChatId = chat.id
                                             renameTitle = chat.title
                                         },
-                                        modifier = Modifier.size(32.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(Icons.Default.Edit, contentDescription = "Rename chat", modifier = Modifier.size(16.dp))
                                     }
@@ -5594,7 +5594,7 @@ private fun ChatSwitcherDialog(
                                             onClick = {
                                                 deletingChatId = chat.id
                                             },
-                                            modifier = Modifier.size(32.dp),
+                                            modifier = Modifier.size(48.dp),
                                         ) {
                                             Icon(
                                                 Icons.Default.Delete,
@@ -5937,7 +5937,7 @@ private fun FilesTab(
                 if (entry.isDirectory) {
                     IconButton(
                         onClick = { onSetProjectRootDirectory(entry.path) },
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             Icons.Default.Tune,
@@ -6557,7 +6557,7 @@ private fun ChatTab(
                                 IconButton(
                                     onClick = onAttach,
                                     enabled = pendingAttachments.size < 5,
-                                    modifier = Modifier.size(34.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.AttachFile,
@@ -6569,7 +6569,7 @@ private fun ChatTab(
 
                                 IconButton(
                                     onClick = { showWorkspaceControls = !showWorkspaceControls },
-                                    modifier = Modifier.size(34.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     val rotation by animateFloatAsState(
                                         targetValue = if (showWorkspaceControls) 180f else 0f,
@@ -6597,7 +6597,7 @@ private fun ChatTab(
 
                                 IconButton(
                                     onClick = onStartVoiceInput,
-                                    modifier = Modifier.size(34.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Mic,
@@ -6609,7 +6609,7 @@ private fun ChatTab(
 
                                 IconButton(
                                     onClick = { showYouTubeDialog = true },
-                                    modifier = Modifier.size(34.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.SmartDisplay,
@@ -7098,7 +7098,7 @@ private fun MessageBubble(
                             val label = if (message.fromUser) "Prompt copied to clipboard" else "Response copied to clipboard"
                             Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
                         },
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
@@ -7140,7 +7140,7 @@ private fun AttachmentChip(
                 Text(formatFileSize(attachment.sizeBytes), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (onRemove != null) {
-                IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
+                IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Close, "Remove attachment", Modifier.size(15.dp))
                 }
             }

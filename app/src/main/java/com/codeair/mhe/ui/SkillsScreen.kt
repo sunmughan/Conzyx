@@ -596,7 +596,7 @@ private fun McpServerCard(
 
                 IconButton(
                     onClick = onRemove,
-                    modifier = Modifier.size(34.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                 }
