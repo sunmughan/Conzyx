@@ -118,14 +118,34 @@ open class GitHubClient {
         return result.values.toList()
     }
 
+    /**
+     * QA Medium: list endpoints used to fetch a single page (30/20 items)
+     * and silently truncate. Pages are now followed at per_page=100 up to
+     * [maxPages] (500 items), stopping early on a short page — the same
+     * loop repositories() already used. Bare-array endpoints and the
+     * `workflow_runs` wrapper shape are both handled.
+     */
+    private fun fetchAllPages(baseUrl: String, token: String, maxPages: Int = 5): List<JSONObject> {
+        val items = mutableListOf<JSONObject>()
+        var page = 1
+        while (page <= maxPages) {
+            val separator = if ('?' in baseUrl) "&" else "?"
+            val response = getJson("$baseUrl${separator}per_page=100&page=$page", token)
+            val array = when (response) {
+                is JSONArray -> response
+                is JSONObject -> response.optJSONArray("workflow_runs") ?: JSONArray()
+                else -> JSONArray()
+            }
+            for (i in 0 until array.length()) items += array.getJSONObject(i)
+            if (array.length() < 100) break
+            page++
+        }
+        return items
+    }
+
     fun issues(token: String, repoFullName: String): List<GitHubIssue> {
-        val array = getJson(
-            "https://api.github.com/repos/$repoFullName/issues?state=all&per_page=30",
-            token,
-        ) as? JSONArray ?: return emptyList()
         val list = mutableListOf<GitHubIssue>()
-        for (i in 0 until array.length()) {
-            val item = array.getJSONObject(i)
+        for (item in fetchAllPages("https://api.github.com/repos/$repoFullName/issues?state=all", token)) {
             if (!item.has("pull_request")) {
                 list.add(
                     GitHubIssue(
@@ -180,13 +200,8 @@ open class GitHubClient {
     }
 
     fun pullRequests(token: String, repoFullName: String): List<GitHubPullRequest> {
-        val array = getJson(
-            "https://api.github.com/repos/$repoFullName/pulls?state=all&per_page=30",
-            token,
-        ) as? JSONArray ?: return emptyList()
         val list = mutableListOf<GitHubPullRequest>()
-        for (i in 0 until array.length()) {
-            val item = array.getJSONObject(i)
+        for (item in fetchAllPages("https://api.github.com/repos/$repoFullName/pulls?state=all", token)) {
             list.add(
                 GitHubPullRequest(
                     number = item.getInt("number"),
@@ -331,11 +346,8 @@ open class GitHubClient {
     }
 
     fun listWorkflowRuns(token: String, repoFullName: String): List<GitHubWorkflowRun> {
-        val json = getJson("https://api.github.com/repos/$repoFullName/actions/runs?per_page=30", token) as? JSONObject ?: return emptyList()
-        val array = json.optJSONArray("workflow_runs") ?: return emptyList()
         val list = mutableListOf<GitHubWorkflowRun>()
-        for (i in 0 until array.length()) {
-            val item = array.getJSONObject(i)
+        for (item in fetchAllPages("https://api.github.com/repos/$repoFullName/actions/runs", token)) {
             list += GitHubWorkflowRun(
                 id = item.getLong("id"),
                 name = item.optString("name", "CI Run"),
@@ -367,10 +379,8 @@ open class GitHubClient {
     }
 
     fun listReleases(token: String, repoFullName: String): List<GitHubRelease> {
-        val array = getJson("https://api.github.com/repos/$repoFullName/releases?per_page=20", token) as? JSONArray ?: return emptyList()
         val list = mutableListOf<GitHubRelease>()
-        for (i in 0 until array.length()) {
-            val item = array.getJSONObject(i)
+        for (item in fetchAllPages("https://api.github.com/repos/$repoFullName/releases", token)) {
             val assetsArray = item.optJSONArray("assets")
             val assets = mutableListOf<GitHubReleaseAsset>()
             if (assetsArray != null) {
@@ -642,13 +652,10 @@ open class GitHubClient {
     }
 
     open fun listWorkflowRunsForWorkflow(token: String, repoFullName: String, workflowId: String): List<GitHubWorkflowRun> {
-        val json = getJson(
-            "https://api.github.com/repos/$repoFullName/actions/workflows/$workflowId/runs?per_page=20",
+        return fetchAllPages(
+            "https://api.github.com/repos/$repoFullName/actions/workflows/$workflowId/runs",
             token,
-        ) as? JSONObject ?: return emptyList()
-        val array = json.optJSONArray("workflow_runs") ?: return emptyList()
-        return (0 until array.length()).map { i ->
-            val item = array.getJSONObject(i)
+        ).map { item ->
             GitHubWorkflowRun(
                 id = item.getLong("id"),
                 name = item.optString("name", "CI Run"),
@@ -763,7 +770,9 @@ open class GitHubClient {
         return readResponse(connection)
     }
 
-    private fun getJson(endpoint: String, token: String): Any {
+    // QA Medium: protected-open (was private) so pagination can be
+    // unit-tested with a fake fetcher instead of live GitHub calls.
+    protected open fun getJson(endpoint: String, token: String): Any {
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 15_000

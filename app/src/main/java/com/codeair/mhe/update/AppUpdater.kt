@@ -205,14 +205,24 @@ class AppUpdater(
             "Self-update is disabled on Google Play builds; updates come from Google Play."
         }
         val directory = File(context.filesDir, "updates").also { it.mkdirs() }
-        val partial = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk.part")
+        // QA Medium: the download used to restart from zero on any
+        // interruption. The partial file is now versioned, so an
+        // interrupted download resumes where it left off; partials from
+        // other versions are dropped (resuming them would corrupt this
+        // download).
+        val partial = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}-${info.versionCode}.apk.part")
+        directory.listFiles()
+            ?.filter { it.name.endsWith(".apk.part") && it != partial }
+            ?.forEach { it.delete() }
         val target = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk")
 
-        val (stream, totalBytes) = openDownloadStream(info.apkUrl, info.sizeBytes)
+        val resumeFrom = if (partial.exists()) partial.length() else 0L
+        val (stream, totalBytes, startOffset) = openDownloadStream(info.apkUrl, info.sizeBytes, resumeFrom)
+        val append = startOffset > 0
         try {
-            partial.outputStream().use { output ->
+            java.io.FileOutputStream(partial, append).use { output ->
                 val buffer = ByteArray(128 * 1024)
-                var downloaded = 0L
+                var downloaded = startOffset
                 while (true) {
                     val count = stream.read(buffer)
                     if (count < 0) break
@@ -225,17 +235,32 @@ class AppUpdater(
             stream.close()
         }
 
-        if (info.sha256.isNotBlank()) {
-            val actual = sha256(partial)
-            check(actual.equals(info.sha256, ignoreCase = true)) { "Downloaded APK failed its SHA-256 verification" }
+        try {
+            if (info.sha256.isNotBlank()) {
+                val actual = sha256(partial)
+                check(actual.equals(info.sha256, ignoreCase = true)) { "Downloaded APK failed its SHA-256 verification" }
+            }
+            verifyApk(partial, info.versionCode)
+        } catch (e: Throwable) {
+            // A failed verification means these bytes will never verify:
+            // drop the partial so the next attempt restarts clean instead
+            // of resuming corrupt bytes and failing forever.
+            partial.delete()
+            throw e
         }
-        verifyApk(partial, info.versionCode)
         if (target.exists()) target.delete()
         check(partial.renameTo(target)) { "Could not prepare the downloaded update" }
         return target
     }
 
-    private fun openDownloadStream(urlStr: String, fallbackSize: Long): Pair<InputStream, Long> {
+    /**
+     * Opens the download stream, following up to 5 redirects. When
+     * [resumeFrom] > 0, requests `Range: bytes=<resumeFrom>-` so an
+     * interrupted download continues where it left off. Returns the
+     * stream, the total expected bytes, and the offset the stream starts
+     * at (0 when the server ignored the Range request).
+     */
+    private fun openDownloadStream(urlStr: String, fallbackSize: Long, resumeFrom: Long = 0L): Triple<InputStream, Long, Long> {
         var currentUrl = urlStr
         var attempts = 0
         while (attempts < 5) {
@@ -250,6 +275,9 @@ class AppUpdater(
                 connection.setRequestProperty("Authorization", "Bearer $authToken")
             }
             connection.setRequestProperty("Accept", "application/octet-stream")
+            if (resumeFrom > 0) {
+                connection.setRequestProperty("Range", "bytes=$resumeFrom-")
+            }
 
             val code = connection.responseCode
             if (code in listOf(HttpURLConnection.HTTP_MOVED_PERM, HttpURLConnection.HTTP_MOVED_TEMP, 307, 308)) {
@@ -261,15 +289,17 @@ class AppUpdater(
             }
 
             check(code in 200..299) { "Update download failed (HTTP $code)" }
-            val total = connection.contentLengthLong.takeIf { it > 0 } ?: fallbackSize
-            return connection.inputStream to total
+            val startOffset = if (code == HttpURLConnection.HTTP_PARTIAL) resumeFrom else 0L
+            val remaining = connection.contentLengthLong.takeIf { it > 0 }
+            val total = if (remaining != null) startOffset + remaining else maxOf(fallbackSize, startOffset)
+            return Triple(connection.inputStream, total, startOffset)
         }
         error("Too many redirects downloading update")
     }
 
     private fun fetchStringWithAuth(urlStr: String): String? {
         return try {
-            val (stream, _) = openDownloadStream(urlStr, -1L)
+            val (stream, _, _) = openDownloadStream(urlStr, -1L)
             stream.bufferedReader().use { it.readText() }
         } catch (_: Throwable) {
             null

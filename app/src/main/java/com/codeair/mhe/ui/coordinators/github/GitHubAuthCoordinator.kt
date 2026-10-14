@@ -411,7 +411,17 @@ class GitHubAuthCoordinator(
                 guestWorkspacePath = "/workspace/github-auth",
                 outputFile = outputFile,
             )
-            val exit = process.waitFor()
+            // QA Medium: waitFor() used to wait forever — a hung gh hung
+            // refresh indefinitely. 120s is far above any API/auth call
+            // this helper runs (clones use the cancellable clone path).
+            val finished = process.waitFor(120L, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                throw java.util.concurrent.TimeoutException(
+                    "gh ${arguments.firstOrNull() ?: "command"} timed out after 120s"
+                )
+            }
+            val exit = process.exitValue()
             exit to sanitizeTerminalOutput(outputFile.readTailText(MAX_PROCESS_OUTPUT_BYTES)).trim()
         } finally {
             outputFile.delete()
