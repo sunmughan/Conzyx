@@ -1,5 +1,9 @@
 package com.codeair.mhe.marketplace
 
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,27 +12,46 @@ import org.junit.Test
 
 class MarketplaceProtocolTest {
 
+    private fun startScriptedServer(responses: List<Pair<Int, String>>): Pair<ServerSocket, AtomicInteger> {
+        val calls = AtomicInteger(0)
+        val serverSocket = ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))
+        thread(isDaemon = true, name = "marketplace-test-server") {
+            try {
+                while (!serverSocket.isClosed) {
+                    serverSocket.accept().use { socket ->
+                        val reader = socket.getInputStream().bufferedReader()
+                        var line: String?
+                        do {
+                            line = reader.readLine()
+                        } while (line != null && line.isNotEmpty())
+                        val n = calls.incrementAndGet()
+                        val (status, body) = responses[minOf(n - 1, responses.size - 1)]
+                        val bodyBytes = body.toByteArray()
+                        val statusText = when (status) {
+                            200 -> "OK"
+                            429 -> "Too Many Requests"
+                            503 -> "Service Unavailable"
+                            else -> "Unknown"
+                        }
+                        val out = socket.getOutputStream()
+                        out.write("HTTP/1.1 $status $statusText\r\nContent-Type: application/json\r\nContent-Length: ${bodyBytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        out.write(bodyBytes)
+                        out.flush()
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return serverSocket to calls
+    }
+
     @Test
     fun transportRetriesOn429ThenSucceeds() {
-        val calls = java.util.concurrent.atomic.AtomicInteger(0)
-        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        val (server, calls) = startScriptedServer(
+            listOf(429 to "rate limited", 200 to "{\"listings\":[]}")
+        )
         try {
-            server.createContext("/api/v1/listings") { exchange ->
-                val n = calls.incrementAndGet()
-                if (n == 1) {
-                    val body = "rate limited".toByteArray()
-                    exchange.sendResponseHeaders(429, body.size.toLong())
-                    exchange.responseBody.use { it.write(body) }
-                } else {
-                    val body = "{\"listings\":[]}".toByteArray()
-                    exchange.responseHeaders.add("Content-Type", "application/json")
-                    exchange.sendResponseHeaders(200, body.size.toLong())
-                    exchange.responseBody.use { it.write(body) }
-                }
-                exchange.close()
-            }
-            server.start()
-            val baseUrl = "http://localhost:${server.address.port}"
+            val baseUrl = "http://127.0.0.1:${server.localPort}"
             val res = UrlConnectionMarketplaceTransport().send(
                 baseUrl,
                 MarketplaceTransportRequest("GET", "/api/v1/listings")
@@ -37,24 +60,15 @@ class MarketplaceProtocolTest {
             assertTrue(res.body.contains("listings"))
             assertEquals(2, calls.get())
         } finally {
-            server.stop(0)
+            server.close()
         }
     }
 
     @Test
     fun transportStopsRetryingAfterMaxAttempts() {
-        val calls = java.util.concurrent.atomic.AtomicInteger(0)
-        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        val (server, calls) = startScriptedServer(listOf(503 to "server error"))
         try {
-            server.createContext("/api/v1/listings") { exchange ->
-                calls.incrementAndGet()
-                val body = "server error".toByteArray()
-                exchange.sendResponseHeaders(503, body.size.toLong())
-                exchange.responseBody.use { it.write(body) }
-                exchange.close()
-            }
-            server.start()
-            val baseUrl = "http://localhost:${server.address.port}"
+            val baseUrl = "http://127.0.0.1:${server.localPort}"
             val res = UrlConnectionMarketplaceTransport().send(
                 baseUrl,
                 MarketplaceTransportRequest("GET", "/api/v1/listings")
@@ -62,7 +76,7 @@ class MarketplaceProtocolTest {
             assertEquals(503, res.statusCode)
             assertEquals(3, calls.get())
         } finally {
-            server.stop(0)
+            server.close()
         }
     }
 
