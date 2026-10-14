@@ -72,7 +72,10 @@ fun GitHubIssuesBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    var currentRepo by remember(repoFullName) { mutableStateOf(repoFullName.ifBlank { "google/material-design-icons" }) }
+    // Medium: the repo used to default to google/material-design-icons —
+    // an unrelated project — and the only caller passes "" so the sheet
+    // ALWAYS showed Google's issues. No default: blank means "ask".
+    var currentRepo by remember(repoFullName) { mutableStateOf(repoFullName) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Issues, 1: PRs
     var issues by remember { mutableStateOf<List<GitHubIssue>>(emptyList()) }
     var pullRequests by remember { mutableStateOf<List<GitHubPullRequest>>(emptyList()) }
@@ -80,7 +83,14 @@ fun GitHubIssuesBottomSheet(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     fun loadData() {
-        if (currentRepo.isBlank()) return
+        if (currentRepo.isBlank()) {
+            // Medium: blank used to leave the spinner running forever
+            // (early return with loading still true).
+            loading = false
+            issues = emptyList()
+            pullRequests = emptyList()
+            return
+        }
         scope.launch {
             loading = true
             errorMessage = null
@@ -163,7 +173,14 @@ fun GitHubIssuesBottomSheet(
                 )
             }
 
-            if (loading) {
+            if (currentRepo.isBlank()) {
+                Text(
+                    "Enter a repository above (owner/repo) to browse its issues and pull requests.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            } else if (loading) {
                 Box(modifier = Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(strokeWidth = 2.dp)
                 }

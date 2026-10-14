@@ -58,6 +58,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Check
@@ -155,6 +156,7 @@ fun CodeEditorScreen(
 ) {
     val source = content.orEmpty()
     val readOnly = loading || source.contains("[File truncated — too large to display fully]")
+    val density = LocalDensity.current
     // Milestone 2: restore the persisted cursor/selection on first composition.
     var value by remember(filePath) {
         val restored = initialViewState?.clampedTo(source.length)
@@ -480,7 +482,11 @@ fun CodeEditorScreen(
             .sumOf { it.length + 1 }
             .coerceIn(0, value.text.length)
         value = value.copy(selection = TextRange(offset))
-        scope.launch { vertical.animateScrollTo(((target - 1) * 20 * 3).coerceAtLeast(0)) }
+        // Medium: the scroll offset used to multiply by a hardcoded 3
+        // (one phone's density) — on any other density it landed 3x too
+        // far. The line height converts through the real density now.
+        val lineHeightPx = with(density) { EDITOR_LINE_HEIGHT.toPx() }
+        scope.launch { vertical.animateScrollTo(goToLineScrollOffset(target, lineHeightPx)) }
     }
 
     fun findMatch(from: Int, forward: Boolean): Int {
@@ -1971,7 +1977,7 @@ private fun EditorPane(
                 Modifier.padding(top = 8.dp, end = 6.dp),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
-                lineHeight = 20.sp,
+                lineHeight = EDITOR_LINE_HEIGHT,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
             )
@@ -2008,7 +2014,7 @@ private fun EditorPane(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
-                    lineHeight = 20.sp,
+                    lineHeight = EDITOR_LINE_HEIGHT,
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 visualTransformation = CodeSyntaxVisualTransformation(
@@ -2022,6 +2028,20 @@ private fun EditorPane(
         }
     }
 }
+
+/**
+ * QA Medium: the editor's line height — the single source for both the
+ * text styles and the Go-to-line scroll math, so they cannot drift apart.
+ */
+internal val EDITOR_LINE_HEIGHT = 20.sp
+
+/**
+ * QA Medium: Go-to-line scroll offset in pixels for a 1-based [targetLine].
+ * The old code multiplied by a hardcoded 3 (one phone's density), landing
+ * 3x too far on any other density.
+ */
+internal fun goToLineScrollOffset(targetLine: Int, lineHeightPx: Float): Int =
+    ((targetLine - 1).coerceAtLeast(0) * lineHeightPx).toInt().coerceAtLeast(0)
 
 /**
  * QA H1: a palette New File / New Folder name is project-root-relative.

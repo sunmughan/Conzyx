@@ -240,6 +240,9 @@ fun PreviewTab(
 
     var address by remember(currentTab.id, currentTab.url) { mutableStateOf(currentTab.url) }
     var addressError by remember { mutableStateOf<String?>(null) }
+    // Medium: a failed page load used to show only the bare WebView error
+    // page. The main-frame failure is now surfaced as a banner + Retry.
+    var pageError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     val canGoBack = remember { mutableStateOf(false) }
@@ -1157,13 +1160,38 @@ fun PreviewTab(
             }
         } else {
             val isCustomViewport = activeViewportPreset.widthDp > 0
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // Medium: a custom viewport wider than the screen used
-                    // to be clipped with no way to pan to it.
-                    .horizontalScroll(rememberScrollState())
-                    .then(
+            Column(Modifier.fillMaxSize()) {
+                pageError?.let { error ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(18.dp))
+                            Text(
+                                error,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { pageError = null; webView?.reload() }) {
+                                Text("Retry", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        // Medium: a custom viewport wider than the screen used
+                        // to be clipped with no way to pan to it.
+                        .horizontalScroll(rememberScrollState())
+                        .then(
                         if (isCustomViewport) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                         else Modifier
                     ),
@@ -1266,8 +1294,18 @@ fun PreviewTab(
                                 }
                             }
 
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                super.onPageStarted(view, url, favicon)
+                                pageError = null
+                            }
+
                             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
                                 super.onReceivedError(view, request, error)
+                                // Main-frame failures only: a broken image or
+                                // tracker must not blank the page with a banner.
+                                if (request?.isForMainFrame == true) {
+                                    pageError = "Could not load this page: ${error?.description ?: "Network error"}"
+                                }
                                 if (request?.url != null) {
                                     onRecordNetworkLog(
                                         NetworkLogEntry(
@@ -1282,6 +1320,9 @@ fun PreviewTab(
 
                             override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: android.webkit.WebResourceResponse?) {
                                 super.onReceivedHttpError(view, request, errorResponse)
+                                if (request?.isForMainFrame == true) {
+                                    pageError = "Page failed to load (HTTP ${errorResponse?.statusCode ?: "error"})"
+                                }
                                 if (request?.url != null) {
                                     onRecordNetworkLog(
                                         NetworkLogEntry(
@@ -1338,6 +1379,7 @@ fun PreviewTab(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
+        }
         }
     }
 }

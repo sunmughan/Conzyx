@@ -556,13 +556,32 @@ private fun WorkerCard(worker: CloudWorkerSpec) {
     }
 }
 
+/**
+ * QA Medium: validates an Add-Runner endpoint URL (format only — it cannot
+ * prove the host exists). Requires an http(s) scheme and a host, so a
+ * bare hostname, a typo'd scheme, or an empty value never registers.
+ */
+internal fun isValidRunnerUrl(raw: String): Boolean {
+    val value = raw.trim()
+    if (value.isEmpty()) return false
+    val uri = runCatching { java.net.URI(value) }.getOrNull() ?: return false
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return false
+    if (uri.host.isNullOrBlank()) return false
+    return true
+}
+
 @Composable
 private fun AddWorkerCard(
     onAdd: (String, String, String, Boolean, Double) -> Unit,
     onCancel: () -> Unit
 ) {
     var name by remember { mutableStateOf("Self-Hosted VPS Runner") }
-    var url by remember { mutableStateOf("https://vps.mobileharness-extended.io:8080") }
+    // Medium: the URL used to be prefilled with a placeholder endpoint
+    // (https://vps.mobileharness-extended.io:8080) that likely does not
+    // exist — one tap registered a dead host. It now starts empty and
+    // Register stays disabled until a real http(s) URL is entered.
+    var url by remember { mutableStateOf("") }
     var region by remember { mutableStateOf("custom-vps") }
     var isGpu by remember { mutableStateOf(false) }
 
@@ -574,10 +593,30 @@ private fun AddWorkerCard(
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Register New Cloud Runner Node", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Runner Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Endpoint URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("Endpoint URL") },
+                placeholder = { Text("https://your-vps:8080") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                isError = url.isNotBlank() && !isValidRunnerUrl(url),
+            )
+            if (url.isNotBlank() && !isValidRunnerUrl(url)) {
+                Text(
+                    "Enter a valid http(s) endpoint URL, e.g. https://your-vps:8080",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             // Medium: the two buttons overflowed on narrow phones.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onAdd(name, url, region, isGpu, 0.04) }, shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = { onAdd(name, url.trim(), region, isGpu, 0.04) },
+                    enabled = name.isNotBlank() && isValidRunnerUrl(url),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
                     Text("Register Runner")
                 }
                 OutlinedButton(onClick = onCancel, shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f)) {
