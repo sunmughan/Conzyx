@@ -6,7 +6,6 @@ import com.codeair.mhe.cloud.sync.CloudArtifactSyncEngine
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
 import java.io.File
-import java.security.MessageDigest
 
 /** Honest accounting of an artifact download session. */
 data class ArtifactFetchResult(
@@ -19,10 +18,10 @@ data class ArtifactFetchResult(
 /**
  * Cloud artifact downloader with SHA-256 verification (Milestone 11).
  *
- * Lists descriptors for a finished remote job, downloads each one's bytes, and
- * verifies the SHA-256 against the descriptor BEFORE writing anything to disk.
- * A checksum mismatch fails the whole fetch honestly — the mismatched bytes are
- * never written, never reported as an artifact.
+ * Lists descriptors for a finished remote job, streams each artifact to a
+ * temp file, and verifies the SHA-256 incrementally BEFORE it lands at its
+ * final name. A checksum mismatch fails the whole fetch honestly — the
+ * mismatched file is deleted, never kept and never reported as an artifact.
  */
 class CloudArtifactDownloader(
     private val client: CloudExecutionClient,
@@ -76,8 +75,14 @@ class CloudArtifactDownloader(
                 logs.add("Skipping artifact with blank id/filename.")
                 continue
             }
-            val dl = client.downloadArtifactBytes(worker, remoteJobId, descriptor.id)
-            if (dl.result.status != OperationStatus.SUCCESS || dl.bytes == null) {
+            // QA Medium: artifact bytes used to be held fully in memory
+            // (plus a UTF-8 String copy in the transport) — a large
+            // artifact OOM'd the app. The body now streams to a temp file
+            // and is SHA-256-verified incrementally before it lands.
+            val tmp = File(destinationDir, descriptor.filename + ".part")
+            val dl = client.downloadArtifactToFile(worker, remoteJobId, descriptor.id, tmp, descriptor.sha256)
+            if (dl.result.status != OperationStatus.SUCCESS || dl.sha256 == null) {
+                runCatching { tmp.delete() }
                 return ArtifactFetchResult(
                     OperationResult.failure(
                         error = "Artifact fetch failed downloading '${descriptor.filename}': ${dl.result.error}",
@@ -88,27 +93,8 @@ class CloudArtifactDownloader(
                 )
             }
             downloaded++
-            val computed = sha256Hex(dl.bytes)
-            if (descriptor.sha256.isNotBlank() && !computed.equals(descriptor.sha256, ignoreCase = true)) {
-                return ArtifactFetchResult(
-                    OperationResult.failure(
-                        error = "Artifact '${descriptor.filename}' checksum mismatch: " +
-                            "expected ${descriptor.sha256.take(16)}..., got ${computed.take(16)}.... " +
-                            "Bytes were NOT written to disk.",
-                        startedAt = startedAt,
-                        logs = logs
-                    ),
-                    downloaded, verified, fetched
-                )
-            }
-            val artifact = CloudArtifact(
-                filename = descriptor.filename,
-                remoteUrl = "${worker.endpointUrl.trimEnd('/')}/api/v1/jobs/$remoteJobId/artifacts/${descriptor.id}",
-                sizeBytes = dl.bytes.size.toLong(),
-                checksumSha256 = computed.ifBlank { descriptor.sha256 }
-            )
-            val written = syncEngine.unpackRemoteArtifact(artifact, destinationDir, dl.bytes)
-            if (!written) {
+            val target = File(destinationDir, descriptor.filename)
+            if (!moveFile(tmp, target)) {
                 return ArtifactFetchResult(
                     OperationResult.failure(
                         error = "Artifact '${descriptor.filename}' verified but could not be written to ${destinationDir.absolutePath}.",
@@ -118,9 +104,16 @@ class CloudArtifactDownloader(
                     downloaded, verified, fetched
                 )
             }
+            val artifact = CloudArtifact(
+                filename = descriptor.filename,
+                remoteUrl = "${worker.endpointUrl.trimEnd('/')}/api/v1/jobs/$remoteJobId/artifacts/${descriptor.id}",
+                sizeBytes = target.length(),
+                checksumSha256 = dl.sha256.ifBlank { descriptor.sha256 }
+            )
+            syncEngine.recordCachedArtifact(artifact, target.absolutePath)
             verified++
             fetched.add(artifact)
-            logs.add("Verified + wrote ${descriptor.filename} (${dl.bytes.size} bytes, sha256 ${computed.take(12)}...).")
+            logs.add("Verified + wrote ${descriptor.filename} (${target.length()} bytes, sha256 ${dl.sha256.take(12)}...).")
         }
 
         return ArtifactFetchResult(
@@ -134,8 +127,16 @@ class CloudArtifactDownloader(
         )
     }
 
-    private fun sha256Hex(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(bytes).joinToString("") { "%02x".format(it) }
-    }
+    /**
+     * renameTo is atomic but fails across filesystems; fall back to
+     * copy+delete so a verified artifact is never lost to a rename quirk.
+     */
+    private fun moveFile(src: File, dest: File): Boolean =
+        runCatching {
+            dest.parentFile?.mkdirs()
+            if (src.renameTo(dest)) return true
+            src.copyTo(dest, overwrite = true)
+            src.delete()
+            true
+        }.getOrDefault(false)
 }

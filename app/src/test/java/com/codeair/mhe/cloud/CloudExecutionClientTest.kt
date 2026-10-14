@@ -1,28 +1,36 @@
 package com.codeair.mhe.cloud
 
-import com.codeair.mhe.cloud.exec.ArtifactDownloadResult
+import com.codeair.mhe.cloud.exec.ArtifactFileDownloadResult
 import com.codeair.mhe.cloud.exec.CloudExecutionClient
 import com.codeair.mhe.cloud.exec.CloudHttpTransport
 import com.codeair.mhe.cloud.exec.CloudJobRequest
 import com.codeair.mhe.cloud.exec.CloudTransportRequest
 import com.codeair.mhe.cloud.exec.CloudTransportResponse
 import com.codeair.mhe.cloud.exec.RemoteJobStatus
+import com.codeair.mhe.cloud.exec.StreamedDownload
 import com.codeair.mhe.cloud.model.CloudWorkerSpec
 import com.codeair.mhe.core.result.OperationStatus
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.security.MessageDigest
 
 /** Fake transport: routes (method + path) to scripted responses; records the last request. */
 class FakeCloudTransport(
-    private val handler: (CloudTransportRequest) -> CloudTransportResponse = { CloudTransportResponse(404, "{}") }
+    private val handler: (CloudTransportRequest) -> CloudTransportResponse = { CloudTransportResponse(404, "{}") },
+    private val downloadHandler: (CloudTransportRequest, File) -> StreamedDownload =
+        { _, dest -> dest.writeBytes(ByteArray(0)); StreamedDownload(200, null, 0) },
 ) : CloudHttpTransport {
     val seen = mutableListOf<CloudTransportRequest>()
     override fun send(baseUrl: String, request: CloudTransportRequest): CloudTransportResponse {
         seen.add(request)
         return handler(request)
+    }
+    override fun downloadToFile(baseUrl: String, request: CloudTransportRequest, dest: File): StreamedDownload {
+        seen.add(request)
+        return downloadHandler(request, dest)
     }
 }
 
@@ -163,26 +171,63 @@ class CloudExecutionClientTest {
         assertEquals(mapOf("a.kt" to "deadbeef"), res.knownFiles)
     }
 
+    private fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    private fun tempDest(): File =
+        File.createTempFile("artifact_dl_test", ".bin").also { it.deleteOnExit() }
+
     @Test
-    fun downloadArtifactBytesReturnsBytesOnSuccess() {
+    fun downloadArtifactToFileStreamsToDiskAndVerifiesChecksum() {
         val bytes = "binary-payload".toByteArray()
-        val client = CloudExecutionClient(FakeCloudTransport {
-            CloudTransportResponse(200, "ok", bytes)
-        })
-        val res: ArtifactDownloadResult = client.downloadArtifactBytes(authedWorker(), "remote-1", "art-1")
+        val sha = sha256Hex(bytes)
+        val client = CloudExecutionClient(
+            FakeCloudTransport(
+                downloadHandler = { _, dest ->
+                    dest.writeBytes(bytes)
+                    StreamedDownload(200, null, bytes.size.toLong())
+                }
+            )
+        )
+        val dest = tempDest()
+        val res: ArtifactFileDownloadResult =
+            client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, sha)
         assertEquals(OperationStatus.SUCCESS, res.result.status)
-        assertNotNull(res.bytes)
-        assertEquals("binary-payload", String(res.bytes!!))
+        assertEquals(bytes.size.toLong(), res.bytesWritten)
+        assertEquals(sha, res.sha256)
+        assertEquals("binary-payload", dest.readText())
     }
 
     @Test
-    fun downloadArtifactBytesNullBodyIsFailure() {
-        val client = CloudExecutionClient(FakeCloudTransport {
-            CloudTransportResponse(200, "ok", null)
-        })
-        val res = client.downloadArtifactBytes(authedWorker(), "remote-1", "art-1")
+    fun downloadArtifactToFileDeletesOnChecksumMismatch() {
+        val bytes = "binary-payload".toByteArray()
+        val client = CloudExecutionClient(
+            FakeCloudTransport(
+                downloadHandler = { _, dest ->
+                    dest.writeBytes(bytes)
+                    StreamedDownload(200, null, bytes.size.toLong())
+                }
+            )
+        )
+        val dest = tempDest()
+        val res = client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, "00".repeat(32))
         assertEquals(OperationStatus.FAILED, res.result.status)
-        assertNull(res.bytes)
+        assertTrue(res.result.error.orEmpty().contains("checksum mismatch"))
+        assertFalse("mismatched file must be deleted", dest.exists())
+    }
+
+    @Test
+    fun downloadArtifactToFileHttpErrorIsHonestFailure() {
+        val client = CloudExecutionClient(
+            FakeCloudTransport(
+                downloadHandler = { _, _ -> StreamedDownload(500, "HTTP 500: boom", 0) }
+            )
+        )
+        val dest = tempDest()
+        val res = client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, "")
+        assertEquals(OperationStatus.FAILED, res.result.status)
+        assertTrue(res.result.error.orEmpty().contains("500"))
+        assertFalse("failed download must leave no file", dest.exists())
     }
 
     @Test

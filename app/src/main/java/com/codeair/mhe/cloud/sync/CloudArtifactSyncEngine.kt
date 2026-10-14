@@ -99,6 +99,15 @@ class CloudArtifactSyncEngine {
 
     fun getCachedArtifact(id: String): CloudArtifact? = artifactCache[id]
 
+    /**
+     * Records an artifact whose file was written directly (the streamed
+     * download path writes the file itself instead of going through
+     * [unpackRemoteArtifact]).
+     */
+    fun recordCachedArtifact(artifact: CloudArtifact, localPath: String) {
+        artifactCache[artifact.id] = artifact.copy(localCachePath = localPath)
+    }
+
     fun isPayloadCached(manifestHash: String): Boolean = payloadCache.containsKey(manifestHash)
 
     fun calculateChecksum(bytes: ByteArray): String {

@@ -4,12 +4,15 @@ import com.codeair.mhe.cloud.model.CloudWorkerSpec
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
 import org.json.JSONObject
+import java.io.File
+import java.security.MessageDigest
 import java.util.Base64
 
-/** Result of a raw artifact download: the honest outcome plus the bytes (null unless SUCCESS). */
-data class ArtifactDownloadResult(
+/** Result of a streamed artifact download: the honest outcome plus the verified file facts. */
+data class ArtifactFileDownloadResult(
     val result: OperationResult,
-    val bytes: ByteArray?
+    val bytesWritten: Long,
+    val sha256: String?
 )
 
 /** Result of a payload manifest check: the honest outcome plus path->sha256 of known files. */
@@ -230,36 +233,84 @@ class CloudExecutionClient(
         return ArtifactDescriptorListResult(res, descriptors)
     }
 
-    /** GET /api/v1/jobs/{id}/artifacts/{artifactId} — raw bytes, honestly verified. */
-    fun downloadArtifactBytes(
+    /**
+     * GET /api/v1/jobs/{id}/artifacts/{artifactId} — streamed straight to
+     * [dest], honestly verified.
+     *
+     * QA Medium: this used to return the whole artifact as a ByteArray (the
+     * transport also kept a UTF-8 String copy) — a large artifact OOM'd the
+     * app. The body now streams to disk and the SHA-256 is computed
+     * incrementally over the file; memory stays flat regardless of size.
+     */
+    fun downloadArtifactToFile(
         worker: CloudWorkerSpec,
         remoteJobId: String,
-        artifactId: String
-    ): ArtifactDownloadResult {
-        requireAuth(worker)?.let { return ArtifactDownloadResult(it, null) }
-        val res = transport.send(
+        artifactId: String,
+        dest: File,
+        expectedSha256: String
+    ): ArtifactFileDownloadResult {
+        requireAuth(worker)?.let { return ArtifactFileDownloadResult(it, 0, null) }
+        val dl = transport.downloadToFile(
             worker.endpointUrl,
-            CloudTransportRequest("GET", "/api/v1/jobs/$remoteJobId/artifacts/$artifactId", authHeaders(worker))
+            CloudTransportRequest("GET", "/api/v1/jobs/$remoteJobId/artifacts/$artifactId", authHeaders(worker)),
+            dest
         )
-        checkTransport(res, "artifact download")?.let { return ArtifactDownloadResult(it, null) }
-        if (res.statusCode != 200 || res.rawBytes == null) {
-            return ArtifactDownloadResult(
+        if (dl.statusCode == -1) {
+            return ArtifactFileDownloadResult(
                 OperationResult.failure(
-                    error = "Cloud artifact download failed: HTTP ${res.statusCode} for artifact $artifactId.",
-                    exitCode = res.statusCode,
-                    logs = listOf(res.body.take(2000))
+                    error = "Cloud artifact download failed: transport error (${dl.error}).",
+                    logs = listOfNotNull(dl.error)
                 ),
-                null
+                0, null
             )
         }
-        return ArtifactDownloadResult(
+        if (dl.statusCode != 200) {
+            runCatching { dest.delete() }
+            return ArtifactFileDownloadResult(
+                OperationResult.failure(
+                    error = "Cloud artifact download failed: HTTP ${dl.statusCode} for artifact $artifactId. ${dl.error.orEmpty()}",
+                    exitCode = dl.statusCode,
+                    logs = listOfNotNull(dl.error)
+                ),
+                0, null
+            )
+        }
+        val computed = sha256Hex(dest)
+        if (expectedSha256.isNotBlank() && !computed.equals(expectedSha256, ignoreCase = true)) {
+            dest.delete()
+            return ArtifactFileDownloadResult(
+                OperationResult.failure(
+                    error = "Artifact '$artifactId' checksum mismatch: expected " +
+                        "${expectedSha256.take(16)}..., got ${computed.take(16)}.... " +
+                        "The file was deleted, not kept.",
+                    logs = listOf("checksum mismatch for artifact $artifactId")
+                ),
+                0, null
+            )
+        }
+        return ArtifactFileDownloadResult(
             OperationResult.success(
-                logs = listOf("Downloaded ${res.rawBytes.size} bytes for artifact $artifactId."),
+                logs = listOf("Downloaded ${dl.bytesWritten} bytes for artifact $artifactId (sha256 ${computed.take(12)}...)."),
                 artifacts = listOf(artifactId),
-                verificationEvidence = "HTTP 200, ${res.rawBytes.size} raw bytes"
+                verificationEvidence = "HTTP 200, ${dl.bytesWritten} bytes streamed to file, SHA-256 verified"
             ),
-            res.rawBytes
+            dl.bytesWritten, computed
         )
+    }
+
+    /** SHA-256 of a file, computed incrementally — the file is never fully loaded. */
+    private fun sha256Hex(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                digest.update(buf, 0, n)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
     }
 
     /**

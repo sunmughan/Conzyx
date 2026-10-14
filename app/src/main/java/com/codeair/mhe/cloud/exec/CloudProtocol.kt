@@ -3,6 +3,7 @@ package com.codeair.mhe.cloud.exec
 import com.codeair.mhe.network.HttpRetry
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Wire protocol for the Mobile Harness Extended cloud worker API (Milestone 11).
@@ -74,12 +75,30 @@ data class CloudTransportResponse(
 )
 
 /**
+ * Outcome of a streamed file download: the HTTP status, an error message
+ * (null on success), and how many body bytes were actually written.
+ */
+data class StreamedDownload(
+    val statusCode: Int,
+    val error: String?,
+    val bytesWritten: Long
+)
+
+/**
  * Injectable HTTP transport seam. Production implementation uses HttpURLConnection;
  * tests use a fake. Never throws for transport errors — encodes them in the response
  * (statusCode = -1) so callers stay honest.
  */
 interface CloudHttpTransport {
     fun send(baseUrl: String, request: CloudTransportRequest): CloudTransportResponse
+
+    /**
+     * Streams a response body straight to [dest] without holding it in
+     * memory. Only the initial response is retried (429/5xx before any
+     * body byte flows); a failure mid-stream is reported as-is and the
+     * partial file is deleted.
+     */
+    fun downloadToFile(baseUrl: String, request: CloudTransportRequest, dest: File): StreamedDownload
 }
 
 /** Production transport over HttpURLConnection. Pure JVM, no Android dependency. */
@@ -124,6 +143,62 @@ class UrlConnectionCloudTransport(
                 return CloudTransportResponse(code, bytes?.toString(Charsets.UTF_8).orEmpty(), bytes)
             } catch (e: Exception) {
                 return CloudTransportResponse(-1, "transport error: ${e.message}")
+            }
+        }
+    }
+
+    override fun downloadToFile(
+        baseUrl: String,
+        request: CloudTransportRequest,
+        dest: File
+    ): StreamedDownload {
+        // QA Medium: artifact downloads used to materialize the whole body
+        // (raw bytes + a UTF-8 String copy) — a large artifact OOM'd the app.
+        // The body now streams to disk in 8 KB chunks; memory stays flat.
+        var attempt = 0
+        while (true) {
+            try {
+                val url = java.net.URL(baseUrl.trimEnd('/') + request.path)
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = connectTimeoutMs
+                    readTimeout = readTimeoutMs
+                    requestMethod = request.method
+                    instanceFollowRedirects = true
+                    request.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+                    connect()
+                }
+                val code = conn.responseCode
+                if (HttpRetry.isRetryable(code) &&
+                    attempt < HttpRetry.MAX_ATTEMPTS - 1
+                ) {
+                    val retryAfter = conn.getHeaderField("Retry-After")
+                    conn.disconnect()
+                    HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                    attempt++
+                    continue
+                }
+                if (code !in 200..299) {
+                    val errBody = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    conn.disconnect()
+                    return StreamedDownload(code, "HTTP $code: ${errBody.take(500)}", 0)
+                }
+                var written = 0L
+                conn.inputStream.use { input ->
+                    dest.outputStream().use { output ->
+                        val buf = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            output.write(buf, 0, n)
+                            written += n
+                        }
+                    }
+                }
+                conn.disconnect()
+                return StreamedDownload(code, null, written)
+            } catch (e: Exception) {
+                runCatching { dest.delete() }
+                return StreamedDownload(-1, "transport error: ${e.message}", 0)
             }
         }
     }

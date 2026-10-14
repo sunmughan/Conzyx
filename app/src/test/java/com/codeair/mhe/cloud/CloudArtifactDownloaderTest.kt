@@ -3,6 +3,7 @@ package com.codeair.mhe.cloud
 import com.codeair.mhe.cloud.exec.CloudArtifactDownloader
 import com.codeair.mhe.cloud.exec.CloudExecutionClient
 import com.codeair.mhe.cloud.exec.CloudTransportResponse
+import com.codeair.mhe.cloud.exec.StreamedDownload
 import com.codeair.mhe.cloud.model.CloudWorkerSpec
 import com.codeair.mhe.cloud.sync.CloudArtifactSyncEngine
 import com.codeair.mhe.core.result.OperationStatus
@@ -40,18 +41,26 @@ class CloudArtifactDownloaderTest {
         destDir.deleteRecursively()
     }
 
-    private fun transportWith(descriptorSha: String) = FakeCloudTransport { req ->
-        when {
-            req.path.endsWith("/artifacts") && req.method == "GET" ->
-                CloudTransportResponse(
-                    200,
-                    """{"artifacts":[{"id":"art-1","filename":"app.apk","sizeBytes":${payload.size},"sha256":"$descriptorSha"}]}"""
-                )
-            req.path.endsWith("/artifacts/art-1") && req.method == "GET" ->
-                CloudTransportResponse(200, "ok", payload)
-            else -> CloudTransportResponse(404, "{}")
+    private fun transportWith(descriptorSha: String) = FakeCloudTransport(
+        handler = { req ->
+            when {
+                req.path.endsWith("/artifacts") && req.method == "GET" ->
+                    CloudTransportResponse(
+                        200,
+                        """{"artifacts":[{"id":"art-1","filename":"app.apk","sizeBytes":${payload.size},"sha256":"$descriptorSha"}]}"""
+                    )
+                else -> CloudTransportResponse(404, "{}")
+            }
+        },
+        downloadHandler = { req, dest ->
+            if (req.path.endsWith("/artifacts/art-1") && req.method == "GET") {
+                dest.writeBytes(payload)
+                StreamedDownload(200, null, payload.size.toLong())
+            } else {
+                StreamedDownload(404, "not found", 0)
+            }
         }
-    }
+    )
 
     @Test
     fun matchingChecksumWritesArtifact() {
@@ -65,6 +74,7 @@ class CloudArtifactDownloaderTest {
         val written = File(destDir, "app.apk")
         assertTrue(written.isFile)
         assertEquals("fake-apk-bytes", written.readText())
+        assertFalse("temp .part file must be gone", File(destDir, "app.apk.part").exists())
     }
 
     @Test
