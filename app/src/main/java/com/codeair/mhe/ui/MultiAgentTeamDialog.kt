@@ -165,7 +165,7 @@ fun MultiAgentTeamBottomSheet(
                                 )
                             }
                             Text(
-                                text = role.title.substringBefore(' '),
+                                text = role.title,
                                 fontSize = 11.sp,
                                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
