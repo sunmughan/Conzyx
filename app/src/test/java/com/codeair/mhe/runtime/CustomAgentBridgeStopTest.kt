@@ -4,8 +4,9 @@ import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ProjectKind
 import com.codeair.mhe.model.ProviderKind
 import com.codeair.mhe.model.ProviderProfile
-import com.sun.net.httpserver.HttpServer
-import java.net.InetSocketAddress
+import com.codeair.mhe.model.RuntimeEvent
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -23,27 +24,40 @@ class CustomAgentBridgeStopTest {
 
     @Test
     fun `stopSession cancels an in-flight SSE stream promptly`() {
-        // A server that holds the SSE stream open for 30s after one chunk.
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/chat/completions") { exchange ->
-            exchange.responseHeaders.add("Content-Type", "text/event-stream")
-            exchange.sendResponseHeaders(200, 0)
-            val out = exchange.responseBody
-            out.write("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n".toByteArray())
-            out.flush()
+        // A raw-socket server (com.sun.net.httpserver is not on the
+        // unit-test classpath) that holds the SSE stream open for 30s
+        // after one chunk.
+        val serverSocket = ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))
+        val port = serverSocket.localPort
+        thread(isDaemon = true, name = "sse-test-server") {
             try {
-                Thread.sleep(30_000)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            } finally {
-                runCatching { out.close() }
+                serverSocket.accept().use { socket ->
+                    val reader = socket.getInputStream().bufferedReader()
+                    var line: String?
+                    do {
+                        line = reader.readLine()
+                    } while (line != null && line.isNotEmpty())
+                    val out = socket.getOutputStream()
+                    out.write(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+                            .toByteArray(),
+                    )
+                    out.write("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n".toByteArray())
+                    out.flush()
+                    try {
+                        Thread.sleep(30_000)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }
+            } catch (_: Exception) {
+                // Client went away (expected on stop): nothing to do.
             }
         }
-        server.start()
         try {
             val provider = ProviderProfile(
                 kind = ProviderKind.CUSTOM,
-                baseUrl = "http://127.0.0.1:${server.address.port}",
+                baseUrl = "http://127.0.0.1:$port",
                 model = "test-model",
                 dshApi = "openai-completions",
             )
@@ -102,7 +116,7 @@ class CustomAgentBridgeStopTest {
             sessionThread.join(10_000)
             assertTrue("session thread still alive after stop", !sessionThread.isAlive)
         } finally {
-            server.stop(0)
+            runCatching { serverSocket.close() }
         }
     }
 }
