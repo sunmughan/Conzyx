@@ -7194,43 +7194,6 @@ private fun ApprovalCard(
     }
 }
 
-@Composable
-private fun FilesTab(files: List<WorkspaceEntry>, loading: Boolean, onRefresh: () -> Unit) {
-    LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Project files", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (loading) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh files") }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-        if (!loading && files.isEmpty()) {
-            item { EmptyState(Icons.Default.Folder, "No files yet", "Ask your coding agent to create something in this project.") }
-        }
-        items(files, key = { it.path }) { entry ->
-            Row(
-                Modifier.fillMaxWidth().padding(start = (entry.depth * 20).dp).padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    if (entry.isDirectory) Icons.Default.Folder else Icons.Default.Description,
-                    null,
-                    tint = if (entry.isDirectory) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(11.dp))
-                Text(entry.name, Modifier.weight(1f))
-                if (!entry.isDirectory) {
-                    Text(formatFileSize(entry.sizeBytes), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
-
 private fun formatFileSize(bytes: Long): String = when {
     bytes < 1_024 -> "$bytes B"
     bytes < 1_048_576 -> "%.1f KB".format(bytes / 1_024.0)
