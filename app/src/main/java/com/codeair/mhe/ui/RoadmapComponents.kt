@@ -34,13 +34,24 @@ import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -118,7 +129,7 @@ fun ModeSelectorBar(
                     1.dp,
                     if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 ),
-                modifier = Modifier.height(28.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 10.dp),
@@ -166,7 +177,7 @@ fun ScratchpadPill(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
-        modifier = modifier.height(28.dp),
+        modifier = modifier.heightIn(min = 48.dp),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp),
@@ -531,7 +542,7 @@ fun RoadmapCard(
                 ) {
                     OutlinedButton(
                         onClick = { onAddComment(null) },
-                        modifier = Modifier.height(34.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp),
                         shape = RoundedCornerShape(10.dp),
                     ) {
@@ -547,7 +558,7 @@ fun RoadmapCard(
                     if (!roadmap.isApproved) {
                         Button(
                             onClick = onApproveAndBuild,
-                            modifier = Modifier.height(34.dp).weight(1f),
+                            modifier = Modifier.heightIn(min = 48.dp).weight(1f),
                             contentPadding = PaddingValues(horizontal = 12.dp),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -800,20 +811,20 @@ fun EngineeringStateBanner(
 
     val state = snapshot.state
     val (label, color, icon) = when (state) {
-        EngineeringState.IDLE -> Triple("Idle", MaterialTheme.colorScheme.onSurfaceVariant, "⏸️")
-        EngineeringState.ANALYZING -> Triple("Analyzing Requirements", MaterialTheme.colorScheme.primary, "")
-        EngineeringState.PLANNING -> Triple("Formulating Plan", MaterialTheme.colorScheme.primary, "📝")
-        EngineeringState.IMPLEMENTING -> Triple("Implementing Changes", PocketOrange, "💻")
-        EngineeringState.BUILDING -> Triple("Building Project", PocketOrange, "⚙️")
-        EngineeringState.TESTING -> Triple("Running Tests", PocketOrange, "🧪")
-        EngineeringState.ANALYZING_FAILURE -> Triple("Analyzing Failure", MaterialTheme.colorScheme.error, "⚠️")
-        EngineeringState.FIXING -> Triple("Self-Healing (${snapshot.currentIteration}/${snapshot.maxIterations})", PocketOrange, "🔧")
-        EngineeringState.RETESTING -> Triple("Retesting Fix", PocketOrange, "🔄")
-        EngineeringState.REVIEWING -> Triple("Reviewing Changes", MaterialTheme.colorScheme.primary, "📋")
-        EngineeringState.WAITING_FOR_APPROVAL -> Triple("Waiting for Approval", MaterialTheme.colorScheme.primary, "✋")
-        EngineeringState.COMPLETED -> Triple("Verified & Completed", PocketGreen, "✅")
-        EngineeringState.FAILED -> Triple("Task Failed", MaterialTheme.colorScheme.error, "❌")
-        EngineeringState.ROLLED_BACK -> Triple("Rolled Back to Baseline", MaterialTheme.colorScheme.error, "⏪")
+        EngineeringState.IDLE -> Triple("Idle", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.Pause)
+        EngineeringState.ANALYZING -> Triple("Analyzing Requirements", MaterialTheme.colorScheme.primary, null)
+        EngineeringState.PLANNING -> Triple("Formulating Plan", MaterialTheme.colorScheme.primary, Icons.Default.EditNote)
+        EngineeringState.IMPLEMENTING -> Triple("Implementing Changes", PocketOrange, Icons.Default.Code)
+        EngineeringState.BUILDING -> Triple("Building Project", PocketOrange, Icons.Default.Settings)
+        EngineeringState.TESTING -> Triple("Running Tests", PocketOrange, Icons.Default.Science)
+        EngineeringState.ANALYZING_FAILURE -> Triple("Analyzing Failure", MaterialTheme.colorScheme.error, Icons.Default.Warning)
+        EngineeringState.FIXING -> Triple("Self-Healing (${snapshot.currentIteration}/${snapshot.maxIterations})", PocketOrange, Icons.Default.Build)
+        EngineeringState.RETESTING -> Triple("Retesting Fix", PocketOrange, Icons.Default.Refresh)
+        EngineeringState.REVIEWING -> Triple("Reviewing Changes", MaterialTheme.colorScheme.primary, Icons.Default.FactCheck)
+        EngineeringState.WAITING_FOR_APPROVAL -> Triple("Waiting for Approval", MaterialTheme.colorScheme.primary, Icons.Default.Pending)
+        EngineeringState.COMPLETED -> Triple("Verified & Completed", PocketGreen, Icons.Default.CheckCircle)
+        EngineeringState.FAILED -> Triple("Task Failed", MaterialTheme.colorScheme.error, Icons.Default.Error)
+        EngineeringState.ROLLED_BACK -> Triple("Rolled Back to Baseline", MaterialTheme.colorScheme.error, Icons.Default.History)
     }
 
     Surface(
@@ -832,8 +843,8 @@ fun EngineeringStateBanner(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.weight(1f),
             ) {
-                if (icon.isNotBlank()) {
-                    Text(icon, fontSize = 13.sp)
+                if (icon != null) {
+                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = color)
                 }
                 Text(
                     text = label,
@@ -861,14 +872,14 @@ fun EngineeringStateBanner(
                     onClick = onRollbackToBaseline,
                     shape = RoundedCornerShape(6.dp),
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
-                    modifier = Modifier.height(24.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text("⏪ Revert Baseline", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text("Revert Baseline", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                     }
                 }
             }
