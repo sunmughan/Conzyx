@@ -1056,11 +1056,12 @@ private fun TaskDagCard(
                 }
 
                 IconButton(onClick = onToggleStatus, modifier = Modifier.size(48.dp)) {
+                    val toggleDescription = "Task status: ${task.status.name.lowercase().replace('_', ' ')}. Activate to advance status."
                     when (task.status) {
-                        TeamTaskStatus.COMPLETED -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = contentColor)
+                        TeamTaskStatus.COMPLETED -> Icon(Icons.Default.CheckCircle, contentDescription = toggleDescription, tint = contentColor)
                         TeamTaskStatus.IN_PROGRESS -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = contentColor)
-                        TeamTaskStatus.READY -> Icon(Icons.Default.PlayArrow, contentDescription = null, tint = contentColor)
-                        else -> Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = contentColor.copy(alpha = 0.7f))
+                        TeamTaskStatus.READY -> Icon(Icons.Default.PlayArrow, contentDescription = toggleDescription, tint = contentColor)
+                        else -> Icon(Icons.Default.HourglassEmpty, contentDescription = toggleDescription, tint = contentColor.copy(alpha = 0.7f))
                     }
                 }
             }
