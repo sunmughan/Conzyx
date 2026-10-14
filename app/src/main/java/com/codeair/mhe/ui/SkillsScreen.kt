@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -78,6 +79,10 @@ import com.codeair.mhe.mcp.McpServerInfo
 import com.codeair.mhe.runtime.McpToolDefinition
 import com.codeair.mhe.runtime.SkillInfo
 import com.codeair.mhe.runtime.SkillSearchResult
+
+@Composable
+private fun successGreen(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -202,7 +207,7 @@ fun SkillsScreen(
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             ) {
                                 if (busy) {
-                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                                 } else {
                                     Icon(Icons.Default.Search, null, Modifier.size(16.dp))
                                 }
@@ -498,7 +503,7 @@ fun SkillsScreen(
                                         if (entry.success) "SUCCESS (${entry.durationMs}ms)" else "ERROR",
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (entry.success) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+                                        color = if (entry.success) successGreen() else MaterialTheme.colorScheme.error
                                     )
                                 }
                                 if (entry.argumentsJson != "{}") {
@@ -557,13 +562,13 @@ private fun McpServerCard(
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = if (server.enabled) Color(0xFF4CAF50).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+                            color = if (server.enabled) successGreen().copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
                                 if (server.enabled) "ACTIVE" else "DISABLED",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (server.enabled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (server.enabled) successGreen() else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
                         }
@@ -664,12 +669,12 @@ private fun McpCatalogCard(
             if (isInstalled) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = Color(0xFF4CAF50).copy(alpha = 0.15f)
+                    color = successGreen().copy(alpha = 0.15f)
                 ) {
                     Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Check, contentDescription = null, tint = successGreen(), modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(2.dp))
-                        Text("Installed", fontSize = 11.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.SemiBold)
+                        Text("Installed", fontSize = 11.sp, color = successGreen(), fontWeight = FontWeight.SemiBold)
                     }
                 }
             } else {
