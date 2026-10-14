@@ -36,7 +36,11 @@ class McpAuditLoggerTest {
         val l = logger()
         val args = """{"command":"ls","count":3}"""
         l.log(entry(args))
-        assertEquals(args, l.getEntries(1).single().argumentsJson)
+        // org.json re-serializes, so compare parsed content, not the raw string.
+        assertEquals(
+            JSONObject(args).toString(),
+            JSONObject(l.getEntries(1).single().argumentsJson).toString()
+        )
     }
 
     @Test
