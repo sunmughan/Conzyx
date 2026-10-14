@@ -4889,7 +4889,6 @@ private fun WorkspaceScreen(
     }
     var showChats by rememberSaveable { mutableStateOf(false) }
     var showCommandPalette by rememberSaveable { mutableStateOf(false) }
-    val activeChat = state.projectChats.firstOrNull { it.id == state.activeChatId }
 
     // If a file is open, switch to the production code editor surface
     if (state.openedFilePath != null) {
@@ -5120,16 +5119,6 @@ private fun WorkspaceScreen(
                                         )
                                     }
                                 }
-                            }
-                            if (selectedTab == WorkspaceTab.CHAT) {
-                                Text(
-                                    activeChat?.title ?: "Chat",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(start = 25.dp),
-                                )
                             }
                         }
                     },
