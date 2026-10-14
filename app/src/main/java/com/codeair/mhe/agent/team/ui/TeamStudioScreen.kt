@@ -324,14 +324,10 @@ fun TeamStudioScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.padding(top = 6.dp)
                             ) {
-                                if (sessionState.tasks.any { it.status == TeamTaskStatus.FAILED }) {
-                                    OutlinedButton(
-                                        onClick = { orchestrator.retryFailedTasks() },
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("Retry failed", fontSize = 11.sp)
-                                    }
-                                }
+                                // Medium: this banner used to carry its own
+                                // "Retry failed" button next to the identical
+                                // one in the header row above. The header
+                                // button is the single retry entry point.
                                 OutlinedButton(
                                     onClick = { orchestrator.clearLastError() },
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
@@ -879,6 +875,9 @@ private fun TeamDagTab(orchestrator: AgentTeamOrchestrator) {
                                 .onFailure { orchestrator.reportError(it.message ?: "Next Ready failed.") }
                         }
                     },
+                    // Medium: this used to stay enabled with zero READY
+                    // tasks — a dead tap that reported a confusing error.
+                    enabled = sessionState.tasks.any { it.status == TeamTaskStatus.READY },
                     modifier = Modifier.height(48.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(

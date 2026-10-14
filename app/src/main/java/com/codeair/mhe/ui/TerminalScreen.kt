@@ -553,6 +553,10 @@ fun TerminalScreen(
                                         ctrlActive = false
                                     }
                                 } else {
+                                    // ALT only modifies the next arrow press;
+                                    // typing a plain character clears it so
+                                    // the highlight never goes stale.
+                                    if (altActive) altActive = false
                                     commandInput = next
                                 }
                             },
@@ -605,12 +609,21 @@ fun TerminalScreen(
                         }
                     }
                     TerminalIconKeyButton(Icons.AutoMirrored.Filled.ArrowBack, "Move cursor left") {
-                        commandInput = commandInput.copy(selection = TextRange((commandInput.selection.start - 1).coerceAtLeast(0)))
+                        // Medium: ALT was a dead control (highlighted but
+                        // never consumed). It now modifies the arrows:
+                        // Alt+arrow moves by word, like a real terminal.
+                        val target = if (altActive) prevWordStart(commandInput.text, commandInput.selection.start)
+                            else (commandInput.selection.start - 1).coerceAtLeast(0)
+                        altActive = false
+                        commandInput = commandInput.copy(selection = TextRange(target))
                     }
                     TerminalIconKeyButton(Icons.AutoMirrored.Filled.ArrowForward, "Move cursor right") {
-                        commandInput = commandInput.copy(selection = TextRange((commandInput.selection.end + 1).coerceAtMost(commandInput.text.length)))
+                        val target = if (altActive) nextWordEnd(commandInput.text, commandInput.selection.end)
+                            else (commandInput.selection.end + 1).coerceAtMost(commandInput.text.length)
+                        altActive = false
+                        commandInput = commandInput.copy(selection = TextRange(target))
                     }
-                    TerminalKeyButton("ALT", "Alt modifier", active = altActive, fixedWidth = true) { altActive = !altActive }
+                    TerminalKeyButton("ALT", "Alt modifier; arrows move by word", active = altActive, fixedWidth = true) { altActive = !altActive }
                     TerminalKeyButton("ESC", "Escape") { commandInput = TextFieldValue() }
                     TerminalKeyButton("CTRL", "Control modifier; press C to interrupt", active = ctrlActive, fixedWidth = true) {
                         ctrlActive = !ctrlActive
@@ -620,6 +633,27 @@ fun TerminalScreen(
             }
         }
     }
+}
+
+/**
+ * QA Medium: word-boundary helpers for the terminal ALT modifier.
+ * Alt+Left moves the cursor to the start of the previous word;
+ * Alt+Right moves it to the end of the next word — the same
+ * semantics as readline Alt+B / Alt+F in a real terminal.
+ * Pure functions so the movement is unit-testable.
+ */
+internal fun prevWordStart(text: String, cursor: Int): Int {
+    var i = cursor.coerceIn(0, text.length)
+    while (i > 0 && text[i - 1].isWhitespace()) i--
+    while (i > 0 && !text[i - 1].isWhitespace()) i--
+    return i
+}
+
+internal fun nextWordEnd(text: String, cursor: Int): Int {
+    var i = cursor.coerceIn(0, text.length)
+    while (i < text.length && text[i].isWhitespace()) i++
+    while (i < text.length && !text[i].isWhitespace()) i++
+    return i
 }
 
 @Composable

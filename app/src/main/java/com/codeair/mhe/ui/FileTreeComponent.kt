@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -422,7 +423,13 @@ fun GitOperationsDialog(
     var loading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        onStatus { gitOutput = if (it.isBlank()) "Working directory clean" else it }
+        // Medium: the initial status load used to show no indicator —
+        // the dialog just sat on "Loading status..." with dead buttons.
+        loading = true
+        onStatus {
+            loading = false
+            gitOutput = if (it.isBlank()) "Working directory clean" else it
+        }
     }
 
     AlertDialog(
@@ -434,6 +441,17 @@ fun GitOperationsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text("Repository Status & Diff:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                // Medium: buttons disabled during Git work, but no spinner
+                // was ever rendered — the dialog looked frozen.
+                if (loading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("Working…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,

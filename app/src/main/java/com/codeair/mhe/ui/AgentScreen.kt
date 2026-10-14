@@ -936,7 +936,10 @@ fun AgentScreen(
                         }
                     }
 
-                    if (state.agentInstalling == viewedAgent) {
+                    // Medium: progress used to render only when the
+                    // installing agent was also the viewed tab, so it
+                    // vanished whenever the viewed tab differed.
+                    if (state.agentInstalling != null) {
                         Spacer(Modifier.height(6.dp))
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -949,7 +952,7 @@ fun AgentScreen(
                                     CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.6.dp)
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        state.agentMessage ?: "Installing agent binary…",
+                                        state.agentMessage ?: "Installing ${state.agentInstalling?.title} binary…",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
@@ -2253,6 +2256,7 @@ private fun AgentCodexCard(
     var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.OPENAI)) }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var savedTick by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     Column(
         Modifier
@@ -2270,7 +2274,7 @@ private fun AgentCodexCard(
 
         OutlinedTextField(
             value = apiKey,
-            onValueChange = { apiKey = it; savedTick = false },
+            onValueChange = { apiKey = it; savedTick = false; saveError = null },
             label = { Text("API key") },
             singleLine = true,
             visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -2303,9 +2307,13 @@ private fun AgentCodexCard(
                     dshApi = "openai-completions",
                 )
                 if (apiKey.isNotBlank()) {
-                    onSaveProvider(profile, apiKey.trim())
+                    // Medium: "Saved" used to show unconditionally, even if
+                    // the Keystore write threw. The tick now reflects the
+                    // actual save outcome; a failure shows its reason.
+                    val result = runCatching { onSaveProvider(profile, apiKey.trim()) }
+                    savedTick = result.isSuccess
+                    saveError = result.exceptionOrNull()?.let { it.message ?: "Could not save the API key" }
                 }
-                savedTick = true
             },
             enabled = apiKey.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
@@ -2316,6 +2324,9 @@ private fun AgentCodexCard(
                 Spacer(Modifier.width(8.dp))
             }
             Text(if (savedTick) "Saved" else "Save Codex API", fontWeight = FontWeight.Bold)
+        }
+        saveError?.let {
+            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
         }
 
         Text(
@@ -2347,6 +2358,7 @@ private fun AgentCustomCard(
     var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.CUSTOM)) }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var savedTick by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     Column(
         Modifier
@@ -2414,7 +2426,7 @@ private fun AgentCustomCard(
         )
         OutlinedTextField(
             value = apiKey,
-            onValueChange = { apiKey = it; savedTick = false },
+            onValueChange = { apiKey = it; savedTick = false; saveError = null },
             label = { Text("API key") },
             singleLine = true,
             visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -2453,9 +2465,13 @@ private fun AgentCustomCard(
                     dshApi = apiType,
                 )
                 if (apiKey.isNotBlank()) {
-                    onSaveProvider(profile, apiKey.trim())
+                    // Medium: "Saved" used to show unconditionally, even if
+                    // the Keystore write threw. The tick now reflects the
+                    // actual save outcome; a failure shows its reason.
+                    val result = runCatching { onSaveProvider(profile, apiKey.trim()) }
+                    savedTick = result.isSuccess
+                    saveError = result.exceptionOrNull()?.let { it.message ?: "Could not save the API key" }
                 }
-                savedTick = true
             },
             enabled = baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
@@ -2466,6 +2482,9 @@ private fun AgentCustomCard(
                 Spacer(Modifier.width(8.dp))
             }
             Text(if (savedTick) "Saved" else "Save Custom API", fontWeight = FontWeight.Bold)
+        }
+        saveError?.let {
+            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
         }
 
         Text(
@@ -2496,6 +2515,10 @@ private fun AgentUpdateBlock(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // The ViewModel silently ignores a check while a task runs, so
+            // the button is disabled then — and, unlike before, it now
+            // LOOKS disabled and says why instead of looking clickable.
+            val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null && !state.isRunning
             Column(Modifier.weight(1f)) {
                 Text("Runtime updates", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 // Never claim "up to date" without a check: agents that are not
@@ -2511,6 +2534,7 @@ private fun AgentUpdateBlock(
                         !isInstalled -> "${viewedAgent.title} is not installed — install it first, then check for updates"
                         state.agentUpdatesChecking -> state.agentUpdateMessage.orEmpty()
                         state.agentUpdatesCheckError != null -> "Could not check updates: ${state.agentUpdatesCheckError}"
+                        !canCheck -> "Update check unavailable while a task, install, or update is running"
                         !state.agentUpdatesChecked -> "Tap Check updates to see if a newer version is available"
                         else -> "${viewedAgent.title} is up to date"
                     },
@@ -2521,9 +2545,6 @@ private fun AgentUpdateBlock(
                 )
             }
             if (viewedAgent != AgentKind.CUSTOM) {
-                // The ViewModel silently ignores a check while a task runs, so
-                // disable the button then instead of looking clickable-but-dead.
-                val canCheck = !state.agentUpdatesChecking && state.agentUpdating == null && state.agentInstalling == null && !state.isRunning
                 Row(
                     modifier = Modifier
                         .clickable(enabled = canCheck, onClick = onCheck)
@@ -2533,10 +2554,10 @@ private fun AgentUpdateBlock(
                     if (state.agentUpdatesChecking) {
                         CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.6.dp)
                     } else {
-                        Icon(Icons.Default.Refresh, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = PocketOrange.copy(alpha = if (canCheck) 1f else 0.38f), modifier = Modifier.size(14.dp))
                     }
                     Spacer(Modifier.width(5.dp))
-                    Text("Check updates", color = PocketOrange, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Check updates", color = PocketOrange.copy(alpha = if (canCheck) 1f else 0.38f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

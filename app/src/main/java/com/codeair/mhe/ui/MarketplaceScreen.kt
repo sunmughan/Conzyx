@@ -616,9 +616,13 @@ private fun PublishMarketplaceItemDialog(
             }
         },
         confirmButton = {
+            // Medium: the Install Command field is labelled required (*)
+            // but the button used to enable without it, and a blank
+            // installUrl was accepted. All three *-fields gate the button.
+            val canPublish = name.isNotBlank() && description.isNotBlank() && installUrl.isNotBlank()
             Button(
                 onClick = {
-                    if (name.isNotBlank() && description.isNotBlank()) {
+                    if (canPublish) {
                         onPublish(
                             MarketplaceItem(
                                 name = name.trim(),
@@ -631,7 +635,7 @@ private fun PublishMarketplaceItemDialog(
                         )
                     }
                 },
-                enabled = name.isNotBlank() && description.isNotBlank(),
+                enabled = canPublish,
             ) {
                 Text("Save Item")
             }

@@ -199,6 +199,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
@@ -1448,6 +1449,11 @@ private fun RuntimeSetupPromptScreen(
                                 stack = stack,
                                 selected = !isOfflineUnbundled && (stack == DevStack.WEB || stack in selectedStacks),
                                 locked = stack == DevStack.WEB || isOfflineUnbundled,
+                                lockedReason = when {
+                                    stack == DevStack.WEB -> "Web is included with the Core runtime — no separate download needed."
+                                    isOfflineUnbundled -> "${stack.label} is available in the online build only."
+                                    else -> null
+                                },
                                 onClick = { if (!isOfflineUnbundled) onToggleStack(stack) },
                             )
                             if (index != DevStack.entries.lastIndex) {
@@ -1581,6 +1587,7 @@ private fun DevStackChoiceRow(
     stack: DevStack,
     selected: Boolean,
     locked: Boolean,
+    lockedReason: String? = null,
     onClick: () -> Unit,
 ) {
     val visuals = getDevStackVisuals(stack)
@@ -1593,11 +1600,21 @@ private fun DevStackChoiceRow(
         DevStack.BROWSER -> "Chromium & Puppeteer automation"
     }
 
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
-            .clickable(enabled = !locked, onClick = onClick)
+            // Medium: locked rows used to swallow taps with no reason.
+            // They now explain why they are locked, and look dimmed.
+            .clickable {
+                if (locked) {
+                    lockedReason?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                } else {
+                    onClick()
+                }
+            }
+            .alpha(if (locked) 0.6f else 1f)
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -5197,7 +5214,9 @@ private fun WorkspaceScreen(
                                 modifier = Modifier.height(30.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 shape = RoundedCornerShape(8.dp),
-                            ) { Text("Resume", fontSize = 12.sp, maxLines = 1) }
+                                // Medium: this used to read "Resume", identical
+                                // to the interrupted-session banner below it.
+                            ) { Text("Resume task", fontSize = 12.sp, maxLines = 1) }
                         } else {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         }
@@ -5227,8 +5246,10 @@ private fun WorkspaceScreen(
                             modifier = Modifier.height(30.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             shape = RoundedCornerShape(8.dp),
+                            // Medium: this used to read "Resume", identical
+                            // to the runtime-recovery banner above it.
                         ) {
-                            Text("Resume", fontSize = 12.sp, maxLines = 1)
+                            Text("Resume session", fontSize = 12.sp, maxLines = 1)
                         }
                         Spacer(Modifier.width(4.dp))
                         IconButton(

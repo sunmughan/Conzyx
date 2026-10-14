@@ -4,6 +4,7 @@ import com.codeair.mhe.AppCrashLogger
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -2290,8 +2291,12 @@ private fun ContributorLinkButton(label: String, url: String, modifier: Modifier
     val context = LocalContext.current
     OutlinedButton(
         onClick = {
+            // Medium: a failed open used to fail silently (runCatching
+            // swallowed the error). The user now gets told it failed.
             runCatching {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }.onFailure {
+                Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
             }
         },
         modifier = modifier,
