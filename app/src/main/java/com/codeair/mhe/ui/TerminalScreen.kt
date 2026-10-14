@@ -403,7 +403,7 @@ fun TerminalScreen(
                             },
                             modifier = Modifier.size(48.dp),
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close search", modifier = Modifier.size(48.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Close search", modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -420,7 +420,7 @@ fun TerminalScreen(
                 ) {
                     quickCommands.forEach { cmd ->
                         AssistChip(
-                            onClick = { onRun(cmd) },
+                            onClick = { if (isRunning) onInput(cmd) else onRun(cmd) },
                             label = {
                                 Text(
                                     cmd,
