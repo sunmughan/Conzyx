@@ -450,8 +450,16 @@ fun RoadmapCard(
                         color = if (isAllCompleted || isApproved) PocketGreen else PocketOrange,
                     )
                 }
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse roadmap" else "Expand roadmap",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
+            if (isExpanded) {
             if (roadmap.summary.isNotBlank()) {
                 Text(
                     text = roadmap.summary,
@@ -576,6 +584,7 @@ fun RoadmapCard(
                         }
                     }
                 }
+            }
             }
         }
     }

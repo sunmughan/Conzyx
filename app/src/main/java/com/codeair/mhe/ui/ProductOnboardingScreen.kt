@@ -299,13 +299,10 @@ fun ProductOnboardingScreen(
                 val isFirstPage = pagerState.currentPage == 0
                 val isLastPage = pagerState.currentPage == slides.lastIndex
                 if (isFirstPage) {
-                    Button(
+                    OutlinedButton(
                         onClick = onTryNow,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                        ),
                     ) {
                         Text(
                             text = "Try it now",
