@@ -5243,7 +5243,7 @@ private fun WorkspaceScreen(
                 ) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1)
+                            Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 "Task: \"${if (interruptedExpanded) state.interruptedSession.initialPrompt else state.interruptedSession.initialPrompt.take(60)}\" in ${state.interruptedSession.projectTitle}",
                                 fontSize = 11.sp,
@@ -6304,6 +6304,15 @@ private fun ChatTab(
                 // to throw IllegalArgumentException and kill the app). The index
                 // suffix guarantees uniqueness; the id prefix keeps item identity
                 // stable for the append-only chat list.
+                if (messages.isEmpty() && !isRunning && liveProcess.isEmpty() && !thinkingActive && approval == null) {
+                    item {
+                        EmptyState(
+                            Icons.AutoMirrored.Filled.Chat,
+                            "Start a conversation",
+                            "Ask Mobile Harness Extended anything — describe what to build, or mention a file to discuss.",
+                        )
+                    }
+                }
                 itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { _, rawMessage ->
                     val message = if (!isRunning && rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
                         val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
@@ -7236,7 +7245,7 @@ private fun ChangesTab(
                         Icon(Icons.Default.Description, null)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(change.path, fontWeight = FontWeight.Medium, maxLines = 1)
+                            Text(change.path, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 if (expanded) "Hide line-by-line diff" else "Tap to review diff",
                                 fontSize = 11.sp,
