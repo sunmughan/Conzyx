@@ -1,6 +1,5 @@
 package com.codeair.mhe.runtime
 
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,7 +10,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.codeair.mhe.R
@@ -24,6 +22,13 @@ import com.codeair.mhe.R
  * ProcessLifecycleOwner: started when the app goes to background (ON_STOP),
  * stopped when it returns to foreground (ON_START), so the persistent
  * notification only shows while the app is actually in the background.
+ *
+ * QA H30 bounds: the wake lock is capped at [WAKE_LOCK_TIMEOUT_MS]
+ * (previously indefinite — battery drain), and the service never
+ * resurrects itself: no restart alarm on task removal, and
+ * START_NOT_STICKY, so a user swipe-away or a system kill STAYS dead
+ * until the app backgrounds again. The foreground service itself is
+ * best-effort keep-alive, not a guarantee against OEM killers.
  */
 class KeepAliveService : Service() {
 
@@ -37,15 +42,17 @@ class KeepAliveService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
-        return START_STICKY
+        // QA H30: NOT_STICKY — a system kill or a user swipe-away does
+        // not resurrect this service. It restarts only when the app
+        // backgrounds again (Application ON_STOP).
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        scheduleRestart()
-    }
+    // QA H30: no onTaskRemoved restart. The old scheduleRestart() alarm
+    // brought the service back 2s after the user swiped the app away —
+    // the user's explicit "stop" must be respected.
 
     override fun onDestroy() {
         releaseWakeLock()
@@ -92,7 +99,13 @@ class KeepAliveService : Service() {
         val pm = getSystemService(PowerManager::class.java) ?: return
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
             setReferenceCounted(false)
-            acquire()
+            // QA H30: bounded wake lock. The old indefinite acquire()
+            // held the CPU awake for the whole background stint (battery
+            // drain) and was released only in onDestroy(). Ten minutes
+            // gives a background agent task a grace window; after that
+            // Doze may pause background work while the foreground
+            // service itself still keeps the process alive.
+            acquire(WAKE_LOCK_TIMEOUT_MS)
         }
     }
 
@@ -103,32 +116,12 @@ class KeepAliveService : Service() {
         wakeLock = null
     }
 
-    /**
-     * Re-schedule ourselves shortly after the task is swiped away, so the
-     * service comes back even if the OEM kills the process on task removal.
-     */
-    private fun scheduleRestart() {
-        val restartIntent = Intent(this, KeepAliveService::class.java)
-        val pending = PendingIntent.getService(
-            this,
-            RESTART_REQUEST_CODE,
-            restartIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val alarmManager = getSystemService(AlarmManager::class.java) ?: return
-        alarmManager.setAndAllowWhileIdle(
-            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-            SystemClock.elapsedRealtime() + RESTART_DELAY_MS,
-            pending,
-        )
-    }
-
     companion object {
         const val CHANNEL_ID = "keep-alive"
         const val NOTIFICATION_ID = 4401
         const val WAKE_LOCK_TAG = "com.codeair.mhe:keep-alive"
-        private const val RESTART_REQUEST_CODE = 4402
-        private const val RESTART_DELAY_MS = 2_000L
+        // QA H30: the partial wake lock auto-releases after 10 minutes.
+        private const val WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L
 
         fun start(context: Context) {
             val intent = Intent(context, KeepAliveService::class.java)
