@@ -57,6 +57,7 @@ import com.codeair.mhe.workspace.ReplaceTransaction
 import com.codeair.mhe.workspace.SearchMatch
 import com.codeair.mhe.workspace.SearchResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -182,6 +183,7 @@ fun GlobalSearchDialog(
     }
 
     LaunchedEffect(query, isRegex, matchCase, wholeWord, fileFilter) {
+        delay(300)
         performSearch()
     }
 

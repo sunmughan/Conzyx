@@ -57,6 +57,7 @@ import com.codeair.mhe.network.GitHubClient
 import com.codeair.mhe.network.GitHubIssue
 import com.codeair.mhe.network.GitHubPullRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -110,6 +111,7 @@ fun GitHubIssuesBottomSheet(
     }
 
     LaunchedEffect(currentRepo) {
+        delay(500)
         loadData()
     }
 
