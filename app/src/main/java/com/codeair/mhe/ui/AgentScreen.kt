@@ -2299,9 +2299,7 @@ private fun AgentCodexCard(
     var saveError by remember { mutableStateOf<String?>(null) }
 
     Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Codex CLI", fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -2401,9 +2399,7 @@ private fun AgentCustomCard(
     var saveError by remember { mutableStateOf<String?>(null) }
 
     Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Custom API", fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -2552,7 +2548,7 @@ private fun AgentUpdateBlock(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
