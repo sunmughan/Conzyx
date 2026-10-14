@@ -311,7 +311,6 @@ class CloudExecutionClient(
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
-    }
 
     /**
      * GET /api/v1/payloads/{manifestHash} — does the worker already know this
