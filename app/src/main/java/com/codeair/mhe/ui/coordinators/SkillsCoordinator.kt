@@ -110,6 +110,13 @@ class SkillsCoordinator(
         }
     }
 
+    fun toggleSkill(name: String, enabled: Boolean) {
+        host.scope.launch(Dispatchers.IO) {
+            val ok = skillManager.setEnabled(name, enabled)
+            host.updateState { it.copy(skills = skillManager.installed(), skillsMessage = if (ok) (if (enabled) "Enabled " else "Disabled ") + name else "Skill was not installed.") }
+        }
+    }
+
     fun toggleAutoUpdateToolsAndSkills(enabled: Boolean) {
         preferences.autoUpdateToolsAndSkills = enabled
         host.updateState { it.copy(autoUpdateToolsAndSkills = enabled) }

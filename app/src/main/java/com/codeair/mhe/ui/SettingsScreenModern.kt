@@ -1680,12 +1680,19 @@ private fun AppUpdateChannelSection(
                         maxLines = 1,
                     )
                 } else {
-                    Button(
-                        onClick = onCheckNow,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 48.dp),
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable(onClick = onCheckNow),
                     ) {
-                        Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(
+                            text = "Check now",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            maxLines = 1,
+                        )
                     }
                 }
             }

@@ -4661,6 +4661,9 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
     fun removeSkill(name: String) =
         skillsCoordinator.removeSkill(name)
 
+    fun toggleSkill(name: String, enabled: Boolean) =
+        skillsCoordinator.toggleSkill(name, enabled)
+
     // Milestone 1: restored — these were accidentally dropped by the
     // Security/MCP/Skills extraction (commit b4cd244); bodies verbatim
     // from the pre-extraction file.

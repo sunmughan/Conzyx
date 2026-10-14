@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -73,6 +72,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.mcp.McpAuditEntry
@@ -102,6 +102,7 @@ fun SkillsScreen(
     onImportGitHub: (String) -> Unit,
     onImportZip: (Uri) -> Unit,
     onRemove: (String) -> Unit,
+    onToggleSkill: (String, Boolean) -> Unit = { _, _ -> },
     onCheckUpdates: () -> Unit = {},
     onUpdate: (String) -> Unit = {},
     autoUpdateEnabled: Boolean = true,
@@ -341,6 +342,7 @@ fun SkillsScreen(
                             busy = busy,
                             onUpdate = { onUpdate(skill.name) },
                             onRemove = { onRemove(skill.name) },
+                            onToggleEnabled = { onToggleSkill(skill.name, it) },
                         )
                     }
                 }
@@ -350,8 +352,6 @@ fun SkillsScreen(
                     items(results, key = { it.repositoryUrl }) { result ->
                         Card(Modifier.fillMaxWidth()) {
                             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.AutoAwesome, null)
-                                Spacer(Modifier.size(10.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(result.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(result.description, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -1012,21 +1012,42 @@ private fun SkillCard(
     busy: Boolean,
     onUpdate: () -> Unit,
     onRemove: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AutoAwesome, null)
-            Spacer(Modifier.size(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(skill.name, fontWeight = FontWeight.SemiBold)
-                Text(skill.description, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Text(skill.source, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(
+            Modifier
+                .padding(14.dp)
+                .alpha(if (skill.enabled) 1f else 0.45f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    skill.name,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Switch(
+                    checked = skill.enabled,
+                    onCheckedChange = onToggleEnabled,
+                    enabled = !busy,
+                )
             }
-            if (updateAvailable && skill.source.startsWith("https://github.com/", ignoreCase = true)) {
-                Button(onClick = onUpdate, enabled = !busy) { Text("Update") }
-            }
-            IconButton(onClick = onRemove, enabled = !busy) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove skill")
+            Text(skill.description, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
+            Text(skill.source, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (updateAvailable && skill.source.startsWith("https://github.com/", ignoreCase = true)) {
+                    TextButton(onClick = onUpdate, enabled = !busy) { Text("Update", fontSize = 12.sp) }
+                }
+                IconButton(onClick = onRemove, enabled = !busy, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove skill", modifier = Modifier.size(18.dp))
+                }
             }
         }
     }

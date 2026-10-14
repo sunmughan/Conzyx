@@ -18,6 +18,7 @@ data class SkillInfo(
     val source: String,
     val installedAtMillis: Long,
     val path: String,
+    val enabled: Boolean = true,
 )
 
 data class SkillSearchResult(
@@ -87,6 +88,7 @@ class SkillManager(
             source = json.optString("source"),
             installedAtMillis = json.optLong("installedAtMillis"),
             path = path,
+            enabled = json.optBoolean("enabled", true),
         )
     }.sortedBy { it.name.lowercase() }
 
@@ -211,10 +213,19 @@ class SkillManager(
         return true
     }
 
+    fun setEnabled(name: String, enabled: Boolean): Boolean {
+        val current = installed()
+        if (current.none { it.name == name }) return false
+        writeRegistry(current.map { if (it.name == name) it.copy(enabled = enabled) else it })
+        return true
+    }
+
+    fun enabledSkills(): List<SkillInfo> = installed().filter { it.enabled }
+
     fun syncToWorkspace(workspace: File): List<SkillInfo> {
         val destination = File(workspace, ".agents/skills")
         destination.mkdirs()
-        val skills = installed()
+        val skills = enabledSkills()
         val activeNames = skills.mapTo(mutableSetOf()) { it.name }
         destination.listFiles()?.filter { it.isDirectory && it.name !in activeNames }?.forEach(File::deleteRecursively)
         skills.forEach { skill ->
@@ -226,7 +237,7 @@ class SkillManager(
     }
 
     fun buildPromptContext(agent: AgentKind): String {
-        val skills = installed()
+        val skills = enabledSkills()
         if (skills.isEmpty()) return ""
         return buildString {
             appendLine("<mobile_harness_skills>")
@@ -324,6 +335,7 @@ class SkillManager(
                     source = source,
                     installedAtMillis = System.currentTimeMillis(),
                     path = destination.absolutePath,
+                    enabled = current.firstOrNull { it.name == safeName }?.enabled ?: true,
                 )
                 current.removeAll { it.name == safeName }
                 current += info
@@ -1138,6 +1150,7 @@ User experience architecture, touch ergonomic design, accessibility, and modern 
                 put("source", it.source)
                 put("installedAtMillis", it.installedAtMillis)
                 put("path", it.path)
+                put("enabled", it.enabled)
             })
         }
         registryFile.writeText(array.toString())

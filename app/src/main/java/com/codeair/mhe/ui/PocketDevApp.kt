@@ -2512,6 +2512,7 @@ private fun RootScreenHost(
                     onImportGitHub = viewModel::importSkillFromGitHub,
                     onImportZip = viewModel::importSkillFromUri,
                     onRemove = viewModel::removeSkill,
+                    onToggleSkill = viewModel::toggleSkill,
                     onCheckUpdates = viewModel::checkSkillUpdates,
                     onUpdate = viewModel::updateSkill,
                     autoUpdateEnabled = state.autoUpdateToolsAndSkills,

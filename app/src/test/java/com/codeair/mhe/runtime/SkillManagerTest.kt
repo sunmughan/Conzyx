@@ -183,4 +183,107 @@ class SkillManagerTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun setEnabledDisablesAndReenablesSkill() {
+        val tempDir = Files.createTempDirectory("skill-toggle-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+
+            assertTrue(manager.setEnabled("geo-sleuth", false))
+            val disabled = manager.installed().first { it.name == "geo-sleuth" }
+            assertFalse(disabled.enabled)
+            assertTrue(manager.installed().first { it.name == "browser-automation" }.enabled)
+
+            assertTrue(manager.setEnabled("geo-sleuth", true))
+            assertTrue(manager.installed().first { it.name == "geo-sleuth" }.enabled)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun setEnabledReturnsFalseForUnknownSkill() {
+        val tempDir = Files.createTempDirectory("skill-toggle-unknown-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+            assertFalse(manager.setEnabled("no-such-skill", false))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun enabledSkillsExcludesDisabled() {
+        val tempDir = Files.createTempDirectory("skill-enabled-list-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+            val total = manager.installed().size
+
+            manager.setEnabled("geo-sleuth", false)
+            manager.setEnabled("anyps5-director", false)
+
+            val enabled = manager.enabledSkills()
+            assertEquals(total - 2, enabled.size)
+            assertTrue(enabled.none { it.name == "geo-sleuth" || it.name == "anyps5-director" })
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun buildPromptContextExcludesDisabledSkills() {
+        val tempDir = Files.createTempDirectory("skill-prompt-toggle-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+
+            manager.setEnabled("geo-sleuth", false)
+
+            val promptContext = manager.buildPromptContext(AgentKind.ANTIGRAVITY)
+            assertTrue(promptContext.contains("browser-automation"))
+            assertFalse(promptContext.contains("geo-sleuth"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun syncToWorkspaceSkipsDisabledSkills() {
+        val tempDir = Files.createTempDirectory("skill-sync-toggle-test").toFile()
+        val workspaceDir = Files.createTempDirectory("skill-sync-toggle-workspace").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+
+            manager.setEnabled("geo-sleuth", false)
+            val synced = manager.syncToWorkspace(workspaceDir)
+
+            assertTrue(synced.none { it.name == "geo-sleuth" })
+            assertFalse(File(workspaceDir, ".agents/skills/geo-sleuth").exists())
+            assertTrue(File(workspaceDir, ".agents/skills/browser-automation/SKILL.md").isFile)
+        } finally {
+            tempDir.deleteRecursively()
+            workspaceDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun enabledFlagSurvivesRegistryRoundTrip() {
+        val tempDir = Files.createTempDirectory("skill-toggle-persist-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+            manager.setEnabled("geo-sleuth", false)
+
+            val reloaded = SkillManager(baseDir = tempDir)
+            assertFalse(reloaded.installed().first { it.name == "geo-sleuth" }.enabled)
+            assertTrue(reloaded.enabledSkills().none { it.name == "geo-sleuth" })
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }
