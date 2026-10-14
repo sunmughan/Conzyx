@@ -16,6 +16,12 @@ import java.net.URL
  */
 sealed interface MarketplaceInstallResult {
     data class Installed(val packageDir: File) : MarketplaceInstallResult
+    /**
+     * No artifact was downloaded — the item was recorded as a local catalog
+     * reference (e.g. an `npx …` command). Callers must not report this as
+     * an install.
+     */
+    data class ReferenceRecorded(val packageDir: File) : MarketplaceInstallResult
     data class Failed(val reason: String) : MarketplaceInstallResult
     data object AlreadyInstalled : MarketplaceInstallResult
 }
@@ -65,6 +71,15 @@ internal fun classifyInstallSource(source: String): InstallSourceKind = when {
 }
 
 /**
+ * Maps a completed install to its result. A source that was not actually
+ * downloaded (local reference / catalog-only listing) is never reported
+ * as [MarketplaceInstallResult.Installed]. Pure, unit-tested.
+ */
+internal fun installResultFor(downloaded: Boolean, targetDir: File): MarketplaceInstallResult =
+    if (downloaded) MarketplaceInstallResult.Installed(targetDir)
+    else MarketplaceInstallResult.ReferenceRecorded(targetDir)
+
+/**
  * Real installation manager for the AI Developer Marketplace (Phase 14).
  *
  * Milestone 0: install status derives from THIS manager — durably persisted in
@@ -88,8 +103,9 @@ class MarketplaceInstallManager(private val context: Context) {
 
     /**
      * Installs [item]: materializes the package on disk and records it durably.
-     * HTTP(S) sources are really downloaded (size-capped); anything else is
-     * recorded as a catalog reference with a manifest.
+     * HTTPS sources are really downloaded (size-capped, hash-gated); anything
+     * else is recorded as a catalog reference and reported honestly as
+     * [MarketplaceInstallResult.ReferenceRecorded] — never as "Installed".
      */
     fun install(item: MarketplaceItem): MarketplaceInstallResult {
         if (isInstalled(item.id)) return MarketplaceInstallResult.AlreadyInstalled
@@ -98,6 +114,7 @@ class MarketplaceInstallManager(private val context: Context) {
             targetDir.mkdirs()
             val source = item.installUrl.trim()
             val sourceNote: String
+            val downloaded: Boolean
             when (classifyInstallSource(source)) {
                 InstallSourceKind.HTTPS_DOWNLOAD -> {
                     val payload = downloadBytes(source)
@@ -108,13 +125,18 @@ class MarketplaceInstallManager(private val context: Context) {
                     }
                     File(targetDir, "package.bin").writeBytes(payload)
                     sourceNote = "downloaded from $source (${payload.size} bytes)"
+                    downloaded = true
                 }
                 InstallSourceKind.INSECURE_HTTP ->
                     throw IllegalArgumentException("Refusing to install from insecure HTTP source: $source")
-                InstallSourceKind.LOCAL_REFERENCE ->
+                InstallSourceKind.LOCAL_REFERENCE -> {
                     sourceNote = "local reference: $source"
-                InstallSourceKind.CATALOG_ONLY ->
+                    downloaded = false
+                }
+                InstallSourceKind.CATALOG_ONLY -> {
                     sourceNote = "catalog entry (no downloadable artifact)"
+                    downloaded = false
+                }
             }
             val manifest = JSONObject()
                 .put("id", item.id)
@@ -137,7 +159,7 @@ class MarketplaceInstallManager(private val context: Context) {
             )
             prefs.edit().putString(keyFor(item.id), toJson(record)).apply()
             _installedPackages.value = _installedPackages.value + (item.id to record)
-            MarketplaceInstallResult.Installed(targetDir)
+            installResultFor(downloaded, targetDir)
         } catch (e: Exception) {
             runCatching { targetDir.deleteRecursively() }
             MarketplaceInstallResult.Failed("Install failed: ${e.message}")
@@ -238,7 +260,9 @@ class MarketplaceInstallManager(private val context: Context) {
     companion object {
         private const val PREFS_NAME = "marketplace_installs"
         private const val KEY_PREFIX = "pkg_"
-        private const val DEFAULT_VERSION = "1.0.0"
+        // Listings carry no version field, so stamping one would be a
+        // fabrication. "unknown" is honest.
+        private const val DEFAULT_VERSION = "unknown"
         private const val MAX_DOWNLOAD_BYTES = 50L * 1024L * 1024L
     }
 }

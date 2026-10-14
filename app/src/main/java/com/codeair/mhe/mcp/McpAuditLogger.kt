@@ -55,6 +55,11 @@ data class McpAuditEntry(
 
 /**
  * Crash-safe logger for Model Context Protocol (MCP) tool executions and access decisions.
+ *
+ * Tool arguments often carry credentials, tokens, or personal data. Before an
+ * entry is stored, argument values under sensitive-looking keys are replaced
+ * with [REDACTED] and the result preview is capped, so mcp_audit.json never
+ * holds raw secrets.
  */
 class McpAuditLogger(
     private val storageDir: File? = null,
@@ -71,8 +76,12 @@ class McpAuditLogger(
     }
 
     fun log(entry: McpAuditEntry) {
+        val redacted = entry.copy(
+            argumentsJson = redactArguments(entry.argumentsJson),
+            resultPreview = entry.resultPreview.take(RESULT_PREVIEW_MAX_CHARS),
+        )
         synchronized(lock) {
-            memoryLog.add(0, entry)
+            memoryLog.add(0, redacted)
             while (memoryLog.size > maxEntries) {
                 memoryLog.removeAt(memoryLog.lastIndex)
             }
@@ -153,6 +162,34 @@ class McpAuditLogger(
                 array.put(entry.toJson())
             }
             SafeFileOps.atomicWriteText(file, array.toString())
+        }
+    }
+
+    companion object {
+        private const val RESULT_PREVIEW_MAX_CHARS = 500
+        private val SENSITIVE_KEY =
+            Regex("password|passwd|pwd|token|secret|api[_-]?key|auth|bearer|credential|private[_-]?key|session[_-]?id", RegexOption.IGNORE_CASE)
+
+        fun redactArguments(argumentsJson: String): String {
+            val root = runCatching { JSONObject(argumentsJson) }.getOrNull() ?: return argumentsJson
+            redactJson(root)
+            return root.toString()
+        }
+
+        private fun redactJson(obj: JSONObject) {
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                when (val value = obj.opt(key)) {
+                    is JSONObject -> redactJson(value)
+                    is JSONArray -> {
+                        for (i in 0 until value.length()) {
+                            (value.opt(i) as? JSONObject)?.let { redactJson(it) }
+                        }
+                    }
+                    else -> if (SENSITIVE_KEY.containsMatchIn(key)) obj.put(key, "[REDACTED]")
+                }
+            }
         }
     }
 }

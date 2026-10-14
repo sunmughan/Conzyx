@@ -75,6 +75,8 @@ class MarketplaceCoordinator(
                     val mcpNote = registerMarketplaceMcpServer(item)
                     "Installed ${item.name}$mcpNote"
                 }
+                is MarketplaceInstallResult.ReferenceRecorded ->
+                    "Saved ${item.name} as a reference — no package was downloaded"
                 is MarketplaceInstallResult.Failed ->
                     "Install failed: ${result.reason}"
                 MarketplaceInstallResult.AlreadyInstalled ->
