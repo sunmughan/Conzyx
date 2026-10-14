@@ -1270,8 +1270,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         approval: com.codeair.mhe.ui.coordinators.McpToolApproval,
     ) {
         val projectId = _state.value.activeProject?.id
-        val arguments = runCatching { org.json.JSONObject(argsJson) }.getOrElse {
-            _state.update { it.copy(toastMessage = "Invalid JSON arguments: ${it.message}") }
+        val arguments = runCatching { org.json.JSONObject(argsJson) }.getOrElse { e ->
+            _state.update { it.copy(toastMessage = "Invalid JSON arguments: ${e.message}") }
             return
         }
         val decision = mcpCoordinator.mcpToolDecision(server.id, toolName, projectId)
