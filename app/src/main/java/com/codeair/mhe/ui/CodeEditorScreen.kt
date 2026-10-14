@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -217,21 +218,30 @@ fun CodeEditorScreen(
     var secondaryValue by remember(secondaryFilePath) { mutableStateOf(TextFieldValue("")) }
     // QA H3: pane-2 tracks its own saved baseline, like the primary pane.
     var secondarySavedText by remember(secondaryFilePath) { mutableStateOf("") }
+    var secondaryLoadError by remember(secondaryFilePath) { mutableStateOf<String?>(null) }
     // The pane content used to be read inside remember{} during composition,
     // freezing the editor on big files. It now loads off the main thread.
     LaunchedEffect(secondaryFilePath) {
-        val text = if (secondaryFilePath == filePath) {
-            source
+        secondaryLoadError = null
+        val result = if (secondaryFilePath == filePath) {
+            Result.success(source)
         } else {
             withContext(Dispatchers.IO) {
                 runCatching {
                     val f = File(secondaryFilePath)
-                    if (f.exists() && f.isFile) f.readText() else ""
-                }.getOrDefault("")
+                    require(f.exists() && f.isFile) { "File not found: $secondaryFilePath" }
+                    f.readText()
+                }
             }
         }
-        secondaryValue = TextFieldValue(text)
-        secondarySavedText = text
+        result.onSuccess { text ->
+            secondaryValue = TextFieldValue(text)
+            secondarySavedText = text
+        }.onFailure { e ->
+            secondaryValue = TextFieldValue("")
+            secondarySavedText = ""
+            secondaryLoadError = e.message ?: "Could not read file"
+        }
     }
     var savingSecondary by rememberSaveable(filePath) { mutableStateOf(false) }
     val secondaryVertical = rememberScrollState()
@@ -1537,7 +1547,7 @@ fun CodeEditorScreen(
                                 shape = RoundedCornerShape(8.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
                                 border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
-                                modifier = Modifier.height(32.dp),
+                                modifier = Modifier.heightIn(min = 48.dp),
                             ) {
                                 Row(
                                     modifier = Modifier.padding(start = 10.dp, end = 4.dp),
@@ -1845,7 +1855,17 @@ fun CodeEditorScreen(
 
                     // Pane 2: Bottom pane
                     Box(Modifier.weight(1f).fillMaxWidth()) {
-                        EditorPane(
+                        Column(Modifier.fillMaxSize()) {
+                            secondaryLoadError?.let { err ->
+                                Text(
+                                    text = err,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                )
+                            }
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                EditorPane(
                             value = secondaryValue,
                             onValueChange = {
                                 secondaryValue = it
@@ -1860,6 +1880,8 @@ fun CodeEditorScreen(
                             bracketPair = null,
                             onSaveShortcut = saveSecondary,
                         )
+                            }
+                        }
                     }
                 }
             }
