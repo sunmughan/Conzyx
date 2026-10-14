@@ -375,6 +375,7 @@ fun MarketplaceScreen(
                     )
                 }
             }
+            }
             AnimatedVisibility(
                 visible = searchOpen,
                 enter = fadeIn(),
@@ -429,7 +430,6 @@ fun MarketplaceScreen(
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                     ),
                 )
-            }
             }
         }
     }
