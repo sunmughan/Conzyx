@@ -4068,7 +4068,7 @@ private fun ProjectsScreen(
                                         if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED && state.githubRepositories.isEmpty()) onRefreshGitHub()
                                     },
                                     color = MaterialTheme.colorScheme.surface,
-                                    shape = RoundedCornerShape(13.dp),
+                                    shape = RoundedCornerShape(14.dp),
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                 ) {
                                     Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -4101,7 +4101,7 @@ private fun ProjectsScreen(
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth().clickable { showUpdateDialog = true },
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(18.dp),
                         color = PocketOrange.copy(alpha = 0.11f),
                         border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.45f)),
                     ) {
