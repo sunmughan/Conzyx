@@ -51,16 +51,6 @@ object AndroidAppInstaller {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     setPackageSource(PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE)
                 }
-                // Allow version rollback / downgrade installations
-                runCatching {
-                    val method = javaClass.getMethod("setRequestDowngrade", Boolean::class.javaPrimitiveType)
-                    method.invoke(this, true)
-                }
-                runCatching {
-                    val field = javaClass.getField("installFlags")
-                    val flags = field.getInt(this)
-                    field.setInt(this, flags or 0x00000080) // PackageManager.INSTALL_REQUEST_DOWNGRADE
-                }
             }
         val sessionId = installer.createSession(params)
         try {
@@ -76,8 +66,10 @@ object AndroidAppInstaller {
                     .setPackage(context.packageName)
                     .addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                     .putExtra(PackageInstaller.EXTRA_SESSION_ID, sessionId)
+                // The status fill-in extras are supplied by the system at
+                // send time, which works with an immutable PendingIntent.
                 val mutabilityFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    PendingIntent.FLAG_MUTABLE
+                    PendingIntent.FLAG_IMMUTABLE
                 } else {
                     0
                 }

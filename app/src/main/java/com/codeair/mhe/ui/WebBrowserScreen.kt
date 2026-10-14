@@ -1217,7 +1217,11 @@ fun PreviewTab(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.databaseEnabled = true
-                        settings.allowFileAccess = true
+                        // Hardened: the browser has no legitimate use for
+                        // file:// URLs or http subresources on https pages.
+                        // (allowContentAccess stays on: the file chooser
+                        // hands the WebView content:// URIs for uploads.)
+                        settings.allowFileAccess = false
                         settings.allowContentAccess = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
@@ -1226,7 +1230,7 @@ fun PreviewTab(
                         settings.displayZoomControls = false
                         settings.javaScriptCanOpenWindowsAutomatically = true
                         settings.mediaPlaybackRequiresUserGesture = false
-                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
                         val initialUserAgent = if (currentTab.isDesktopMode) DESKTOP_USER_AGENT else MOBILE_CHROME_USER_AGENT
@@ -1285,13 +1289,20 @@ fun PreviewTab(
                                     }
                                     return false
                                 }
-                                return try {
-                                    val intent = Intent(Intent.ACTION_VIEW, target)
-                                    context.startActivity(intent)
-                                    true
-                                } catch (_: Exception) {
-                                    false
+                                // Only well-known safe schemes may leave the
+                                // WebView. intent:// and other exotic schemes
+                                // used to fire ACTION_VIEW at arbitrary app
+                                // components; they are now blocked.
+                                if (scheme == "tel" || scheme == "mailto" || scheme == "sms") {
+                                    return try {
+                                        val intent = Intent(Intent.ACTION_VIEW, target)
+                                        context.startActivity(intent)
+                                        true
+                                    } catch (_: Exception) {
+                                        false
+                                    }
                                 }
+                                return true
                             }
 
                             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {

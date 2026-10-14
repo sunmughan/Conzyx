@@ -116,4 +116,18 @@ class McpCredentialStoreTest {
         val store = McpCredentialStore(baseDir, InMemoryCredentialBackend())
         assertEquals("srv::NAME", store.credentialKey("srv", "NAME"))
     }
+
+    @Test
+    fun `clear deletes the key file as well as the store`() {
+        val backendDir = File(baseDir, "clear_test")
+        val store = McpCredentialStore(backendDir)
+        store.setCredential("srv1", "TOKEN", "hidden-value-123")
+        val keyFile = File(backendDir, "mcp_cred.key")
+        assertTrue(keyFile.exists())
+
+        store.clear()
+
+        assertFalse(File(backendDir, "mcp_credentials.json").exists())
+        assertFalse("key file must not linger after clear", keyFile.exists())
+    }
 }

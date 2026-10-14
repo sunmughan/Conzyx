@@ -3,6 +3,7 @@ package com.codeair.mhe.runtime
 import android.content.Context
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.codeair.mhe.BuildConfig
 import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ChangeItem
 import com.codeair.mhe.model.DiffLine
@@ -245,7 +246,10 @@ class ClaudeRuntimeBridge(
                             val line = pendingOutput.substring(0, newline).trimEnd('\r')
                             pendingOutput.delete(0, newline + 1)
                             if (line.isNotBlank()) {
-                                Log.d("ClaudeBridge", "OUTPUT: $line")
+                                // Raw agent output can contain file content
+                                // or pasted secrets: keep it out of release
+                                // logcat (bug reports capture logcat).
+                                if (BuildConfig.DEBUG) Log.d("ClaudeBridge", "OUTPUT: $line")
                                 ProviderRuntimeErrorDetector.detect(line)?.let { reason ->
                                     process.destroyForcibly()
                                     throw ProviderSessionException(reason)
@@ -262,7 +266,7 @@ class ClaudeRuntimeBridge(
                     }
                 }
                 pendingOutput.toString().trim().takeIf(String::isNotBlank)?.let { line ->
-                    Log.d("ClaudeBridge", "TRAILING OUTPUT: $line")
+                    if (BuildConfig.DEBUG) Log.d("ClaudeBridge", "TRAILING OUTPUT: $line")
                     if (!consumeClaudeEvent(sessionId, line)) lastDiagnostic = line.takeLast(500)
                 }
                 val exit = process.waitFor()

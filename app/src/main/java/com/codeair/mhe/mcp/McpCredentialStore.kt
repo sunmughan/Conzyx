@@ -133,6 +133,9 @@ class AesGcmFileCredentialBackend(
     override fun clear() {
         synchronized(lock) {
             if (storage.exists()) storage.delete()
+            // The data key must go too, or a later clear() leaves a
+            // orphaned key beside (a future) ciphertext.
+            if (keyFile.exists()) keyFile.delete()
         }
     }
 }

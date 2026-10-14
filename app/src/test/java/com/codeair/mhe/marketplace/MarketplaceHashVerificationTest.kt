@@ -46,4 +46,14 @@ class MarketplaceHashVerificationTest {
         assertTrue(verifyPackageHash("", bytes))
         assertTrue(verifyPackageHash("   ", bytes))
     }
+
+    @Test
+    fun `classifyInstallSource requires https for downloads`() {
+        assertEquals(InstallSourceKind.HTTPS_DOWNLOAD, classifyInstallSource("https://example.com/pkg.zip"))
+        assertEquals(InstallSourceKind.INSECURE_HTTP, classifyInstallSource("http://example.com/pkg.zip"))
+        assertEquals(InstallSourceKind.LOCAL_REFERENCE, classifyInstallSource("content://media/1"))
+        assertEquals(InstallSourceKind.LOCAL_REFERENCE, classifyInstallSource("/sdcard/pkg.zip"))
+        assertEquals(InstallSourceKind.CATALOG_ONLY, classifyInstallSource(""))
+        assertEquals(InstallSourceKind.CATALOG_ONLY, classifyInstallSource("   "))
+    }
 }

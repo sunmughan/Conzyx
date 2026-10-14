@@ -50,6 +50,20 @@ internal fun verifyPackageHash(expectedSha256: String, bytes: ByteArray): Boolea
     return sha256Hex(bytes).equals(expectedSha256.trim(), ignoreCase = true)
 }
 
+/** How a marketplace item's install source is handled. */
+internal enum class InstallSourceKind { HTTPS_DOWNLOAD, INSECURE_HTTP, LOCAL_REFERENCE, CATALOG_ONLY }
+
+/**
+ * Classifies an install source URL. Plain HTTP is never downloaded —
+ * refusing beats silently fetching bytes a network attacker can swap.
+ */
+internal fun classifyInstallSource(source: String): InstallSourceKind = when {
+    source.startsWith("https://") -> InstallSourceKind.HTTPS_DOWNLOAD
+    source.startsWith("http://") -> InstallSourceKind.INSECURE_HTTP
+    source.isNotBlank() -> InstallSourceKind.LOCAL_REFERENCE
+    else -> InstallSourceKind.CATALOG_ONLY
+}
+
 /**
  * Real installation manager for the AI Developer Marketplace (Phase 14).
  *
@@ -84,19 +98,23 @@ class MarketplaceInstallManager(private val context: Context) {
             targetDir.mkdirs()
             val source = item.installUrl.trim()
             val sourceNote: String
-            if (source.startsWith("http://") || source.startsWith("https://")) {
-                val payload = downloadBytes(source)
-                // A listing hash is a hard gate: a mismatch fails the
-                // install instead of writing unverified bytes.
-                check(verifyPackageHash(item.sha256, payload)) {
-                    "Downloaded package hash does not match the listing (expected ${item.sha256})"
+            when (classifyInstallSource(source)) {
+                InstallSourceKind.HTTPS_DOWNLOAD -> {
+                    val payload = downloadBytes(source)
+                    // A listing hash is a hard gate: a mismatch fails the
+                    // install instead of writing unverified bytes.
+                    check(verifyPackageHash(item.sha256, payload)) {
+                        "Downloaded package hash does not match the listing (expected ${item.sha256})"
+                    }
+                    File(targetDir, "package.bin").writeBytes(payload)
+                    sourceNote = "downloaded from $source (${payload.size} bytes)"
                 }
-                File(targetDir, "package.bin").writeBytes(payload)
-                sourceNote = "downloaded from $source (${payload.size} bytes)"
-            } else if (source.isNotBlank()) {
-                sourceNote = "local reference: $source"
-            } else {
-                sourceNote = "catalog entry (no downloadable artifact)"
+                InstallSourceKind.INSECURE_HTTP ->
+                    throw IllegalArgumentException("Refusing to install from insecure HTTP source: $source")
+                InstallSourceKind.LOCAL_REFERENCE ->
+                    sourceNote = "local reference: $source"
+                InstallSourceKind.CATALOG_ONLY ->
+                    sourceNote = "catalog entry (no downloadable artifact)"
             }
             val manifest = JSONObject()
                 .put("id", item.id)
