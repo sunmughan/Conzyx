@@ -200,6 +200,13 @@ class AppUpdater(
         return null
     }
 
+    @Volatile
+    private var activeDownloadConnection: HttpURLConnection? = null
+
+    fun cancelDownload() {
+        activeDownloadConnection?.disconnect()
+    }
+
     fun download(info: AppUpdateInfo, progress: (Long, Long) -> Unit): File {
         check(isSelfUpdateAllowed(isPlayBuild)) {
             "Self-update is disabled on Google Play builds; updates come from Google Play."
@@ -232,6 +239,7 @@ class AppUpdater(
                 }
             }
         } finally {
+            activeDownloadConnection = null
             stream.close()
         }
 
@@ -292,6 +300,7 @@ class AppUpdater(
             val startOffset = if (code == HttpURLConnection.HTTP_PARTIAL) resumeFrom else 0L
             val remaining = connection.contentLengthLong.takeIf { it > 0 }
             val total = if (remaining != null) startOffset + remaining else maxOf(fallbackSize, startOffset)
+            activeDownloadConnection = connection
             return Triple(connection.inputStream, total, startOffset)
         }
         error("Too many redirects downloading update")

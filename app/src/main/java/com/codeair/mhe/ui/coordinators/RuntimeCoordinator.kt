@@ -25,7 +25,9 @@ import com.codeair.mhe.ui.AppUpdateStatus
 import com.codeair.mhe.ui.StartupStage
 import com.codeair.mhe.update.AppUpdater
 import java.net.UnknownHostException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +61,8 @@ class RuntimeCoordinator(
     private val refreshActiveApiKey: (ProviderKind) -> Unit,
 ) {
     @Volatile private var setupCompletionHandled: Boolean = false
+    private var appUpdateDownloadJob: Job? = null
+    @Volatile private var activeAppUpdater: AppUpdater? = null
 
     /**
      * Called from the ViewModel's init block; starts the startup state machine.
@@ -413,12 +417,18 @@ class RuntimeCoordinator(
         host.updateState {
             it.copy(appUpdateStatus = AppUpdateStatus.DOWNLOADING, appUpdateDownloadedBytes = 0L, appUpdateTotalBytes = info.sizeBytes, appUpdateError = null)
         }
-        host.scope.launch(Dispatchers.IO) {
-            runCatching {
-                appUpdater().download(info) { downloaded, total ->
+        appUpdateDownloadJob?.cancel()
+        val updater = appUpdater()
+        activeAppUpdater = updater
+        val job = host.scope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                updater.download(info) { downloaded, total ->
                     host.updateState { current -> current.copy(appUpdateDownloadedBytes = downloaded, appUpdateTotalBytes = total) }
                 }
-            }.onSuccess { apk ->
+            }
+            activeAppUpdater = null
+            if (!isActive) return@launch
+            result.onSuccess { apk ->
                 host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.INSTALLING) }
                 runCatching { AndroidAppInstaller.install(host.appContext, apk) }.onFailure { error ->
                     host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.ERROR, appUpdateError = error.message ?: "Could not start the Android installer") }
@@ -426,6 +436,19 @@ class RuntimeCoordinator(
             }.onFailure { error ->
                 host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.ERROR, appUpdateError = error.message ?: "Update download failed") }
             }
+        }
+        appUpdateDownloadJob = job
+        job.invokeOnCompletion { if (appUpdateDownloadJob === job) appUpdateDownloadJob = null }
+    }
+
+    fun cancelAppUpdateDownload() {
+        if (host.state().appUpdateStatus != AppUpdateStatus.DOWNLOADING) return
+        appUpdateDownloadJob?.cancel(CancellationException("App update download cancelled"))
+        appUpdateDownloadJob = null
+        activeAppUpdater?.cancelDownload()
+        activeAppUpdater = null
+        host.updateState {
+            it.copy(appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null, appUpdateDownloadedBytes = 0L)
         }
     }
 

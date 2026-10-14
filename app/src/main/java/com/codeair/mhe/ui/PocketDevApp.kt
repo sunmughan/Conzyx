@@ -2531,6 +2531,7 @@ private fun RootScreenHost(
                     onPing = viewModel::pingApi,
                     onToggleTheme = viewModel::toggleTheme,
                     onInstallUpdate = viewModel::installAppUpdate,
+                    onCancelUpdateDownload = viewModel::cancelAppUpdateDownload,
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
@@ -3827,6 +3828,7 @@ private fun ProjectsScreen(
     onPing: () -> Unit,
     onToggleTheme: () -> Unit,
     onInstallUpdate: () -> Unit,
+    onCancelUpdateDownload: () -> Unit = {},
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
@@ -4490,7 +4492,16 @@ private fun ProjectsScreen(
                     Text(when { !canInstall -> "Grant permission"; downloading -> "Downloading…"; installing -> "Installing…"; else -> "Download and install" })
                 }
             },
-            dismissButton = { TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } },
+            dismissButton = {
+                Row {
+                    if (downloading) {
+                        TextButton(onClick = onCancelUpdateDownload) {
+                            Text("Cancel", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    TextButton(onClick = { showUpdateDialog = false }) { Text("Later") }
+                }
+            },
         )
     }
 }
