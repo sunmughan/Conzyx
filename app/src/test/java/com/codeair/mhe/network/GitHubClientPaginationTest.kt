@@ -42,7 +42,7 @@ class GitHubClientPaginationTest {
         val fetchedPages = mutableListOf<Int>()
 
         override fun getJson(endpoint: String, token: String): Any {
-            val page = endpoint.substringAfter("page=").substringBefore("&").toInt()
+            val page = endpoint.substringAfter("&page=").substringBefore("&").toInt()
             fetchedPages += page
             return pages.getValue(page)
         }
