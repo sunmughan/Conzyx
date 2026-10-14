@@ -2491,6 +2491,10 @@ private fun RootScreenHost(
                     onSwitchAntigravityAccount = viewModel::switchAntigravityAccount,
                     onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
                     onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
+                    onToggleGeminiApiMode = viewModel::setGeminiApiMode,
+                    onSaveGeminiApiKey = viewModel::saveGeminiApiKey,
+                    onClearGeminiApiKey = viewModel::clearGeminiApiKey,
+                    onSetGeminiApiModel = viewModel::setGeminiApiModel,
                     teamOrchestrator = viewModel.teamOrchestrator,
                 )
                 RootScreen.SKILLS -> SkillsScreen(
@@ -2562,6 +2566,10 @@ private fun RootScreenHost(
                     onSwitchAntigravityAccount = viewModel::switchAntigravityAccount,
                     onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
                     onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
+                    onToggleGeminiApiMode = viewModel::setGeminiApiMode,
+                    onSaveGeminiApiKey = viewModel::saveGeminiApiKey,
+                    onClearGeminiApiKey = viewModel::clearGeminiApiKey,
+                    onSetGeminiApiModel = viewModel::setGeminiApiModel,
                     initialUpdateManifestUrl = viewModel.updateManifestUrl().ifBlank { viewModel.debugUpdateManifestUrl() },
                     initialUpdateAuthToken = viewModel.updateAuthToken(),
                     onSetUpdateManifestUrl = viewModel::setUpdateManifestUrl,

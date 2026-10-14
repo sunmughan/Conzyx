@@ -154,6 +154,7 @@ class AntigravityRuntimeBridge(
     private val saveConversationId: (String, String) -> Unit,
     private val safetyGateway: com.codeair.mhe.security.SafetyGateway,
     private val interactiveApprovals: Boolean = true,
+    private val geminiApiConfig: () -> GeminiApiConfig? = { null },
 ) : RuntimeBridge {
     override val supportsSessionRecovery: Boolean = true
     private val installer = RuntimeInstaller(context)
@@ -161,6 +162,7 @@ class AntigravityRuntimeBridge(
     private val launchGate = FullAccessLaunchGate(safetyGateway)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
+    private val geminiApiClient = GeminiApiClient()
     private val finished = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var activeProcess: Process? = null
     @Volatile private var activeSessionId: String? = null
@@ -290,6 +292,10 @@ class AntigravityRuntimeBridge(
         var assistantTextSeen = false
         finished.remove(sessionId)
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
+        val apiConfig = geminiApiConfig()
+        if (apiConfig != null) {
+            return startGeminiApiSession(sessionId, projectId, projectSlug, prompt, conversationHistory, apiConfig)
+        }
         if (!installer.isAgentInstalled(com.codeair.mhe.model.AgentKind.ANTIGRAVITY)) {
             emitFailure(sessionId, "Antigravity CLI is not installed. Open Settings → Coding agent to install it.")
             return@withContext sessionId
@@ -480,6 +486,61 @@ class AntigravityRuntimeBridge(
         sessionId
     }
 
+    private suspend fun startGeminiApiSession(
+        sessionId: String,
+        projectId: String,
+        projectSlug: String,
+        prompt: String,
+        conversationHistory: List<ChatMessage>,
+        config: GeminiApiConfig,
+    ): String = withContext(Dispatchers.IO + NonCancellable) {
+        userStopRequested = false
+        foregroundResultPosted = false
+        finished.remove(sessionId)
+        RuntimeTaskController.stopAction = {
+            userStopRequested = true
+            geminiApiClient.cancel()
+        }
+        startForegroundRuntime(projectSlug, "Gemini API")
+        try {
+            val history = conversationHistory.mapNotNull { message ->
+                message.text.takeIf { it.isNotBlank() }
+                    ?.let { (if (message.fromUser) "user" else "model") to it }
+            }
+            geminiApiClient.streamGenerateContent(
+                apiKey = config.apiKey,
+                model = config.model,
+                systemPrompt = geminiApiSystemPrompt(projectSlug),
+                history = history,
+                prompt = prompt,
+            ).collect { event ->
+                when (event) {
+                    is GeminiStreamEvent.TextDelta ->
+                        eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, event.text))
+                    is GeminiStreamEvent.Finished -> Unit
+                    is GeminiStreamEvent.Failed -> throw IllegalStateException(event.message)
+                }
+            }
+            if (userStopRequested) throw AntigravitySessionException("Stopped by user")
+            emitCompleted(sessionId)
+            finishForegroundRuntime(true, projectSlug, "Gemini API finished the task in $projectSlug.")
+        } catch (e: Exception) {
+            val message = if (userStopRequested) "Stopped by user"
+            else e.message.orEmpty().ifBlank { "Gemini API request failed." }
+            emitFailure(sessionId, message)
+            finishForegroundRuntime(false, projectSlug, message)
+        }
+        activeProcess = null
+        activeSessionId = null
+        RuntimeTaskController.stopAction = null
+        sessionId
+    }
+
+    private fun geminiApiSystemPrompt(projectSlug: String): String =
+        "You are the coding assistant inside the Conzyx Android app. The active project workspace is " +
+            "/workspace/$projectSlug. Answer directly and concisely. When asked to change code, reply " +
+            "with exact file paths and complete updated file contents or unified diffs the user can apply."
+
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) {
         launchGate.respondToApproval(request.approvalId, approved)
     }
@@ -489,6 +550,7 @@ class AntigravityRuntimeBridge(
             userStopRequested = true
             launchGate.abortPending()
             activeProcess?.destroy()
+            geminiApiClient.cancel()
             emitFailure(sessionId, "Stopped by user")
         }
     }
@@ -554,14 +616,14 @@ class AntigravityRuntimeBridge(
         if (finished.add(sessionId)) eventBus.emit(RuntimeEvent.SessionFailed(sessionId, reason))
     }
 
-    private fun startForegroundRuntime(projectName: String) {
+    private fun startForegroundRuntime(projectName: String, agentName: String = "Antigravity CLI") {
         ContextCompat.startForegroundService(
             context,
             android.content.Intent(context, RuntimeExecutionService::class.java)
                 .setAction(RuntimeExecutionService.ACTION_START)
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
-                .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
-                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Antigravity CLI is working in $projectName"),
+                .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, agentName)
+                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "$agentName is working in $projectName"),
         )
     }
 

@@ -342,6 +342,9 @@ data class AppUiState(
     val antigravityEffort: String = "high",
     val antigravityModels: List<String> = emptyList(),
     val antigravityModelsLoading: Boolean = false,
+    val geminiApiMode: Boolean = false,
+    val geminiApiKeySaved: Boolean = false,
+    val geminiApiModel: String = com.codeair.mhe.data.GEMINI_API_DEFAULT_MODEL,
     val androidBuildRunning: Boolean = false,
     val androidBuildMessage: String? = null,
     val appUpdate: AppUpdateInfo? = null,
@@ -400,6 +403,7 @@ data class AppUiState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
+    private val geminiApiStore = com.codeair.mhe.data.GeminiApiStore(application)
     // One shared policy engine: the Settings toggles/kill switch and the
     // agent bridges must observe the same in-memory state. (Previously the
     // Claude bridge built its own engine, so the kill switch in Settings
@@ -437,7 +441,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
         },
         safetyGateway = safetyGateway,
+        geminiApiConfig = { currentGeminiApiConfig() },
     )
+    private fun currentGeminiApiConfig(): com.codeair.mhe.runtime.GeminiApiConfig? {
+        val key = geminiApiStore.getApiKey()
+        return if (geminiApiStore.apiModeEnabled && !key.isNullOrBlank()) {
+            com.codeair.mhe.runtime.GeminiApiConfig(key, geminiApiStore.apiModel)
+        } else null
+    }
     private val customRuntime = CustomAgentBridge { profile -> vault.get(profile.kind.name) }
     private val codexRuntime = CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, customRuntime, codexRuntime)
@@ -670,6 +681,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ),
             antigravityModel = preferences.antigravityModel,
             antigravityEffort = preferences.antigravityEffort,
+            geminiApiMode = geminiApiStore.apiModeEnabled,
+            geminiApiKeySaved = geminiApiStore.hasApiKey(),
+            geminiApiModel = geminiApiStore.apiModel,
             themeMode = runCatching { com.codeair.mhe.ui.theme.AppThemeMode.valueOf(preferences.themeMode.uppercase()) }
                 .getOrDefault(com.codeair.mhe.ui.theme.AppThemeMode.DARK),
             projects = initialProjects,
@@ -1716,6 +1730,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setGeminiApiMode(enabled: Boolean) {
+        geminiApiStore.apiModeEnabled = enabled
+        _state.update { it.copy(geminiApiMode = enabled) }
+    }
+
+    fun saveGeminiApiKey(key: String) {
+        if (key.isBlank()) return
+        geminiApiStore.setApiKey(key)
+        _state.update { it.copy(geminiApiKeySaved = true) }
+    }
+
+    fun clearGeminiApiKey() {
+        geminiApiStore.clearApiKey()
+        _state.update { it.copy(geminiApiKeySaved = false) }
+    }
+
+    fun setGeminiApiModel(model: String) {
+        if (com.codeair.mhe.data.GEMINI_API_MODELS.none { it.first == model }) return
+        geminiApiStore.apiModel = model
+        _state.update { it.copy(geminiApiModel = model) }
+    }
+
     fun setAntigravityEffort(effort: String) {
         if (effort !in setOf("low", "medium", "high")) return
         val current = _state.value
@@ -1870,6 +1906,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun testAntigravityConnection() {
         if (_state.value.agentKind != AgentKind.ANTIGRAVITY) return
         if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
+        val apiConfig = currentGeminiApiConfig()
+        if (apiConfig != null) {
+            _state.update {
+                it.copy(apiPingStatus = ApiPingStatus.PINGING, apiPingMessage = "Testing Gemini API…")
+            }
+            viewModelScope.launch {
+                runCatching {
+                    com.codeair.mhe.runtime.GeminiApiClient().probe(apiConfig.apiKey, apiConfig.model)
+                }.onSuccess {
+                    _state.update {
+                        it.copy(apiPingStatus = ApiPingStatus.OK, apiPingMessage = "Gemini API is working!")
+                    }
+                }.onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            apiPingStatus = ApiPingStatus.FAILED,
+                            apiPingMessage = error.message.orEmpty().ifBlank { "Gemini API test failed." },
+                        )
+                    }
+                }
+            }
+            return
+        }
         if (_state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
             _state.update {
                 it.copy(

@@ -1,5 +1,7 @@
 package com.codeair.mhe.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -62,7 +64,10 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,6 +111,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.R
 import com.codeair.mhe.data.ApiKeyInfo
+import com.codeair.mhe.data.GEMINI_API_MODELS
 import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.DSH_PROTOCOL_PROVIDERS
 import com.codeair.mhe.model.ProviderKind
@@ -195,6 +201,10 @@ fun AgentScreen(
     onSwitchAntigravityAccount: (String) -> Unit = {},
     onRemoveAntigravityAccount: (String) -> Unit = {},
     onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
+    onToggleGeminiApiMode: (Boolean) -> Unit = {},
+    onSaveGeminiApiKey: (String) -> Unit = {},
+    onClearGeminiApiKey: () -> Unit = {},
+    onSetGeminiApiModel: (String) -> Unit = {},
     teamOrchestrator: AgentTeamOrchestrator? = null,
 ) {
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
@@ -1062,6 +1072,10 @@ fun AgentScreen(
                         onSwitchAccount = onSwitchAntigravityAccount,
                         onRemoveAccount = onRemoveAntigravityAccount,
                         onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
+                        onToggleGeminiApiMode = onToggleGeminiApiMode,
+                        onSaveGeminiApiKey = onSaveGeminiApiKey,
+                        onClearGeminiApiKey = onClearGeminiApiKey,
+                        onSetGeminiApiModel = onSetGeminiApiModel,
                     )
                 } else if (viewedAgent == AgentKind.CODEX && viewedAgentInstalled) {
                     AgentCodexCard(
@@ -1316,6 +1330,10 @@ private fun AgentAntigravityCard(
     onSwitchAccount: (String) -> Unit = {},
     onRemoveAccount: (String) -> Unit = {},
     onToggleAutoRoundRobin: (Boolean) -> Unit = {},
+    onToggleGeminiApiMode: (Boolean) -> Unit = {},
+    onSaveGeminiApiKey: (String) -> Unit = {},
+    onClearGeminiApiKey: () -> Unit = {},
+    onSetGeminiApiModel: (String) -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     val auth = state.antigravityAuth
@@ -1332,6 +1350,18 @@ private fun AgentAntigravityCard(
             Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            GeminiApiModeSection(
+                enabled = state.geminiApiMode,
+                keySaved = state.geminiApiKeySaved,
+                model = state.geminiApiModel,
+                onToggle = onToggleGeminiApiMode,
+                onSaveKey = onSaveGeminiApiKey,
+                onClearKey = onClearGeminiApiKey,
+                onSetModel = onSetGeminiApiModel,
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
             Text("Google account", fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
             // Multiple Connected Google Accounts List
@@ -1811,6 +1841,156 @@ private fun AgentAntigravityCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GeminiApiModeSection(
+    enabled: Boolean,
+    keySaved: Boolean,
+    model: String,
+    onToggle: (Boolean) -> Unit,
+    onSaveKey: (String) -> Unit,
+    onClearKey: () -> Unit,
+    onSetModel: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    var keyInput by remember { mutableStateOf("") }
+    var modelMenuOpen by remember { mutableStateOf(false) }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text("Use Gemini API", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Use your own Gemini API key instead of Google sign-in",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+            if (enabled) {
+                OutlinedTextField(
+                    value = keyInput,
+                    onValueChange = { keyInput = it },
+                    label = { Text(if (keySaved) "Replace API key" else "Gemini API key") },
+                    placeholder = { Text("Paste your key here") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("https://aistudio.google.com/apikey"),
+                                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text("Get API key", fontSize = 12.sp, maxLines = 1)
+                    }
+                    Button(
+                        onClick = {
+                            onSaveKey(keyInput)
+                            keyInput = ""
+                        },
+                        enabled = keyInput.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text("Save", fontSize = 12.sp)
+                    }
+                }
+                if (keySaved) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF2E9D72),
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            "API key saved on this device",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            onClick = onClearKey,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        ) {
+                            Text("Remove", fontSize = 11.sp)
+                        }
+                    }
+                } else {
+                    Text(
+                        "Save an API key to turn on Gemini API mode",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text(
+                    "Model",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ExposedDropdownMenuBox(
+                    expanded = modelMenuOpen,
+                    onExpandedChange = { modelMenuOpen = !modelMenuOpen },
+                ) {
+                    OutlinedTextField(
+                        value = GEMINI_API_MODELS.firstOrNull { it.first == model }?.second ?: model,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelMenuOpen) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = modelMenuOpen,
+                        onDismissRequest = { modelMenuOpen = false },
+                    ) {
+                        GEMINI_API_MODELS.forEach { (id, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label, fontSize = 13.sp) },
+                                onClick = {
+                                    onSetModel(id)
+                                    modelMenuOpen = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
