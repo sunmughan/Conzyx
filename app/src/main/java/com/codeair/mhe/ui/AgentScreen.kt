@@ -2569,7 +2569,7 @@ private fun AgentUpdateBlock(
                         viewedAgent == AgentKind.CUSTOM -> "Custom uses your API directly — no runtime to update"
                         update != null -> "1 update available for ${viewedAgent.title}"
                         !isInstalled -> "${viewedAgent.title} is not installed — install it first, then check for updates"
-                        state.agentUpdatesChecking -> state.agentUpdateMessage.orEmpty()
+                        state.agentUpdatesChecking -> state.agentUpdateMessage?.takeIf { it.isNotBlank() } ?: "Checking for updates…"
                         state.agentUpdatesCheckError != null -> "Could not check updates: ${state.agentUpdatesCheckError}"
                         !canCheck -> "Update check unavailable while a task, install, or update is running"
                         !state.agentUpdatesChecked -> "Tap Check updates to see if a newer version is available"
