@@ -2889,15 +2889,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onEditorSplitStateChanged(splitState: com.codeair.mhe.editor.EditorSplitState) =
         editorCoordinator.onSplitStateChanged(splitState)
 
-    fun planRenameSymbol(oldName: String, newName: String): com.codeair.mhe.workspace.ReplacePreview? =
+    suspend fun planRenameSymbol(oldName: String, newName: String): com.codeair.mhe.workspace.ReplacePreview? =
         editorCoordinator.planRenameSymbol(oldName, newName)
 
-    fun applyRenameSymbol(
+    suspend fun applyRenameSymbol(
         preview: com.codeair.mhe.workspace.ReplacePreview,
         includeFiles: Set<String>? = null,
-    ): String = editorCoordinator.applyRenameSymbol(preview, includeFiles)
+    ): Unit = editorCoordinator.applyRenameSymbol(preview, includeFiles)
 
-    fun undoLastRename(): Boolean = editorCoordinator.undoLastRename()
+    suspend fun undoLastRename(): Boolean = editorCoordinator.undoLastRename()
 
     fun closeFile() =
         editorCoordinator.closeFile()

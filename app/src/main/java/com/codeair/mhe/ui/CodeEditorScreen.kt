@@ -106,7 +106,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 private data class EditorSymbol(val name: String, val line: Int, val offset: Int, val kind: String = "DECLARATION")
@@ -133,9 +135,9 @@ fun CodeEditorScreen(
     onContentChanged: (String) -> Unit = {},
     onViewStateChanged: (com.codeair.mhe.editor.EditorViewState) -> Unit = {},
     // Milestone 2 — rename workflow (preview + undo) via the coordinator.
-    onPlanRename: (String, String) -> com.codeair.mhe.workspace.ReplacePreview? = { _, _ -> null },
-    onApplyRename: (com.codeair.mhe.workspace.ReplacePreview) -> String = { "" },
-    onUndoRename: () -> Boolean = { false },
+    onPlanRename: suspend (String, String) -> com.codeair.mhe.workspace.ReplacePreview? = { _, _ -> null },
+    onApplyRename: suspend (com.codeair.mhe.workspace.ReplacePreview) -> Unit = { },
+    onUndoRename: suspend () -> Boolean = { false },
     // QA H1: palette actions that leave the editor (navigation, file ops,
     // build/test, health) are wired to real behavior by the parent — the
     // palette must never dismiss with nothing happening.
@@ -330,13 +332,21 @@ fun CodeEditorScreen(
 
     fun findReferencesForSymbol() {
         val sym = getSymbolUnderCursor()
-        if (sym.isBlank() || workspaceDir == null) return
-        val files = workspaceDir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
-            it.relativeTo(workspaceDir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+        val dir = workspaceDir ?: return
+        if (sym.isBlank()) return
+        // QA H31: the workspace walk + per-file reads used to run on the
+        // main thread (menu click). Disk work on IO, state on Main.
+        scope.launch {
+            val refs = withContext(Dispatchers.IO) {
+                val files = dir.walkTopDown().filter { it.isFile && it.length() < 1_000_000 }.take(40).associate {
+                    it.relativeTo(dir).invariantSeparatorsPath to runCatching { it.readText() }.getOrDefault("")
+                }
+                val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
+                SemanticCodeEngine.findReferences(sym, summaries)
+            }
+            activeReferences = refs
+            referencesOpen = true
         }
-        val summaries = files.map { (p, c) -> SemanticCodeEngine.parseFile(p, c) }
-        activeReferences = SemanticCodeEngine.findReferences(sym, summaries)
-        referencesOpen = true
     }
 
     fun triggerRenameSymbol() {
@@ -945,7 +955,11 @@ fun CodeEditorScreen(
                     if (renamePreview == null) {
                         TextButton(
                             onClick = {
-                                renamePreview = onPlanRename(renameOldName, renameNewName)
+                                // QA H31: preview walks the workspace tree —
+                                // suspend + IO-dispatched in the coordinator.
+                                scope.launch {
+                                    renamePreview = onPlanRename(renameOldName, renameNewName)
+                                }
                             },
                             enabled = renameNewName.isNotBlank() && renameNewName != renameOldName,
                         ) { Text("Preview") }
@@ -958,7 +972,7 @@ fun CodeEditorScreen(
                                 renamePreview = null
                                 scope.launch {
                                     if (preview != null && preview.totalFiles > 0) {
-                                        val summary = onApplyRename(preview)
+                                        onApplyRename(preview)
                                         // Refresh the open buffer from disk.
                                         try {
                                             val f = File(filePath)

@@ -4939,7 +4939,7 @@ private fun WorkspaceScreen(
             },
             // Milestone 2 — rename with preview + undo.
             onPlanRename = { oldName, newName -> viewModel?.planRenameSymbol(oldName, newName) },
-            onApplyRename = { preview -> viewModel?.applyRenameSymbol(preview) ?: "" },
+            onApplyRename = { preview -> viewModel?.applyRenameSymbol(preview) },
             onUndoRename = { viewModel?.undoLastRename() ?: false },
             // QA H1: palette actions that leave the editor get real behavior.
             onPaletteNavigate = { tabId ->

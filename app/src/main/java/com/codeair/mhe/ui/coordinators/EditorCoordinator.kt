@@ -496,25 +496,34 @@ class EditorCoordinator(
     }
 
     /** Plans a rename; returns the preview for the UI to review. */
-    fun planRenameSymbol(
+    suspend fun planRenameSymbol(
         oldName: String,
         newName: String,
-    ): com.codeair.mhe.workspace.ReplacePreview? {
-        val project = host.state().activeProject ?: return null
-        return RenameEngine.planRename(workspaceRootFor(project), oldName, newName)
+    ): com.codeair.mhe.workspace.ReplacePreview? = withContext(Dispatchers.IO) {
+        // QA H31: the preview walks the whole workspace tree + reads
+        // every matching file. That used to run on the main thread
+        // (called synchronously from the rename dialog's Preview button).
+        val project = host.state().activeProject ?: return@withContext null
+        RenameEngine.planRename(workspaceRootFor(project), oldName, newName)
     }
 
     /**
      * Applies a rename plan and refreshes the open buffer if it was affected.
-     * Returns a human-readable summary for the toast.
+     * Toasts the human-readable summary (the UI previously received the
+     * summary as a return value and ignored it — no confirmation shown).
+     * Only the disk work runs on IO: buffer refresh stays on the caller's
+     * (main) thread because EditorBufferManager is not synchronized.
      */
-    fun applyRenameSymbol(
+    suspend fun applyRenameSymbol(
         preview: com.codeair.mhe.workspace.ReplacePreview,
         includeFiles: Set<String>? = null,
-    ): String {
-        val project = host.state().activeProject ?: return "No active project"
-        if (preview.note != null && preview.totalFiles == 0) return preview.note
-        val transaction = RenameEngine.applyRename(workspaceRootFor(project), preview, includeFiles)
+    ) {
+        val project = host.state().activeProject ?: return
+        if (preview.note != null && preview.totalFiles == 0) return
+        val transaction = withContext(Dispatchers.IO) {
+            // QA H31: file readText/writes across every matching file.
+            RenameEngine.applyRename(workspaceRootFor(project), preview, includeFiles)
+        }
         lastRenameTransaction = transaction
         // Refresh open buffers whose files changed on disk.
         transaction.appliedFiles.forEach { path ->
@@ -531,17 +540,23 @@ class EditorCoordinator(
                 }
             }
         }
+        val summary = "Renamed ${transaction.matchesReplaced} occurrence(s) in ${transaction.filesChanged} file(s)"
         host.updateState {
-            it.copy(editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet())
+            it.copy(
+                editorDirtyPaths = bufferManager.dirtyBuffers().map { b -> b.path }.toSet(),
+                toastMessage = summary,
+            )
         }
-        return "Renamed ${transaction.matchesReplaced} occurrence(s) in ${transaction.filesChanged} file(s)"
     }
 
     /** Undoes the last rename; returns true when something was restored. */
-    fun undoLastRename(): Boolean {
+    suspend fun undoLastRename(): Boolean {
         val transaction = lastRenameTransaction ?: return false
         val project = host.state().activeProject ?: return false
-        val restored = RenameEngine.undoRename(workspaceRootFor(project), transaction)
+        // QA H31: revert writes every restored file — disk work on IO.
+        val restored = withContext(Dispatchers.IO) {
+            RenameEngine.undoRename(workspaceRootFor(project), transaction)
+        }
         if (restored > 0) {
             lastRenameTransaction = null
             transaction.appliedFiles.forEach { path ->
