@@ -1245,7 +1245,6 @@ private fun EnvironmentUpdateCenter() {
             try {
                 val candidateUrls = listOf(
                     BuildConfig.APP_UPDATE_MANIFEST_URL,
-                    "https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/mobile-harness-update.json",
                 ).filter { it.isNotBlank() && it.startsWith("https://") }
 
                 var remoteBody: String? = null

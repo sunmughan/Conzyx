@@ -972,7 +972,7 @@ class RuntimeInstaller(private val context: Context) {
         }
 
         val releases = runCatching {
-            JSONArray(fetchText("https://api.github.com/repos/techjarves/Mobile-Harness/releases?per_page=30"))
+            JSONArray(fetchText("https://api.github.com/repos/sunmughan/Mobile-Harness-Extended/releases?per_page=30"))
         }.getOrNull()
 
         if (releases != null) {
@@ -980,7 +980,6 @@ class RuntimeInstaller(private val context: Context) {
                 for (i in 0 until releases.length()) {
                     val release = releases.getJSONObject(i)
                     if (release.optBoolean("draft") || release.optBoolean("prerelease")) continue
-                    if (!release.optString("tag_name").startsWith("runtime-")) continue
                     val array = release.optJSONArray("assets") ?: continue
                     for (j in 0 until array.length()) {
                         val asset = array.getJSONObject(j)

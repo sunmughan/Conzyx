@@ -495,6 +495,21 @@ jobs:
           gh release upload "$TAG" "$ONLINE" "$OFFLINE" "$AAB" mobile-harness-update.json --clobber
           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
+          # The app's first-run install and runtime-bundle updates resolve
+          # bundles from this repo's own releases (RUNTIME_RELEASE_BASE_URL /
+          # latestRuntimeBundle) — never from the upstream author's repo. The
+          # tar.zst files below are the SHA-256-verified bundles fetched at
+          # the start of this job. Skip re-upload when the asset is already
+          # on the release so routine pushes don't re-push ~700 MB.
+          EXISTING_ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          for bundle in dist/runtime-bundles/*.tar.zst; do
+            name=$(basename "$bundle")
+            if printf '%s\n' "$EXISTING_ASSETS" | grep -qx "$name"; then
+              echo "Bundle already on release $TAG: $name"
+            else
+              gh release upload "$TAG" "$bundle"
+            fi
+          done
 
   publish_existing_v1_0_6:
     if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-existing]') }}

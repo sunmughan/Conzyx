@@ -27,8 +27,9 @@ val hasUploadSigning = listOf(
     uploadKeyAlias,
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
+val appVersionName = providers.gradleProperty("appVersionName").orNull ?: "3.0.1"
 val runtimeReleaseBaseUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
+    "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v$appVersionName"
 val appUpdateManifestUrl =
     "https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/mobile-harness-update.json"
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
@@ -86,9 +87,8 @@ android {
         // Keep literal defaults so F-Droid's static manifest parser can detect
         // the tagged release. Gradle properties may still override Play builds.
         versionCode = 34
-        versionName = "3.0.1"
+        versionName = appVersionName
         providers.gradleProperty("appVersionCode").orNull?.toIntOrNull()?.let { versionCode = it }
-        providers.gradleProperty("appVersionName").orNull?.let { versionName = it }
 
         ndk.abiFilters += "arm64-v8a"
 
