@@ -23,7 +23,7 @@ for variant in online offline; do
   adb shell pidof "$PACKAGE" > "emulator-logs/${variant}-pid.txt" || true
   adb logcat -d -b all -v threadtime > "emulator-logs/${variant}-logcat.txt"
 
-  if ! grep -qE "ResumedActivity:.*(${PACKAGE}|com\.jarves\.mh)/.*MainActivity|topResumedActivity=.*(${PACKAGE}|com\.jarves\.mh)/.*MainActivity" "emulator-logs/${variant}-activities.txt"; then
+  if ! grep -qE "ResumedActivity:.*${PACKAGE}/.*MainActivity|topResumedActivity=.*${PACKAGE}/.*MainActivity" "emulator-logs/${variant}-activities.txt"; then
     echo "MainActivity is not resumed after launch: ${variant}"
     tail -n 300 "emulator-logs/${variant}-activities.txt"
     tail -n 300 "emulator-logs/${variant}-logcat.txt"
