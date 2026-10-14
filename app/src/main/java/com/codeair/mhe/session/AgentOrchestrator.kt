@@ -136,6 +136,25 @@ class AgentOrchestrator(
         }
     }
 
+    /**
+     * Waits for the pending approval until it is granted or rejected, or
+     * [timeoutMs] elapses. A timeout fails the run honestly instead of
+     * parking the pipeline in WAITING_FOR_APPROVAL forever.
+     */
+    internal suspend fun awaitApprovalDecision(timeoutMs: Long = APPROVAL_TIMEOUT_MS): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!approvalGranted && _snapshot.value.state == EngineeringState.WAITING_FOR_APPROVAL) {
+            if (System.currentTimeMillis() >= deadline) {
+                val msg = "Approval timed out after ${timeoutMs / 60_000} min with no response."
+                transition(EngineeringState.FAILED, msg)
+                _snapshot.update { it.copy(failureSummary = msg) }
+                return false
+            }
+            kotlinx.coroutines.delay(50)
+        }
+        return _snapshot.value.state != EngineeringState.FAILED
+    }
+
     // --- Change Review & Git Integration ---
 
     fun buildChangeReview(workspaceDir: File): ChangeReviewReport {
@@ -275,10 +294,7 @@ class AgentOrchestrator(
 
             if (approvalPolicy == ApprovalPolicy.ALWAYS_ASK) {
                 requestApproval("Approve Step ${idx + 1}", step, listOf("Working on $step"), isHighRisk = false)
-                while (!approvalGranted && _snapshot.value.state == EngineeringState.WAITING_FOR_APPROVAL) {
-                    kotlinx.coroutines.delay(50)
-                }
-                if (_snapshot.value.state == EngineeringState.FAILED) return false
+                if (!awaitApprovalDecision()) return false
                 transition(EngineeringState.IMPLEMENTING, "Proceeding with step ${idx + 1}")
             }
 
@@ -305,10 +321,7 @@ class AgentOrchestrator(
                 changes = reviewReport.modifiedFiles + reviewReport.addedFiles,
                 isHighRisk = reviewReport.deletedFiles.isNotEmpty(),
             )
-            while (!approvalGranted && _snapshot.value.state == EngineeringState.WAITING_FOR_APPROVAL) {
-                kotlinx.coroutines.delay(50)
-            }
-            if (_snapshot.value.state == EngineeringState.FAILED) return false
+            if (!awaitApprovalDecision()) return false
         }
 
         // 7. COMMIT & PERSIST
@@ -358,5 +371,10 @@ class AgentOrchestrator(
         val pId = activeProjectId ?: return false
         val cpId = baselineCheckpointId ?: return false
         return checkpointManager?.rollbackToCheckpoint(pId, cpId, workspaceDir) ?: false
+    }
+
+    companion object {
+        /** Approvals that sit unanswered this long fail the run instead of hanging it. */
+        const val APPROVAL_TIMEOUT_MS = 30 * 60_000L
     }
 }

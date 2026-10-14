@@ -93,9 +93,10 @@ class McpRemoteClient(
 ) : McpRemoteOperations {
     init {
         require(remoteConfig.url.isNotBlank()) { "Remote MCP URL cannot be blank" }
-        require(
-            remoteConfig.url.startsWith("http://") || remoteConfig.url.startsWith("https://")
-        ) { "Remote MCP URL must be http(s): ${remoteConfig.url}" }
+        require(isHttpsOrLoopbackHttp(remoteConfig.url)) {
+            "Remote MCP URL must use https — bearer credentials cannot go over plain http " +
+                "(loopback http is allowed for local development): ${remoteConfig.url}"
+        }
     }
 
     override fun listTools(): List<McpToolDefinition> {
@@ -200,4 +201,16 @@ class McpRemoteClient(
         }
         return trimmed
     }
+}
+
+/**
+ * Remote MCP endpoints must use https so bearer credentials are never sent
+ * in the clear. Plain http is tolerated only for loopback, where there is
+ * no network to snoop on (local dev servers rarely have TLS).
+ */
+internal fun isHttpsOrLoopbackHttp(url: String): Boolean {
+    if (url.startsWith("https://")) return true
+    if (!url.startsWith("http://")) return false
+    val host = runCatching { java.net.URL(url).host.lowercase() }.getOrNull() ?: return false
+    return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }

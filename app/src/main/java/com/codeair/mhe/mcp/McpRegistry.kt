@@ -121,8 +121,11 @@ class McpRegistry(
         val template = catalogTemplates.find { it.id == templateId }
             ?: throw IllegalArgumentException("Template with ID '$templateId' not found.")
 
+        // A template installed for a project gets a project-scoped id, so
+        // installing it for project B no longer overwrites project A's entry.
+        val serverId = if (projectId.isNullOrBlank()) template.id else "${template.id}::$projectId"
         val server = McpServerInfo(
-            id = template.id,
+            id = serverId,
             name = template.name,
             description = template.description,
             command = template.defaultCommand,

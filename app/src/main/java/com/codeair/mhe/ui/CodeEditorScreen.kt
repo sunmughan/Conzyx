@@ -214,19 +214,25 @@ fun CodeEditorScreen(
     var secondaryFilePath by rememberSaveable(filePath) {
         mutableStateOf(openTabs.firstOrNull { it != filePath } ?: filePath)
     }
-    var secondaryValue by remember(secondaryFilePath) {
-        val initialSecText = if (secondaryFilePath == filePath) {
+    var secondaryValue by remember(secondaryFilePath) { mutableStateOf(TextFieldValue("")) }
+    // QA H3: pane-2 tracks its own saved baseline, like the primary pane.
+    var secondarySavedText by remember(secondaryFilePath) { mutableStateOf("") }
+    // The pane content used to be read inside remember{} during composition,
+    // freezing the editor on big files. It now loads off the main thread.
+    LaunchedEffect(secondaryFilePath) {
+        val text = if (secondaryFilePath == filePath) {
             source
         } else {
-            try {
-                val f = File(secondaryFilePath)
-                if (f.exists() && f.isFile) f.readText() else ""
-            } catch (_: Exception) { "" }
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val f = File(secondaryFilePath)
+                    if (f.exists() && f.isFile) f.readText() else ""
+                }.getOrDefault("")
+            }
         }
-        mutableStateOf(TextFieldValue(initialSecText))
+        secondaryValue = TextFieldValue(text)
+        secondarySavedText = text
     }
-    // QA H3: pane-2 tracks its own saved baseline, like the primary pane.
-    var secondarySavedText by remember(secondaryFilePath) { mutableStateOf(secondaryValue.text) }
     var savingSecondary by rememberSaveable(filePath) { mutableStateOf(false) }
     val secondaryVertical = rememberScrollState()
     val secondaryHorizontal = rememberScrollState()
@@ -445,13 +451,12 @@ fun CodeEditorScreen(
     }
 
     fun switchSecondaryTab(tab: String) {
+        // Clear first so the old tab's text never flashes; the
+        // LaunchedEffect keyed on secondaryFilePath loads the file off
+        // the main thread.
+        secondaryValue = TextFieldValue("")
+        secondarySavedText = ""
         secondaryFilePath = tab
-        try {
-            val f = File(tab)
-            if (f.exists() && f.isFile) {
-                secondaryValue = TextFieldValue(f.readText())
-            }
-        } catch (_: Exception) {}
     }
 
     // QA H1: Run Build / Run Tests resolve the project's real command and

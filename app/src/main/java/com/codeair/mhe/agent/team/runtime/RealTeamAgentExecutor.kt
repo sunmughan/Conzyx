@@ -206,6 +206,11 @@ class RealTeamAgentExecutor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Cancels the executor's background scope; called via AgentTeamOrchestrator.shutdown(). */
+    fun shutdown() {
+        scope.cancel()
+    }
+
     private val _liveTasks = MutableStateFlow<Map<String, LiveTaskInfo>>(emptyMap())
 
     /** Observable live/completed task snapshots for the roster drill-down UI. */

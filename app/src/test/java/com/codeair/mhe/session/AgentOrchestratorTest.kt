@@ -151,4 +151,28 @@ class AgentOrchestratorTest {
         assertEquals(EngineeringState.ROLLED_BACK, orchestratorWithCp.snapshot.value.state)
         assertEquals("original code", codeFile.readText())
     }
+
+    @Test
+    fun `unanswered approval times out instead of hanging forever`() = runBlocking {
+        orchestrator.startTask("proj-1", workspaceDir, "Add feature")
+        orchestrator.requestApproval("Approve?", "A step needs approval")
+
+        assertEquals(EngineeringState.WAITING_FOR_APPROVAL, orchestrator.snapshot.value.state)
+        val decided = orchestrator.awaitApprovalDecision(timeoutMs = 200)
+
+        assertFalse(decided)
+        assertEquals(EngineeringState.FAILED, orchestrator.snapshot.value.state)
+        assertTrue(
+            orchestrator.snapshot.value.failureSummary.orEmpty().contains("timed out", ignoreCase = true)
+        )
+    }
+
+    @Test
+    fun `granted approval before the timeout proceeds`() = runBlocking {
+        orchestrator.startTask("proj-1", workspaceDir, "Add feature")
+        orchestrator.requestApproval("Approve?", "A step needs approval")
+        orchestrator.approveCurrentStep()
+
+        assertTrue(orchestrator.awaitApprovalDecision(timeoutMs = 5_000))
+    }
 }

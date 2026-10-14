@@ -238,6 +238,34 @@ class McpRemoteTransportTest {
     }
 
     @Test
+    fun `plain http to a remote host is rejected`() {
+        try {
+            McpRemoteClient(
+                remoteServer(),
+                McpRemoteConfig("http://mcp.example.com/rpc"),
+                credentialStore, http
+            )
+            fail("expected IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("https"))
+        }
+    }
+
+    @Test
+    fun `https and loopback http are accepted`() {
+        assertTrue(isHttpsOrLoopbackHttp("https://mcp.example.com/rpc"))
+        assertTrue(isHttpsOrLoopbackHttp("http://localhost:8080/rpc"))
+        assertTrue(isHttpsOrLoopbackHttp("http://127.0.0.1:8080/rpc"))
+        assertFalse(isHttpsOrLoopbackHttp("http://mcp.example.com/rpc"))
+        assertFalse(isHttpsOrLoopbackHttp("ftp://mcp.example.com/rpc"))
+        McpRemoteClient(
+            remoteServer(),
+            McpRemoteConfig("http://127.0.0.1:8080/rpc"),
+            credentialStore, http
+        )
+    }
+
+    @Test
     fun `ping returns false on failure and true on success`() {
         http.handler = { _, _, body -> McpHttpResponse(200, rpcOk(JSONObject(body).opt("id"), JSONObject())) }
         assertTrue(client().ping())

@@ -60,4 +60,22 @@ class McpRegistryRemoveTest {
     fun removeServerAndCredentialsOnUnknownIdReturnsFalse() {
         assertFalse(registry.removeServerAndCredentials("nope", credentials))
     }
+
+    @Test
+    fun sameTemplateForTwoProjectsDoesNotOverwrite() {
+        val a = registry.installFromTemplate("filesystem", projectId = "proj-a")
+        val b = registry.installFromTemplate("filesystem", projectId = "proj-b")
+
+        assertTrue(a.id != b.id)
+        assertEquals("proj-a", registry.getServer(a.id)?.projectId)
+        assertEquals("proj-b", registry.getServer(b.id)?.projectId)
+    }
+
+    @Test
+    fun globalTemplateInstallKeepsStableId() {
+        val first = registry.installFromTemplate("filesystem")
+        val second = registry.installFromTemplate("filesystem")
+
+        assertEquals(first.id, second.id)
+    }
 }

@@ -247,7 +247,17 @@ class AppFactoryLoop(
                 )
             )
         } else {
-            val artifact = outputArtifact!!
+            val artifact = outputArtifact
+            if (artifact == null) {
+                record(
+                    FactoryStageResult(
+                        stage = FactoryStage.VERIFY_SIGNATURE, success = false,
+                        message = "Build reported success but produced no output file.",
+                        durationMs = System.currentTimeMillis() - verifyStarted,
+                    )
+                )
+                return finish(blueprint, config, stageResults, outputArtifact, null, null, startedAt)
+            }
             val sigResult = runCatching { signatureVerifier(artifact, config.artifactType) }.getOrNull()
             signature = sigResult
             if (sigResult == null) {

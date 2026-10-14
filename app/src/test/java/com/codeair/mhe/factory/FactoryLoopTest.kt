@@ -394,6 +394,31 @@ class AppFactoryLoopTest {
     }
 
     @Test
+    fun verifyStage_failsHonestlyWhenBuildSucceedsWithNullOutput() {
+        val tempDir = Files.createTempDirectory("factoryloop").toFile()
+        try {
+            val nullOutputBuild =
+                { _: File, _: AppBlueprint, artifactType: BuildArtifactType, buildMode: BuildMode ->
+                    BuildResult(
+                        success = true, artifactType = artifactType, buildMode = buildMode,
+                        outputFile = null,
+                    )
+                }
+            val loop = loopWith(tempDir, nullOutputBuild)
+            val result = loop.run(
+                tempDir, testBlueprint(),
+                FactoryPipelineConfig(verifySignature = true),
+            )
+            assertFalse("pipeline must fail, not crash", result.success)
+            val verify = result.stageResults.first { it.stage == FactoryStage.VERIFY_SIGNATURE }
+            assertFalse(verify.success)
+            assertTrue(verify.message.contains("no output file"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun testStage_skippedHonestlyForNonAndroidFramework() {
         val tempDir = Files.createTempDirectory("factoryloop").toFile()
         try {

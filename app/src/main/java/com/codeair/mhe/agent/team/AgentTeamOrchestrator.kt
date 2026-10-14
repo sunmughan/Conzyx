@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -122,11 +123,20 @@ class AgentTeamOrchestrator(
 
     private val observerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Cancels background collectors; called from MainViewModel.onCleared(). */
+    fun shutdown() {
+        observerScope.cancel()
+        (teamExecutor as? RealTeamAgentExecutor)?.shutdown()
+        if (realDispatcherLazy.isInitialized()) {
+            realDispatcherLazy.value?.shutdown()
+        }
+    }
+
     /**
      * Lazily-built real dispatcher (Milestone 10). Null until a [teamExecutor]
      * is wired; [requireRealExecution] guarantees real mode never runs without it.
      */
-    private val realDispatcher: ConcurrentTeamDispatcher? by lazy {
+    private val realDispatcherLazy = lazy {
         val executor = teamExecutor ?: return@lazy null
         ConcurrentTeamDispatcher(
             scheduler = scheduler,
@@ -349,7 +359,7 @@ class AgentTeamOrchestrator(
      */
     suspend fun executeNextReadyTask(): TeamTask? {
         requireRealExecution()
-        val dispatcher = realDispatcher
+        val dispatcher = realDispatcherLazy.value
             ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
         if (budgetTracker.isQuotaExceeded()) {
             commBus.escalateToManager(
@@ -391,7 +401,7 @@ class AgentTeamOrchestrator(
      */
     suspend fun autoRunAllReal(): TeamRunReport {
         requireRealExecution()
-        val dispatcher = realDispatcher
+        val dispatcher = realDispatcherLazy.value
             ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
         _sessionState.update { it.copy(isRunning = true) }
         val report = dispatcher.runAll()
@@ -437,7 +447,7 @@ class AgentTeamOrchestrator(
 
     /** Requests cancellation of a real run; in-flight agent runs finish rather than being killed. */
     fun cancelRealRun() {
-        realDispatcher?.cancel()
+        realDispatcherLazy.value?.cancel()
         _sessionState.value = _sessionState.value.copy(isRunning = false, activeRole = null)
     }
 

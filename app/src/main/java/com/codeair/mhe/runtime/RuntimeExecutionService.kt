@@ -111,7 +111,7 @@ class RuntimeExecutionService : Service() {
                 wifiLock = wifiManager?.createWifiLock(
                     wifiLockMode,
                     "com.codeair.mhe:active-coding-wifi",
-                )?.apply { acquire() }
+                )?.apply { acquire(MAX_WAKE_LOCK_MS) }
             }
         }
     }
