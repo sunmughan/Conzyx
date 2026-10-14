@@ -624,7 +624,15 @@ fun TerminalScreen(
                         commandInput = commandInput.copy(selection = TextRange(target))
                     }
                     TerminalKeyButton("ALT", "Alt modifier; arrows move by word", active = altActive, fixedWidth = true) { altActive = !altActive }
-                    TerminalKeyButton("ESC", "Escape") { commandInput = TextFieldValue() }
+                    TerminalKeyButton("ESC", "Escape; press again on empty input to restore") {
+                        if (commandInput.text.isEmpty() && escClearedBuffer.isNotEmpty()) {
+                            commandInput = TextFieldValue(escClearedBuffer, TextRange(escClearedBuffer.length))
+                            escClearedBuffer = ""
+                        } else {
+                            escClearedBuffer = commandInput.text
+                            commandInput = TextFieldValue()
+                        }
+                    }
                     TerminalKeyButton("CTRL", "Control modifier; press C to interrupt", active = ctrlActive, fixedWidth = true) {
                         ctrlActive = !ctrlActive
                         if (ctrlActive) openTerminalKeyboard()
