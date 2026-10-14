@@ -90,10 +90,6 @@ import org.json.JSONObject
 private fun successGreen(): Color =
     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
 
-@Composable
-private fun successGreen(): Color =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkillsScreen(
