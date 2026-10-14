@@ -11,33 +11,43 @@ import com.codeair.mhe.MainActivity
 import com.codeair.mhe.R
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Receives Firebase Cloud Messages for the codeair-apps project.
  *
- * - onNewToken: persists the FCM registration token via [PushTokenStore].
- * - onMessageReceived: shows a system notification for notification-payload
- *   messages; data-only payloads are logged for future handling.
+ * - onMessageReceived: shows a system notification for
+ *   notification-payload messages AND data-only messages (a data payload
+ *   with title/body keys is rendered instead of being dropped).
+ *
+ * QA Medium: the FCM registration token used to be persisted locally
+ * (PushTokenStore) but never sent to any server and never read anywhere.
+ * The store is deleted — push delivery does not depend on it, and the
+ * token can be fetched on demand via FirebaseMessaging when a backend
+ * ever needs it.
  */
 class MheMessagingService : FirebaseMessagingService() {
 
-    override fun onNewToken(token: String) {
-        super.onNewToken(token)
-        PushTokenStore.save(this, token)
-    }
-
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
-        val notification = message.notification ?: return
-        showNotification(
-            title = notification.title ?: getString(R.string.app_name),
-            body = notification.body ?: "",
-        )
+        val notification = message.notification
+        // QA Medium: data-only payloads used to be silently dropped.
+        val title = notification?.title
+            ?: message.data["title"]
+            ?: getString(R.string.app_name)
+        val body = notification?.body
+            ?: message.data["body"]
+            ?: message.data["message"]
+            ?: ""
+        if (title.isBlank() && body.isBlank()) return
+        showNotification(title, body)
     }
 
     private fun showNotification(title: String, body: String) {
         val channelId = "mhe_general"
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // QA Medium: the unchecked cast used to crash if the service
+        // ever returned something else.
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
@@ -60,6 +70,13 @@ class MheMessagingService : FirebaseMessagingService() {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
-        manager.notify(System.currentTimeMillis().toInt(), built)
+        // QA Medium: System.currentTimeMillis().toInt() could collide
+        // (same millisecond, int truncation) and replace a notification.
+        // A process-unique sequence never collides.
+        manager.notify(notificationIdSequence.incrementAndGet(), built)
+    }
+
+    companion object {
+        private val notificationIdSequence = AtomicInteger(1_000_000)
     }
 }

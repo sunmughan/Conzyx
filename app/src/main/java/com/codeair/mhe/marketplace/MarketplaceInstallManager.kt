@@ -1,5 +1,6 @@
 package com.codeair.mhe.marketplace
 
+import com.codeair.mhe.network.HttpRetry
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -180,26 +181,39 @@ class MarketplaceInstallManager(private val context: Context) {
         id.replace(Regex("[^A-Za-z0-9_-]"), "_").take(64).ifBlank { "pkg" }
 
     private fun downloadBytes(url: String): ByteArray {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        try {
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.instanceFollowRedirects = true
-            connection.connect()
-            val code = connection.responseCode
-            check(code in 200..299) { "HTTP $code downloading $url" }
-            val contentLength = connection.contentLengthLong
-            check(contentLength <= MAX_DOWNLOAD_BYTES || contentLength < 0) {
-                "Package too large (${contentLength} bytes, limit $MAX_DOWNLOAD_BYTES)"
+        // QA Medium: one transient 429/5xx used to be final. Retry with
+        // backoff, honoring the server's Retry-After header.
+        var attempt = 0
+        while (true) {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 30_000
+                connection.instanceFollowRedirects = true
+                connection.connect()
+                val code = connection.responseCode
+                if (HttpRetry.isRetryable(code) &&
+                    attempt < HttpRetry.MAX_ATTEMPTS - 1
+                ) {
+                    val retryAfter = connection.getHeaderField("Retry-After")
+                    HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                    attempt++
+                    continue
+                }
+                check(code in 200..299) { "HTTP $code downloading $url" }
+                val contentLength = connection.contentLengthLong
+                check(contentLength <= MAX_DOWNLOAD_BYTES || contentLength < 0) {
+                    "Package too large (${contentLength} bytes, limit $MAX_DOWNLOAD_BYTES)"
+                }
+                val buffer = connection.inputStream.use { it.readBytes() }
+                check(buffer.size <= MAX_DOWNLOAD_BYTES) {
+                    "Package too large (${buffer.size} bytes, limit $MAX_DOWNLOAD_BYTES)"
+                }
+                check(buffer.isNotEmpty()) { "Downloaded package is empty" }
+                return buffer
+            } finally {
+                connection.disconnect()
             }
-            val buffer = connection.inputStream.use { it.readBytes() }
-            check(buffer.size <= MAX_DOWNLOAD_BYTES) {
-                "Package too large (${buffer.size} bytes, limit $MAX_DOWNLOAD_BYTES)"
-            }
-            check(buffer.isNotEmpty()) { "Downloaded package is empty" }
-            return buffer
-        } finally {
-            connection.disconnect()
         }
     }
 

@@ -773,18 +773,31 @@ open class GitHubClient {
     // QA Medium: protected-open (was private) so pagination can be
     // unit-tested with a fake fetcher instead of live GitHub calls.
     protected open fun getJson(endpoint: String, token: String): Any {
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            if (token.isNotBlank()) {
-                setRequestProperty("Authorization", "Bearer $token")
+        // QA Medium: one transient 429/5xx used to be final. Retry with
+        // backoff, honoring the server's Retry-After header.
+        var attempt = 0
+        while (true) {
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                if (token.isNotBlank()) {
+                    setRequestProperty("Authorization", "Bearer $token")
+                }
+                setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+                setRequestProperty("User-Agent", "PocketDev-Android")
             }
-            setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
-            setRequestProperty("User-Agent", "PocketDev-Android")
+            val code = connection.responseCode
+            if (HttpRetry.isRetryable(code) && attempt < HttpRetry.MAX_ATTEMPTS - 1) {
+                val retryAfter = connection.getHeaderField("Retry-After")
+                connection.disconnect()
+                HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                attempt++
+                continue
+            }
+            return readResponse(connection)
         }
-        return readResponse(connection)
     }
 
     private fun readResponse(connection: HttpURLConnection): Any {

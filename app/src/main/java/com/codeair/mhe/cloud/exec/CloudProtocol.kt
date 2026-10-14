@@ -1,5 +1,6 @@
 package com.codeair.mhe.cloud.exec
 
+import com.codeair.mhe.network.HttpRetry
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -88,28 +89,42 @@ class UrlConnectionCloudTransport(
 ) : CloudHttpTransport {
 
     override fun send(baseUrl: String, request: CloudTransportRequest): CloudTransportResponse {
-        return try {
-            val url = java.net.URL(baseUrl.trimEnd('/') + request.path)
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                connectTimeout = connectTimeoutMs
-                readTimeout = readTimeoutMs
-                requestMethod = request.method
-                instanceFollowRedirects = true
-                request.headers.forEach { (k, v) -> setRequestProperty(k, v) }
-                if (request.body != null) {
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    outputStream.use { it.write(request.body.toByteArray(Charsets.UTF_8)) }
+        // QA Medium: one transient 429/5xx used to be final. Retry with
+        // backoff, honoring the server's Retry-After header.
+        var attempt = 0
+        while (true) {
+            try {
+                val url = java.net.URL(baseUrl.trimEnd('/') + request.path)
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = connectTimeoutMs
+                    readTimeout = readTimeoutMs
+                    requestMethod = request.method
+                    instanceFollowRedirects = true
+                    request.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+                    if (request.body != null) {
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        outputStream.use { it.write(request.body.toByteArray(Charsets.UTF_8)) }
+                    }
+                    connect()
                 }
-                connect()
+                val code = conn.responseCode
+                if (HttpRetry.isRetryable(code) &&
+                    attempt < HttpRetry.MAX_ATTEMPTS - 1
+                ) {
+                    val retryAfter = conn.getHeaderField("Retry-After")
+                    conn.disconnect()
+                    HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                    attempt++
+                    continue
+                }
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val bytes = stream?.readBytes()
+                conn.disconnect()
+                return CloudTransportResponse(code, bytes?.toString(Charsets.UTF_8).orEmpty(), bytes)
+            } catch (e: Exception) {
+                return CloudTransportResponse(-1, "transport error: ${e.message}")
             }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val bytes = stream?.readBytes()
-            conn.disconnect()
-            CloudTransportResponse(code, bytes?.toString(Charsets.UTF_8).orEmpty(), bytes)
-        } catch (e: Exception) {
-            CloudTransportResponse(-1, "transport error: ${e.message}")
         }
     }
 }

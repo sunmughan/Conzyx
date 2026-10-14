@@ -15,6 +15,9 @@ import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
@@ -415,48 +418,75 @@ class RuntimeInstaller(private val context: Context) {
         browserVer?.let { put("browser", it) }
     }
 
-    suspend fun latestEnvironmentVersions(): Map<String, String> = buildMap {
-        runCatching { JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version") }
-            .getOrNull()?.let { put("claude", it) }
-        runCatching { JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version") }
-            .getOrNull()?.let { put("deepseek", it) }
-        runCatching { fetchAgyManifest().getString("version") }.getOrNull()?.let { put("antigravity", it) }
-        runCatching { JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version") }
-            .getOrNull()?.let { put("codex", it) }
-        runCatching { latestRuntimeBundle("core")?.version }.getOrNull()?.let { put("core", it) }
-        runCatching { latestRuntimeBundle("python")?.version }.getOrNull()?.let { put("python", it) }
-        runCatching { latestRuntimeBundle("android")?.version }.getOrNull()?.let { put("android", it) }
-
-        // Live official PyPI API for Python pip
-        runCatching {
-            val pypi = JSONObject(fetchText("https://pypi.org/pypi/pip/json"))
-            val pipVer = pypi.getJSONObject("info").getString("version")
-            val pyBase = get("python") ?: PYTHON_BUNDLE.version
-            put("python", pyBase)
+    /**
+     * QA Medium: the version probes used to run sequentially (each with its
+     * own network round trip) and the live PyPI result was computed then
+     * discarded (pipVer never stored). The independent probes now run in
+     * parallel, so the total time is bounded by the slowest single fetch
+     * (each fetch already carries its own connect/read timeout), and the
+     * pip version is stored in the python entry as "3.12 (pip 25.1)" —
+     * the format Settings already parses with substringBefore(" (pip").
+     */
+    suspend fun latestEnvironmentVersions(): Map<String, String> = coroutineScope {
+        val claude = async(Dispatchers.IO) {
+            runCatching { JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version") }.getOrNull()
+        }
+        val deepseek = async(Dispatchers.IO) {
+            runCatching { JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version") }.getOrNull()
+        }
+        val antigravity = async(Dispatchers.IO) {
+            runCatching { fetchAgyManifest().getString("version") }.getOrNull()
+        }
+        val codex = async(Dispatchers.IO) {
+            runCatching { JSONObject(fetchText("https://registry.npmjs.org/@openai/codex/latest")).getString("version") }.getOrNull()
+        }
+        val core = async(Dispatchers.IO) {
+            runCatching { latestRuntimeBundle("core")?.version }.getOrNull()
+        }
+        val pythonBundle = async(Dispatchers.IO) {
+            runCatching { latestRuntimeBundle("python")?.version }.getOrNull()
+        }
+        val android = async(Dispatchers.IO) {
+            runCatching { latestRuntimeBundle("android")?.version }.getOrNull()
+        }
+        // Live official PyPI API for Python pip.
+        val pip = async(Dispatchers.IO) {
+            runCatching {
+                JSONObject(fetchText("https://pypi.org/pypi/pip/json")).getJSONObject("info").getString("version")
+            }.getOrNull()
+        }
+        // Live official Composer version from getcomposer.org.
+        val composer = async(Dispatchers.IO) {
+            runCatching {
+                val composerJson = JSONObject(fetchText("https://getcomposer.org/versions"))
+                composerJson.optJSONArray("stable")?.optJSONObject(0)?.optString("version")?.takeIf { it.isNotBlank() }
+            }.getOrNull()
+        }
+        val browser = async(Dispatchers.IO) {
+            runCatching { JSONObject(fetchText("https://registry.npmjs.org/puppeteer-core/latest")).getString("version") }.getOrNull()
         }
 
-        // Live official Composer version from getcomposer.org
-        runCatching {
-            val composerJson = JSONObject(fetchText("https://getcomposer.org/versions"))
-            val stableArray = composerJson.optJSONArray("stable")
-            val composerVer = stableArray?.optJSONObject(0)?.optString("version")
-            if (composerVer != null) {
-                put("php", "8.4 (Composer $composerVer)")
-            } else {
-                put("php", "8.4")
+        buildMap {
+            claude.await()?.let { put("claude", it) }
+            deepseek.await()?.let { put("deepseek", it) }
+            antigravity.await()?.let { put("antigravity", it) }
+            codex.await()?.let { put("codex", it) }
+            core.await()?.let { put("core", it) }
+            pythonBundle.await()?.let { base ->
+                val pipVer = pip.await()
+                put("python", if (!pipVer.isNullOrBlank()) "$base (pip $pipVer)" else base)
             }
-        }.onFailure {
-            put("php", "8.4")
+            android.await()?.let { put("android", it) }
+
+            // C/C++ GCC & build tools upstream
+            put("cpp", "10.2")
+
+            // Chromium & Puppeteer upstream
+            browser.await()?.let { put("browser", it) } ?: put("browser", "1.0")
+
+            val composerVer = composer.await()
+            put("php", if (!composerVer.isNullOrBlank()) "8.4 (Composer $composerVer)" else "8.4")
         }
-
-        // C/C++ GCC & build tools upstream
-        put("cpp", "10.2")
-
-        // Chromium & Puppeteer upstream
-        runCatching {
-            val pkg = JSONObject(fetchText("https://registry.npmjs.org/puppeteer-core/latest"))
-            pkg.getString("version")
-        }.getOrNull()?.let { put("browser", it) } ?: put("browser", "1.0")
     }
 
     suspend fun installEnvironmentStack(
@@ -481,8 +511,13 @@ class RuntimeInstaller(private val context: Context) {
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
                 val pipVer = runCatching {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
-                }.getOrNull()
-                val finalVersion = cleanExpected
+                }.getOrNull()?.takeIf { it.isNotBlank() }
+                // QA Medium: the installed pip version used to be computed
+                // then discarded, so the marker never recorded it. The
+                // "python" version carries pip as "3.12 (pip 25.1)" — the
+                // format Settings parses and installEnvironmentStack
+                // already strips on read.
+                val finalVersion = if (pipVer != null) "$cleanExpected (pip $pipVer)" else cleanExpected
                 File(rootfs, ".pocket-python-tools-version").writeText(finalVersion)
                 writeDevStackState(readDevStackState().apply { put(DevStack.PYTHON.name, true) })
                 onProgress(RuntimeInstallProgress("Python tools are ready ($finalVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
@@ -1207,8 +1242,10 @@ class RuntimeInstaller(private val context: Context) {
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
                 val pipVer = runCatching {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
-                }.getOrNull()
-                val finalVer = targetVersion
+                }.getOrNull()?.takeIf { it.isNotBlank() }
+                // QA Medium: the installed pip version used to be computed
+                // then discarded. Same "(pip …)" format as install above.
+                val finalVer = if (pipVer != null) "${targetVersion.substringBefore(" ").trim()} (pip $pipVer)" else targetVersion
                 File(rootfs, ".pocket-python-tools-version").writeText(finalVer)
                 onProgress(RuntimeInstallProgress("Python tools updated ($finalVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }

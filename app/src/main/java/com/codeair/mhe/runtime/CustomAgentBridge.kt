@@ -1,5 +1,6 @@
 package com.codeair.mhe.runtime
 
+import com.codeair.mhe.network.HttpRetry
 import com.codeair.mhe.model.ChangeItem
 import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ProjectKind
@@ -33,6 +34,13 @@ class CustomAgentBridge(
     override val events: Flow<RuntimeEvent> = eventBus
 
     private enum class ApiType { OPENAI, ANTHROPIC }
+
+    // QA Medium: stopSession used to be a no-op — a streaming request
+    // could not be cancelled and kept reading until the server closed or
+    // the 120s timeout. Active connections are now tracked per session
+    // so stop disconnects the socket immediately.
+    private val activeConnections = java.util.concurrent.ConcurrentHashMap<String, java.net.HttpURLConnection>()
+    private val stoppedSessions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     override suspend fun startSession(
         projectId: String,
@@ -92,12 +100,18 @@ class CustomAgentBridge(
                 eventBus.emit(RuntimeEvent.SessionCompleted(sessionId))
             }
         } catch (e: Exception) {
-            eventBus.emit(
-                RuntimeEvent.SessionFailed(
-                    sessionId,
-                    "Custom API error: ${e.message?.take(200) ?: "unknown error"}",
-                ),
-            )
+            // A session stopped by the user is completed, not failed: the
+            // disconnect below breaks the read loop with a SocketException.
+            if (stoppedSessions.remove(sessionId)) {
+                eventBus.emit(RuntimeEvent.SessionCompleted(sessionId))
+            } else {
+                eventBus.emit(
+                    RuntimeEvent.SessionFailed(
+                        sessionId,
+                        "Custom API error: ${e.message?.take(200) ?: "unknown error"}",
+                    ),
+                )
+            }
         }
         sessionId
     }
@@ -141,7 +155,7 @@ class CustomAgentBridge(
             .put("stream", true)
             .toString()
         val (response, streamed) = postStreaming(
-            "$baseUrl/chat/completions", secret, body, anthropic = false,
+            "$baseUrl/chat/completions", secret, body, anthropic = false, sessionId = sessionId,
             onDelta = { chunk -> eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, chunk)) },
             extractDelta = { json ->
                 json.optJSONArray("choices")?.optJSONObject(0)
@@ -179,7 +193,7 @@ class CustomAgentBridge(
             .put("stream", true)
             .toString()
         val (response, streamed) = postStreaming(
-            "$baseUrl/messages", secret, body, anthropic = true,
+            "$baseUrl/messages", secret, body, anthropic = true, sessionId = sessionId,
             onDelta = { chunk -> eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, chunk)) },
             extractDelta = { json ->
                 if (json.optString("type") == "content_block_delta") {
@@ -221,26 +235,41 @@ class CustomAgentBridge(
         secret: String,
         body: String,
         anthropic: Boolean,
+        sessionId: String,
         onDelta: (String) -> Unit,
         extractDelta: (JSONObject) -> String,
     ): Pair<String, Boolean> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 30_000
-            readTimeout = 120_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "text/event-stream")
-            if (anthropic) {
-                setRequestProperty("x-api-key", secret)
-                setRequestProperty("anthropic-version", "2023-06-01")
-            } else {
-                setRequestProperty("Authorization", "Bearer $secret")
+        // QA Medium: one transient 429/5xx used to be final. The initial
+        // request is retried with backoff before the error path throws.
+        var attempt = 0
+        while (true) {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 30_000
+                readTimeout = 120_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "text/event-stream")
+                if (anthropic) {
+                    setRequestProperty("x-api-key", secret)
+                    setRequestProperty("anthropic-version", "2023-06-01")
+                } else {
+                    setRequestProperty("Authorization", "Bearer $secret")
+                }
             }
-        }
-        try {
-            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
+            try {
+                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                if (HttpRetry.isRetryable(code) &&
+                    attempt < HttpRetry.MAX_ATTEMPTS - 1
+                ) {
+                    val retryAfter = conn.getHeaderField("Retry-After")
+                    HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                    attempt++
+                    continue
+                }
+                activeConnections[sessionId] = conn
+                try {
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             if (code !in 200..299) {
                 // QA Medium: errorStream is null when the connection fails
@@ -288,8 +317,15 @@ class CustomAgentBridge(
             }
             flushEvent()
             return accumulated.toString() to true
+            } finally {
+                activeConnections.remove(sessionId, conn)
+            }
         } finally {
+            // Disconnects the attempt's connection on every path: the
+            // retry-continue above, and the success path (already
+            // removed from the map; disconnect is idempotent).
             conn.disconnect()
+        }
         }
     }
 
@@ -304,8 +340,17 @@ class CustomAgentBridge(
 
     // The Custom agent is direct-API chat: no tools, no file operations.
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) = Unit
-    override suspend fun stopSession(sessionId: String) = Unit
-    override suspend fun stopActiveSession() = Unit
+    override suspend fun stopSession(sessionId: String) {
+        stoppedSessions += sessionId
+        // Session ids are UUIDs and never repeat; still, keep the set
+        // bounded for long-running processes.
+        if (stoppedSessions.size > 200) stoppedSessions.clear()
+        activeConnections[sessionId]?.disconnect()
+    }
+    override suspend fun stopActiveSession() {
+        stoppedSessions += activeConnections.keys
+        activeConnections.values.forEach { runCatching { it.disconnect() } }
+    }
     override suspend fun undoLastChanges(projectId: String): Boolean = false
     override suspend fun acceptLastChanges(projectId: String) = Unit
     override suspend fun loadPendingChanges(projectId: String): List<ChangeItem> = emptyList()

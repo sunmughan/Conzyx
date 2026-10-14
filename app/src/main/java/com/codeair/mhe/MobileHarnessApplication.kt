@@ -32,13 +32,9 @@ class MobileHarnessApplication : Application() {
             FirebaseApp.initializeApp(this)
             FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = true
         }
-        // FCM: fetch and persist the registration token for push notifications.
-        runCatching {
-            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-                .addOnSuccessListener { token ->
-                    com.codeair.mhe.runtime.PushTokenStore.save(this, token)
-                }
-        }
+        // (FCM needs no local token persistence: the PushTokenStore that
+        // used to save the registration token here was removed — nothing
+        // ever read it and no server ever received it. QA Medium.)
         AppCrashLogger.log("Application.onCreate completed")
         // Keep-alive: when the app goes to the background, start a lightweight
         // foreground service so aggressive OEM task killers do not freeze the

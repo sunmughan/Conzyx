@@ -146,32 +146,43 @@ class ProviderApiClient {
         readTimeoutMs: Int = 20_000,
     ): HttpResult {
         return runCatching {
-            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
-                connectTimeout = connectTimeoutMs
-                readTimeout = readTimeoutMs
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json")
-                if (apiKey.isNotBlank()) {
-                    setRequestProperty("Authorization", "Bearer $apiKey")
+            // QA Medium: one transient 429/5xx used to be final. Retry
+            // with backoff, honoring the server's Retry-After header.
+            var attempt = 0
+            while (true) {
+                val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = connectTimeoutMs
+                    readTimeout = readTimeoutMs
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Content-Type", "application/json")
+                    if (apiKey.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $apiKey")
+                    }
+                    if (endpoint.startsWith("https://opencode.ai/zen/")) {
+                        // OpenCode Zen expects requests to identify the OpenCode client and session.
+                        setRequestProperty("User-Agent", "opencode/1.18.20")
+                        setRequestProperty("x-session-id", "session-${UUID.randomUUID()}")
+                    }
+                    if (apiKey.isNotBlank() && protocol != ProviderProtocol.OPENROUTER && protocol != ProviderProtocol.OPENAI_CHAT && protocol != ProviderProtocol.OPENAI_RESPONSES) {
+                        setRequestProperty("x-api-key", apiKey)
+                        setRequestProperty("anthropic-version", "2023-06-01")
+                    }
+                    if (body != null) doOutput = true
                 }
-                if (endpoint.startsWith("https://opencode.ai/zen/")) {
-                    // OpenCode Zen expects requests to identify the OpenCode client and session.
-                    setRequestProperty("User-Agent", "opencode/1.18.20")
-                    setRequestProperty("x-session-id", "session-${UUID.randomUUID()}")
+                if (body != null) connection.outputStream.use { it.write(body.toByteArray()) }
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val retryAfter = connection.getHeaderField("Retry-After")
+                connection.disconnect()
+                if (HttpRetry.isRetryable(code) && attempt < HttpRetry.MAX_ATTEMPTS - 1) {
+                    HttpRetry.sleepBeforeRetry(attempt, retryAfter)
+                    attempt++
+                    continue
                 }
-                if (apiKey.isNotBlank() && protocol != ProviderProtocol.OPENROUTER && protocol != ProviderProtocol.OPENAI_CHAT && protocol != ProviderProtocol.OPENAI_RESPONSES) {
-                    setRequestProperty("x-api-key", apiKey)
-                    setRequestProperty("anthropic-version", "2023-06-01")
-                }
-                if (body != null) doOutput = true
+                return@runCatching HttpResult(code, responseBody)
             }
-            if (body != null) connection.outputStream.use { it.write(body.toByteArray()) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            connection.disconnect()
-            HttpResult(code, responseBody)
         }.getOrElse { HttpResult(0, "", it.message ?: "Network connection failed",) }
     }
 

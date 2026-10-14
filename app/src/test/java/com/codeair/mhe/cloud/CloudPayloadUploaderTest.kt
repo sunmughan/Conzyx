@@ -116,4 +116,25 @@ class CloudPayloadUploaderTest {
         assertEquals(OperationStatus.FAILED, result.result.status)
         assertTrue(result.result.error.orEmpty().contains("Delta upload failed"))
     }
+
+    @Test
+    fun `oversized file aborts with a clear limit error instead of OOM`() {
+        val bigDir = File(tempDir, "bigonly").apply { mkdirs() }
+        // 33 MB file: over the 32 MB single-file cap.
+        val big = File(bigDir, "big.bin")
+        val chunk = ByteArray(1024 * 1024)
+        big.outputStream().use { out -> repeat(33) { out.write(chunk) } }
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                else -> CloudTransportResponse(201, "{}")
+            }
+        }
+        val uploader = CloudPayloadUploader(CloudExecutionClient(transport), CloudArtifactSyncEngine())
+        val result = uploader.uploadWorkspaceDelta(worker, bigDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("big.bin"))
+        assertTrue(result.result.error.orEmpty().contains("32 MB"))
+        assertEquals(0, result.filesUploaded)
+    }
 }

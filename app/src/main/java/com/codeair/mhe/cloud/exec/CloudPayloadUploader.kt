@@ -18,6 +18,15 @@ data class DeltaUploadResult(
 )
 
 /**
+ * QA Medium: the uploader used to read each whole file into a ByteArray
+ * and base64 it into one JSON string (file + 33% overhead in memory,
+ * OOM risk on large files). The wire protocol has no chunked-upload
+ * endpoint, so a single file over this size is refused with a clear
+ * error instead of crashing the app.
+ */
+const val MAX_SINGLE_FILE_UPLOAD_BYTES = 32L * 1024 * 1024
+
+/**
  * Delta workspace payload uploader (Milestone 11).
  *
  * Computes the workspace snapshot via [CloudArtifactSyncEngine], asks the worker
@@ -83,6 +92,18 @@ class CloudPayloadUploader(
                 // Worker holds identical content — skip the upload honestly.
                 skipped++
                 continue
+            }
+            if (file.length() > MAX_SINGLE_FILE_UPLOAD_BYTES) {
+                return DeltaUploadResult(
+                    OperationResult.failure(
+                        error = "Delta upload aborted: $relativePath is ${file.length()} bytes, over the " +
+                            "${MAX_SINGLE_FILE_UPLOAD_BYTES / 1024 / 1024} MB single-file upload limit. " +
+                            "Split the file or exclude it — the upload API has no chunked endpoint.",
+                        startedAt = startedAt,
+                        logs = logs
+                    ),
+                    payload.manifestHash, uploaded, skipped, bytes
+                )
             }
             val content = runCatching { file.readBytes() }.getOrElse {
                 return DeltaUploadResult(
