@@ -2565,7 +2565,7 @@ private fun RootScreenHost(
                     onCancelAgentInstall = viewModel::cancelAgentInstall,
                     onCheckAgentUpdates = viewModel::checkAgentUpdates,
                     onUpdateAgent = viewModel::updateAgent,
-                    onCancelAgentUpdate = viewModel::cancelAgentUpdate,
+                    onCancelAgentUpdate = { viewModel.cancelAgentUpdate() },
                     onRefreshInstalledAgents = viewModel::refreshInstalledAgents,
                     onStartAntigravityLogin = viewModel::startAntigravityLogin,
                     onSubmitAntigravityCode = viewModel::submitAntigravityCode,
