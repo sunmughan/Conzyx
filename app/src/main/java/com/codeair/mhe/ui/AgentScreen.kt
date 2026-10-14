@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -905,6 +906,7 @@ fun AgentScreen(
                                     color = if (isSelected) Color.White else Color.Transparent,
                                     modifier = Modifier
                                         .size(56.dp)
+                                        .alpha(if (state.agentInstalling == null) 1f else 0.4f)
                                         .clickable(enabled = state.agentInstalling == null) {
                                             viewedAgent = agent
                                             if (isInstalled) onSelectAgent(agent)
