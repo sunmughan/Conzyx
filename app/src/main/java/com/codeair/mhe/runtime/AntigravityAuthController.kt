@@ -497,13 +497,23 @@ class AntigravityAuthController(
             // Linux Secret Service keyring. Deleting this exact app-private file
             // is the deterministic equivalent of agy's /logout; its contents are
             // never read, copied, or logged by PocketDev.
-            val credential = officialCredentialFile()
-            if (credential.exists()) {
-                check(credential.delete()) {
-                    "Could not remove the official Antigravity credential. Your account remains connected."
+            //
+            // "Sign out all" (the button's label) must delete EVERY stored
+            // token, not just the active one (QA H25): the per-account token
+            // copies + accounts_json used to survive, so activateAccount()
+            // could sign any of them back in with zero auth after logout.
+            // Any deletion failure aborts logout: a surviving token would
+            // leave the user believing they are signed out when they are not.
+            for (target in antigravitySignOutAllTargets(officialCredentialFile(), accountsDir())) {
+                if (target.exists()) {
+                    val deleted = if (target.isDirectory) target.deleteRecursively() else target.delete()
+                    check(deleted) {
+                        "Could not remove a stored Antigravity credential. Your account remains connected."
+                    }
                 }
             }
             check(!hasOfficialCredential()) { "Antigravity logout did not complete." }
+            saveAccounts(emptyList())
             onSignedInChanged(false, null)
             mutableState.value = mutableState.value.copy(
                 status = AntigravityAuthStatus.SIGNED_OUT,
@@ -585,3 +595,20 @@ private val AUTH_ANSI = Regex("\\u001B(?:\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)|\
 private fun sanitizeTerminalOutput(text: String): String = text
     .replace(AUTH_ANSI, "")
     .filter { it == '\n' || it == '\r' || it == '\t' || it.code >= 0x20 }
+
+/**
+ * QA H25: the full deletion set for "Sign out all" — the active official
+ * credential file plus every per-account token folder under [accountsDir].
+ * Only directories count as per-account entries (each holds one account's
+ * `antigravity-oauth-token`); stray files in the dir are never deleted.
+ * Extracted so the set is unit-tested once; [AntigravityAuthController]
+ * needs Android Context and cannot run in a JVM unit test.
+ */
+internal fun antigravitySignOutAllTargets(officialCredential: File, accountsDir: File): List<File> {
+    val targets = mutableListOf(officialCredential)
+    accountsDir.listFiles()
+        ?.filter { it.isDirectory }
+        ?.sortedBy { it.name }
+        ?.forEach { targets.add(it) }
+    return targets
+}

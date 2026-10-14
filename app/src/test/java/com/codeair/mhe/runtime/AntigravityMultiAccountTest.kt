@@ -289,4 +289,37 @@ class AntigravityMultiAccountTest {
         assertFalse(sanitized!!.contains("developers.google.com"))
         assertFalse(sanitized.contains("Expected OAuth 2"))
     }
+
+    // QA H25: "Sign out all" must delete the official credential AND every
+    // per-account token folder. Previously logout deleted only the official
+    // file, so activateAccount() could silently restore a "logged out"
+    // account from its surviving per-account copy.
+    @Test
+    fun `sign out all targets include official credential and every account folder`() {
+        val official = tempFolder.newFile("antigravity-oauth-token")
+        val accountsDir = tempFolder.newFolder("accounts")
+        val alpha = File(accountsDir, "alpha_example_com").apply {
+            mkdirs()
+            File(this, "antigravity-oauth-token").writeText("token-alpha")
+        }
+        val beta = File(accountsDir, "beta_example_com").apply {
+            mkdirs()
+            File(this, "antigravity-oauth-token").writeText("token-beta")
+        }
+        // A stray file in the accounts dir is not a per-account entry and
+        // must never be a deletion target.
+        File(accountsDir, "README.txt").writeText("do not delete")
+
+        val targets = antigravitySignOutAllTargets(official, accountsDir)
+
+        assertEquals(listOf(official, alpha, beta), targets)
+    }
+
+    @Test
+    fun `sign out all targets tolerate a missing accounts dir`() {
+        val official = tempFolder.newFile("antigravity-oauth-token")
+        val missing = File(tempFolder.root, "no-such-accounts-dir")
+
+        assertEquals(listOf(official), antigravitySignOutAllTargets(official, missing))
+    }
 }
