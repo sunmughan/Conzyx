@@ -12,6 +12,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -165,6 +166,7 @@ class AntigravityRuntimeBridge(
     private val geminiApiClient = GeminiApiClient()
     private val finished = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var activeProcess: Process? = null
+    @Volatile private var activeToolExecutor: WorkspaceToolExecutor? = null
     @Volatile private var activeSessionId: String? = null
     @Volatile private var userStopRequested = false
     @Volatile private var foregroundResultPosted = false
@@ -500,46 +502,107 @@ class AntigravityRuntimeBridge(
         RuntimeTaskController.stopAction = {
             userStopRequested = true
             geminiApiClient.cancel()
+            activeToolExecutor?.cancel()
+        }
+        val launchAcknowledged = launchGate.authorizeLaunch(
+            agentLabel = "Gemini API",
+            sessionId = sessionId,
+            projectId = projectId,
+            operation = com.codeair.mhe.security.SafetyOperation.ShellExec(
+                "gemini-api-agent",
+                "/workspace/$projectSlug",
+            ),
+            explanation = "The Gemini API agent can run shell commands and read, write or delete " +
+                "files in the project workspace without asking again. " +
+                "Approve only if you trust this task.",
+            affectedPaths = listOf("/workspace/$projectSlug"),
+            interactive = interactiveApprovals,
+            emit = { eventBus.emit(it) },
+        )
+        if (!launchAcknowledged) {
+            activeProcess = null
+            activeSessionId = null
+            RuntimeTaskController.stopAction = null
+            return@withContext sessionId
         }
         startForegroundRuntime(projectSlug, "Gemini API")
         try {
+            val workspace = checkpoints.ensureWorkspace(projectId)
+            checkpoints.createCheckpoint(projectId, workspace)
+            val before = checkpoints.snapshot(workspace)
             val history = conversationHistory.mapNotNull { message ->
                 message.text.takeIf { it.isNotBlank() }
                     ?.let { (if (message.fromUser) "user" else "model") to it }
             }
-            geminiApiClient.streamGenerateContent(
-                apiKey = config.apiKey,
-                model = config.model,
-                systemPrompt = geminiApiSystemPrompt(projectSlug),
-                history = history,
-                prompt = prompt,
-            ).collect { event ->
-                when (event) {
-                    is GeminiStreamEvent.TextDelta ->
-                        eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, event.text))
-                    is GeminiStreamEvent.Finished -> Unit
-                    is GeminiStreamEvent.Failed -> throw IllegalStateException(event.message)
-                }
-            }
+            val contents = buildGeminiContents(history, prompt)
+            val executor = WorkspaceToolExecutor(
+                installer = installer,
+                workspace = workspace,
+                checkpoints = checkpoints,
+                projectSlug = projectSlug,
+                cacheDir = context.cacheDir,
+            )
+            activeToolExecutor = executor
+            val loop = GeminiAgentLoop(executor)
+            var assistantTextSeen = false
+            loop.run(
+                generateTurn = { body, onDelta ->
+                    geminiApiClient.generateAgentTurn(config.apiKey, config.model, body, onDelta)
+                },
+                systemPrompt = geminiApiAgentSystemPrompt(projectSlug),
+                contents = contents,
+                onTextDelta = { delta ->
+                    assistantTextSeen = true
+                    eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, delta))
+                },
+                onToolStarted = { name, detail ->
+                    eventBus.emit(RuntimeEvent.ToolStarted(sessionId, name, detail))
+                    pushForegroundProgress(
+                        projectSlug,
+                        "Running $name ${detail.take(80)}".trim(),
+                    )
+                },
+                onToolCompleted = { name, summary ->
+                    eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, name, summary))
+                },
+                isCancelled = { userStopRequested },
+            )
             if (userStopRequested) throw AntigravitySessionException("Stopped by user")
+            val paths = checkpoints.changedFiles(workspace, before)
+            checkpoints.saveChangedPaths(projectId, paths)
+            if (paths.isNotEmpty()) {
+                eventBus.emit(RuntimeEvent.FilesChanged(sessionId, checkpoints.buildChangeDetails(projectId, workspace, paths)))
+            }
+            if (!assistantTextSeen) {
+                eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, "Done."))
+            }
             emitCompleted(sessionId)
             finishForegroundRuntime(true, projectSlug, "Gemini API finished the task in $projectSlug.")
         } catch (e: Exception) {
-            val message = if (userStopRequested) "Stopped by user"
+            val message = if (userStopRequested || e is CancellationException) "Stopped by user"
             else e.message.orEmpty().ifBlank { "Gemini API request failed." }
             emitFailure(sessionId, message)
-            finishForegroundRuntime(false, projectSlug, message)
+            if (userStopRequested) {
+                cancelForegroundRuntime()
+            } else {
+                finishForegroundRuntime(false, projectSlug, message)
+            }
         }
         activeProcess = null
+        activeToolExecutor = null
         activeSessionId = null
         RuntimeTaskController.stopAction = null
         sessionId
     }
 
-    private fun geminiApiSystemPrompt(projectSlug: String): String =
+    private fun geminiApiAgentSystemPrompt(projectSlug: String): String =
         "You are the coding assistant inside the Conzyx Android app. The active project workspace is " +
-            "/workspace/$projectSlug. Answer directly and concisely. When asked to change code, reply " +
-            "with exact file paths and complete updated file contents or unified diffs the user can apply."
+            "/workspace/$projectSlug. You have tools: run_shell to execute shell commands in the workspace, " +
+            "read_file to read files, write_file to create or overwrite files, edit_file to make surgical " +
+            "edits, and list_dir to explore directories. When the user asks for a code change, use the " +
+            "tools to implement it end to end: inspect the project, make the edits, then build or run " +
+            "tests to verify. Work only inside the project workspace. Do not ask for confirmation for " +
+            "normal file operations. Explain briefly what you did after the tools finish."
 
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) {
         launchGate.respondToApproval(request.approvalId, approved)
@@ -551,6 +614,7 @@ class AntigravityRuntimeBridge(
             launchGate.abortPending()
             activeProcess?.destroy()
             geminiApiClient.cancel()
+            activeToolExecutor?.cancel()
             emitFailure(sessionId, "Stopped by user")
         }
     }

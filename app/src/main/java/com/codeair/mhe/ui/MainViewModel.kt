@@ -528,6 +528,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                         safetyGateway = safetyGateway,
                         interactiveApprovals = false,
+                        geminiApiConfig = { currentGeminiApiConfig() },
                     )
                     AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
                     AgentKind.CODEX -> CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
@@ -542,7 +543,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // wired engine (e.g. Claude Code) has no saved key.
             isSessionAuthAvailable = { kind ->
                 kind == AgentKind.ANTIGRAVITY &&
-                    _state.value.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN
+                    (_state.value.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN ||
+                        (geminiApiStore.apiModeEnabled && geminiApiStore.hasApiKey()))
             },
             preferredKind = { _state.value.agentKind },
             // The emergency kill switch blocks new team tasks too, not just

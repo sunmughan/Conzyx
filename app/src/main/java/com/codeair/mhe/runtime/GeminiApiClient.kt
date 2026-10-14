@@ -1,8 +1,6 @@
 package com.codeair.mhe.runtime
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -21,23 +19,8 @@ fun buildGeminiRequestBody(
     history: List<Pair<String, String>>,
     prompt: String,
 ): JSONObject {
-    val contents = JSONArray()
-    history.forEach { (role, text) ->
-        if (text.isNotBlank()) {
-            contents.put(
-                JSONObject()
-                    .put("role", role)
-                    .put("parts", JSONArray().put(JSONObject().put("text", text))),
-            )
-        }
-    }
-    contents.put(
-        JSONObject()
-            .put("role", "user")
-            .put("parts", JSONArray().put(JSONObject().put("text", prompt))),
-    )
     return JSONObject()
-        .put("contents", contents)
+        .put("contents", buildGeminiContents(history, prompt))
         .put(
             "system_instruction",
             JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt.orEmpty()))),
@@ -78,12 +61,6 @@ fun geminiApiErrorMessage(code: Int, errorBody: String): String {
     }
 }
 
-sealed interface GeminiStreamEvent {
-    data class TextDelta(val text: String) : GeminiStreamEvent
-    data class Finished(val fullText: String) : GeminiStreamEvent
-    data class Failed(val message: String) : GeminiStreamEvent
-}
-
 class GeminiApiClient {
     @Volatile private var activeConnection: HttpURLConnection? = null
 
@@ -92,42 +69,53 @@ class GeminiApiClient {
         activeConnection = null
     }
 
-    fun streamGenerateContent(
+    suspend fun generateAgentTurn(
         apiKey: String,
         model: String,
-        systemPrompt: String?,
-        history: List<Pair<String, String>>,
-        prompt: String,
-    ): Flow<GeminiStreamEvent> = flow {
-        val fullText = StringBuilder()
+        requestBody: JSONObject,
+        onTextDelta: suspend (String) -> Unit,
+    ): GeminiAgentTurn = withContext(Dispatchers.IO) {
+        val connection = openConnection(model, apiKey)
+        activeConnection = connection
         try {
-            val connection = openConnection(model, apiKey)
-            activeConnection = connection
-            try {
-                val body = buildGeminiRequestBody(systemPrompt, history, prompt).toString()
-                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
-                if (code !in 200..299) {
-                    val errorBody = runCatching {
-                        connection.errorStream?.bufferedReader()?.readText().orEmpty()
-                    }.getOrDefault("")
-                    throw IllegalStateException(geminiApiErrorMessage(code, errorBody))
-                }
-                connection.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { line ->
-                        parseGeminiStreamLine(line)?.let { delta ->
-                            fullText.append(delta)
-                            emit(GeminiStreamEvent.TextDelta(delta))
+            connection.outputStream.use { it.write(requestBody.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val errorBody = runCatching {
+                    connection.errorStream?.bufferedReader()?.readText().orEmpty()
+                }.getOrDefault("")
+                throw IllegalStateException(geminiApiErrorMessage(code, errorBody))
+            }
+            val text = StringBuilder()
+            val calls = mutableListOf<GeminiFunctionCall>()
+            connection.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val trimmed = line.trim().removePrefix("data:").trim()
+                    if (trimmed.isEmpty() || trimmed == "[DONE]" || !trimmed.startsWith("{")) return@forEach
+                    val root = runCatching { JSONObject(trimmed) }.getOrNull() ?: return@forEach
+                    if (root.has("error")) {
+                        val detail = root.optJSONObject("error")?.optString("message").orEmpty()
+                        val errorJson = JSONObject()
+                            .put("error", JSONObject().put("message", detail)).toString()
+                        throw IllegalStateException(geminiApiErrorMessage(code, errorJson))
+                    }
+                    val candidates = root.optJSONArray("candidates") ?: return@forEach
+                    for (i in 0 until candidates.length()) {
+                        val parts = candidates.optJSONObject(i)?.optJSONObject("content")?.optJSONArray("parts")
+                            ?: continue
+                        val turn = parseAgentTurnParts(parts)
+                        if (turn.text.isNotEmpty()) {
+                            text.append(turn.text)
+                            onTextDelta(turn.text)
                         }
+                        calls.addAll(turn.functionCalls)
                     }
                 }
-                emit(GeminiStreamEvent.Finished(fullText.toString()))
-            } finally {
-                runCatching { connection.disconnect() }
-                if (activeConnection === connection) activeConnection = null
             }
-        } catch (e: Exception) {
-            emit(GeminiStreamEvent.Failed(e.message.orEmpty().ifBlank { "Gemini API request failed." }))
+            GeminiAgentTurn(text.toString(), calls)
+        } finally {
+            runCatching { connection.disconnect() }
+            if (activeConnection === connection) activeConnection = null
         }
     }
 
