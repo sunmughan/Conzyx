@@ -29,7 +29,7 @@ object AppBuildOrchestrator {
 
         if (buildMode == BuildMode.GITHUB_ACTIONS) {
             val msg = "GitHub Actions CI build is not wired yet — push the project to a repo " +
-                "with the Mobile Harness Extended CI workflow, or use On-Device build."
+                "with the Conzyx CI workflow, or use On-Device build."
             logs += "ERROR: $msg"
             return BuildResult(
                 success = false,

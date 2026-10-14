@@ -31,7 +31,7 @@ object PlayStorePreparationEngine {
         val fullDescFile = File(listingDir, "full-description.txt").apply {
             writeText(
                 meta.fullDescription.ifBlank {
-                    "$appName\n\n${blueprint.description}\n\nBuilt with Mobile Harness Extended App Factory."
+                    "$appName\n\n${blueprint.description}\n\nBuilt with Conzyx App Factory."
                 }.take(4000)
             )
         }

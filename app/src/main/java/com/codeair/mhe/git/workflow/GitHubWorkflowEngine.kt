@@ -236,7 +236,7 @@ class GitHubWorkflowEngine(
             }
             updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.IN_PROGRESS, "Staging and committing...")
             gitController.stageAll(workingDir)
-            val commitMsg = "fix(#${issue.number}): ${issue.title}\n\nCloses #${issue.number}\nAutomated by Mobile Harness Extended Autonomous Workflow."
+            val commitMsg = "fix(#${issue.number}): ${issue.title}\n\nCloses #${issue.number}\nAutomated by Conzyx Autonomous Workflow."
             val commitRes = gitController.commitDetailed(workingDir, commitMsg)
             if (!commitRes.success && !commitRes.output.contains("nothing to commit", ignoreCase = true)) {
                 updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, commitRes.errorMessage ?: "Commit failed")
@@ -266,7 +266,7 @@ class GitHubWorkflowEngine(
                         Resolves #${issue.number}.
 
                         ### Changes
-                        Autonomous implementation generated and verified by Mobile Harness Extended GitHub-Native Engine.
+                        Autonomous implementation generated and verified by Conzyx GitHub-Native Engine.
                         - Root cause analyzed
                         - Automated tests verified
                     """.trimIndent()

@@ -77,7 +77,7 @@ class GitDiffParserTest {
             --- /dev/null
             +++ b/README.md
             @@ -0,0 +1,2 @@
-            +# Mobile Harness Extended
+            +# Conzyx
             +Autonomous development suite.
         """.trimIndent()
 

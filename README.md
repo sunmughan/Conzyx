@@ -1,6 +1,8 @@
 <div align="center">
 
-# Mobile Harness Extended
+<img src="docs/conzyx-icon.png" alt="Conzyx logo" width="120"/>
+
+# Conzyx
 
 ### A desktop-class AI software engineering workstation for Android
 
@@ -30,7 +32,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 ## Table of Contents
 
-- [What is Mobile Harness Extended?](#-what-is-mobile-harness-extended)
+- [What is Conzyx?](#-what-is-conzyx)
 - [Features](#-features)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
@@ -44,9 +46,9 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 
 ---
 
-## 📖 What is Mobile Harness Extended?
+## 📖 What is Conzyx?
 
-Mobile Harness Extended is an AI-powered software engineering environment that runs natively on Android. It combines a rootless Linux userspace (Ubuntu 20.04 on ARM64 via PRoot) with a full mobile IDE, multi-agent AI engineering teams, autonomous GitHub workflows, an Android app factory, and hybrid cloud execution.
+Conzyx is an AI-powered software engineering environment that runs natively on Android. It combines a rootless Linux userspace (Ubuntu 20.04 on ARM64 via PRoot) with a full mobile IDE, multi-agent AI engineering teams, autonomous GitHub workflows, an Android app factory, and hybrid cloud execution.
 
 The app ships in two editions:
 
@@ -270,7 +272,7 @@ Flavor behavior is controlled by `BuildConfig.OFFLINE_RUNTIME_BUNDLES` and `Buil
 
 ### Runtime bundles note
 
-The offline flavor bundles Linux runtime archives (`pocketdev-*-arm64-*.tar.zst`). CI downloads the latest verified bundles from the `techjarves/Mobile-Harness` `runtime-*` releases into `dist/runtime-bundles/` before building. For local offline builds, place the bundle archives plus a `manifest.json` in `dist/runtime-bundles/`; the `prepareOfflineRuntimeAssets` task picks them up automatically.
+The offline flavor bundles Linux runtime archives (`conzyx-*-arm64-*.tar.zst`). CI downloads the latest verified bundles from the `techjarves/Mobile-Harness` `runtime-*` releases into `dist/runtime-bundles/` before building, renaming them to `conzyx-*`. For local offline builds, place the bundle archives plus a `manifest.json` in `dist/runtime-bundles/`; the `prepareOfflineRuntimeAssets` task picks them up automatically.
 
 ---
 
@@ -381,7 +383,7 @@ Mobile-Harness-Extended/
 
 ```
 +-------------------------------------------------------------------+
-|              Mobile Harness Extended (v3.0.2)                      |
+|              Conzyx (v3.0.2)                      |
 |                                                                    |
 |  +------------------+  +-----------------+  +------------------+   |
 |  | Mobile IDE       |  | Visual DevTools |  | Android App      |   |
@@ -446,4 +448,4 @@ See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
-Copyright (c) 2024-2026 Mobile Harness Extended Contributors.
+Copyright (c) 2024-2026 Conzyx Contributors.

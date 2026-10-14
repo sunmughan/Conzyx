@@ -24,15 +24,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-const val PRIVACY_POLICY_MARKDOWN = """# Mobile Harness Extended Privacy Policy
+const val PRIVACY_POLICY_MARKDOWN = """# Conzyx Privacy Policy
 
 **Effective date:** October 3, 2026
 
-Mobile Harness Extended is a local-first Android development workspace for building and managing software projects from an Android device. This policy explains what information the app handles, where it is stored, and when information leaves the device.
+Conzyx is a local-first Android development workspace for building and managing software projects from an Android device. This policy explains what information the app handles, where it is stored, and when information leaves the device.
 
 ## Information handled by the app
 
-Mobile Harness Extended may handle information you choose to provide or generate while using the app, including:
+Conzyx may handle information you choose to provide or generate while using the app, including:
 
 - AI-provider API keys, authentication details, model selections, and connection settings
 - Prompts, AI responses, conversation history, and agent task context
@@ -47,7 +47,7 @@ Projects, conversations, attachments, imported repositories, editor content, ter
 
 AI-provider API keys and MCP server secrets are protected using Android Keystore-backed encryption before they are persisted. OAuth tokens used by integrated command-line tools (GitHub, Antigravity) are stored in the app's private on-device Linux environment.
 
-Mobile Harness Extended does not include advertising SDKs and does not operate a first-party user account system. It does include Firebase Crashlytics for crash reporting, described below.
+Conzyx does not include advertising SDKs and does not operate a first-party user account system. It does include Firebase Crashlytics for crash reporting, described below.
 
 ## Code, projects, and AI requests
 
@@ -55,7 +55,7 @@ The app provides features including local project management, Git/GitHub import,
 
 When you use an AI feature, content required to perform the requested task may be transmitted to the AI provider you configured. Depending on the task, this can include prompts, conversation context, relevant source code, file paths, file contents, tool results, and attachments.
 
-Mobile Harness Extended does not send project contents to its developer as part of ordinary local project use. Information can leave the device when you explicitly use an external service such as an AI provider, Git/GitHub operation, repository import, runtime/package download, update check, web resource, or another network-backed feature.
+Conzyx does not send project contents to its developer as part of ordinary local project use. Information can leave the device when you explicitly use an external service such as an AI provider, Git/GitHub operation, repository import, runtime/package download, update check, web resource, or another network-backed feature.
 
 ## Network services and downloads
 
@@ -64,7 +64,7 @@ The app may connect to external services to:
 - Communicate with the AI provider selected by you
 - Access Git/GitHub repositories and repository metadata when you request repository operations
 - Download Linux/runtime components, development toolchains, package dependencies, and agent assets required by the selected configuration
-- Check for Mobile Harness Extended app updates and retrieve release metadata
+- Check for Conzyx app updates and retrieve release metadata
 - Send crash and diagnostic reports to Firebase Crashlytics
 - Load web previews or other network resources when you explicitly use those features
 
@@ -72,7 +72,7 @@ Crash reports may include stack traces, device information (such as Android vers
 
 Those services may receive standard network information such as your IP address, request time, requested resource, and user-agent information. The third-party service's own privacy policy and terms govern information it receives.
 
-Mobile Harness Extended does not sell personal information.
+Conzyx does not sell personal information.
 
 ## Permissions
 
@@ -83,31 +83,31 @@ The app may request permissions or Android capabilities needed for the features 
 - **Foreground service and wake lock:** Keep a user-started task active long enough to complete and prevent interruption while work is actively running.
 - **Document picker access:** Import only files and folders you explicitly select through Android's system picker.
 - **Camera/microphone or media access:** Only when a feature explicitly requires user-selected media or device input and Android grants the corresponding permission.
-- **Install packages:** Submit an Android APK built from your selected project to Android's system installer. Android requires user confirmation; Mobile Harness Extended cannot silently install an app.
+- **Install packages:** Submit an Android APK built from your selected project to Android's system installer. Android requires user confirmation; Conzyx cannot silently install an app.
 
 Notification permission and battery-optimization exemption may be requested in context and can be declined. Some background features may be less reliable without them.
 
 ## Retention and deletion
 
-Local projects, conversations, terminal history, editor data, attachments, checkpoints, runtime files, and diagnostics remain on the device until you delete the relevant data, clear it from the app, or uninstall Mobile Harness Extended. Uninstalling the app removes its private local data according to Android behavior.
+Local projects, conversations, terminal history, editor data, attachments, checkpoints, runtime files, and diagnostics remain on the device until you delete the relevant data, clear it from the app, or uninstall Conzyx. Uninstalling the app removes its private local data according to Android behavior.
 
 Information already transmitted to an AI provider, Git/GitHub, package/runtime host, or another third-party service is governed by that service's retention and deletion policies. Contact the relevant provider directly for requests concerning information held by that provider.
 
 ## Security
 
-Mobile Harness Extended uses app-private Android storage, Android Keystore-backed credential encryption, HTTPS where supported by external services, and checksum verification for supported runtime downloads. Local Linux commands and project code execute with the capabilities granted to the app/runtime environment. No system can guarantee complete security; only run code and install dependencies you trust.
+Conzyx uses app-private Android storage, Android Keystore-backed credential encryption, HTTPS where supported by external services, and checksum verification for supported runtime downloads. Local Linux commands and project code execute with the capabilities granted to the app/runtime environment. No system can guarantee complete security; only run code and install dependencies you trust.
 
 ## Children
 
-Mobile Harness Extended is a developer tool and is not directed to children under 13. The app does not knowingly collect personal information from children.
+Conzyx is a developer tool and is not directed to children under 13. The app does not knowingly collect personal information from children.
 
 ## Changes to this policy
 
-This policy may be updated as Mobile Harness Extended changes. Material changes will be reflected by updating the effective date and publishing the revised policy at this public repository location.
+This policy may be updated as Conzyx changes. Material changes will be reflected by updating the effective date and publishing the revised policy at this public repository location.
 
 ## Contact
 
-For privacy questions or requests, open an issue in the Mobile Harness Extended repository:
+For privacy questions or requests, open an issue in the Conzyx repository:
 https://github.com/sunmughan/Mobile-Harness-Extended/issues
 """
 

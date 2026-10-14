@@ -3,6 +3,7 @@ package com.codeair.mhe.auth.ui
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -58,6 +58,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -139,24 +140,18 @@ fun AuthScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 // App Branding Header
-                Box(
+                Image(
+                    painter = painterResource(id = R.drawable.conzyx_logo),
+                    contentDescription = "Conzyx",
                     modifier = Modifier
                         .size(56.dp)
-                        .background(PocketOrange, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Terminal,
-                        contentDescription = "Mobile Harness Extended",
-                        tint = Color.White,
-                        modifier = Modifier.size(30.dp),
-                    )
-                }
+                        .clip(RoundedCornerShape(14.dp)),
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
-                    text = "Mobile Harness Extended",
+                    text = "Conzyx",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )

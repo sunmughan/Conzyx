@@ -117,7 +117,7 @@ jobs:
           }
 
           def published_name(name):
-              return "mhe-" + name.removeprefix("pocketdev-")
+              return "conzyx-" + name.removeprefix("pocketdev-")
 
           def version_key(value):
               return tuple(int(x) for x in re.findall(r"\d+", value)) or (0,)

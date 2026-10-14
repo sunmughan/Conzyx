@@ -969,7 +969,7 @@ fun SettingsScreen(
             item {
                 SettingsAccordion(
                     title = "Contributors",
-                    subtitle = "People building Mobile Harness Extended",
+                    subtitle = "People building Conzyx",
                     icon = Icons.Default.Person,
                     expanded = expanded == SettingsSection.CONTRIBUTORS,
                     onClick = { toggle(SettingsSection.CONTRIBUTORS) },
@@ -991,7 +991,7 @@ fun SettingsScreen(
                         Icon(Icons.Default.Settings, null, Modifier.size(20.dp), tint = PocketOrange)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Mobile Harness Extended", fontWeight = FontWeight.SemiBold)
+                            Text("Conzyx", fontWeight = FontWeight.SemiBold)
                             Text("Local AI coding workspace", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2004,7 +2004,7 @@ private fun AccountSectionContent(
                         }
                     }
                     Text(
-                        "You are currently using Mobile Harness Extended in local guest mode. All your projects, tools, and code run privately on this device.",
+                        "You are currently using Conzyx in local guest mode. All your projects, tools, and code run privately on this device.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

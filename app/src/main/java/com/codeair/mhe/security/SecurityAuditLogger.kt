@@ -66,7 +66,7 @@ data class SecurityAuditEntry(
 }
 
 /**
- * Crash-safe security audit trail logger for Mobile Harness Extended.
+ * Crash-safe security audit trail logger for Conzyx.
  * Logs every security evaluation, policy bypass, rejection, and dangerous command block.
  */
 class SecurityAuditLogger(

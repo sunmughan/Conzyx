@@ -69,7 +69,7 @@ private val cannedVerifyOutput = """
     Verified using v1 scheme (JAR signing): true
     Verified using v2 scheme (APK Signature Scheme v2): true
     Number of signers: 1
-    Signer #1 certificate DN: CN=Test Signer, OU=Mobile Harness Extended
+    Signer #1 certificate DN: CN=Test Signer, OU=Conzyx
     Signer #1 certificate SHA-256 digest: ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89
     WARNING: META-INF/MANIFEST.MF is missing
 """.trimIndent()
@@ -107,7 +107,7 @@ class ApkSignatureVerifierTest {
             assertTrue(result.toolAvailable)
             assertEquals(SignatureTool.APKSIGNER, result.toolUsed)
             assertTrue(result.verified)
-            assertEquals("CN=Test Signer, OU=Mobile Harness Extended", result.signerDn)
+            assertEquals("CN=Test Signer, OU=Conzyx", result.signerDn)
             assertEquals(
                 "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
                 result.signerCertSha256,

@@ -136,7 +136,7 @@ fun ProductOnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Mobile Harness Extended Tour",
+                    text = "Conzyx Tour",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )

@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Wire protocol for the Mobile Harness Extended cloud worker API (Milestone 11).
+ * Wire protocol for the Conzyx cloud worker API (Milestone 11).
  *
  * Base URL: the worker's `endpointUrl` (e.g. https://worker.example.com).
  * Auth: `Authorization: Bearer <authKey>` on every call. A blank auth key is

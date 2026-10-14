@@ -56,7 +56,7 @@ data class SensitivePathResult(
 )
 
 /**
- * Mobile Harness Extended Granular Permission & Safety Engine.
+ * Conzyx Granular Permission & Safety Engine.
  * Evaluates requests against active safety policies, sensitive-file boundaries,
  * dangerous command detectors, and emergency kill switches.
  */

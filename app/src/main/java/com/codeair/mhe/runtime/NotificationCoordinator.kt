@@ -11,7 +11,7 @@ import com.codeair.mhe.MainActivity
 import com.codeair.mhe.R
 
 /**
- * Single Android notification policy for Mobile Harness Extended.
+ * Single Android notification policy for Conzyx.
  *
  * Runtime events originate locally from the Android/Linux execution stack, so
  * system notifications do not depend on Firebase or a network connection.
@@ -33,7 +33,7 @@ object NotificationCoordinator {
                 "Running coding tasks",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shows progress while Mobile Harness Extended is working in the background"
+                description = "Shows progress while Conzyx is working in the background"
             },
         )
         manager.createNotificationChannel(
@@ -48,10 +48,10 @@ object NotificationCoordinator {
         manager.createNotificationChannel(
             NotificationChannel(
                 REMOTE_CHANNEL_ID,
-                "Mobile Harness Extended updates",
+                "Conzyx updates",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "Remote updates for Mobile Harness Extended projects and agent sessions"
+                description = "Remote updates for Conzyx projects and agent sessions"
             },
         )
     }
