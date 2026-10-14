@@ -242,7 +242,7 @@ jobs:
           previous_badging="$($AAPT2 dump badging "$PREVIOUS")"
           echo "$previous_badging" | grep -q "versionCode='20'"
           echo "$previous_badging" | grep -q "versionName='1.0.19'"
-          VERSION_NAME=$(awk -F'"' '/versionName = "/ {print $2; exit}' app/build.gradle.kts)
+          VERSION_NAME=$(sed -n 's/.*val appVersionName = .*?: "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
           VERSION_CODE=$(awk -F'= ' '/versionCode = / {print $2; exit}' app/build.gradle.kts)
           echo "$current_badging" | grep -q "versionCode='$VERSION_CODE'"
           echo "$current_badging" | grep -q "versionName='$VERSION_NAME'"
@@ -363,7 +363,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          VERSION_NAME=$(awk -F'"' '/versionName = "/ {print $2; exit}' app/build.gradle.kts)
+          VERSION_NAME=$(sed -n 's/.*val appVersionName = .*?: "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
           VERSION_CODE=$(awk -F'= ' '/versionCode = / {print $2; exit}' app/build.gradle.kts)
           TAG="v$VERSION_NAME"
           ONLINE="app-online-release.apk"
