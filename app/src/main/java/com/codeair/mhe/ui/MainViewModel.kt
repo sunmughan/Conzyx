@@ -157,6 +157,15 @@ private data class TranscriptWrite(
     val messages: List<ChatMessage>,
 )
 
+/**
+ * QA H29: the startup cleanup policy — a quick project is empty (and
+ * safe to delete) only when it has no user messages AND no user files.
+ * Non-quick projects are never cleaned. Pure function so the policy is
+ * unit-tested directly; the scan itself needs disk I/O.
+ */
+internal fun isEmptyQuickProject(kind: ProjectKind, userMessages: Int, userFiles: Int): Boolean =
+    kind == ProjectKind.QUICK_PROJECT && userMessages == 0 && userFiles == 0
+
 private data class ImportedZipProject(
     val project: Project,
     val sourceAttachment: ChatAttachment,
@@ -818,9 +827,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(provider = testProvider) }
         }
 
-        val loadedProjects = preferences.loadProjects()
-        val cleanedProjects = loadedProjects.filter { project ->
-            if (project.kind == ProjectKind.QUICK_PROJECT) {
+        // QA H29: the startup cleanup + warm restore used to run
+        // synchronously on the main thread at the end of init: a SECOND
+        // full loadProjects, loadMessages for EVERY chat of EVERY quick
+        // project, and a full workspace walk per project — cold-start
+        // jank / ANR on large transcripts. It now runs on
+        // Dispatchers.IO and reuses the project list already loaded for
+        // the initial state (no second loadProjects). The active project
+        // is never cleaned, and each candidate is re-checked against the
+        // current active project before deletion, so a project opened
+        // while the scan runs cannot be wiped under the user.
+        viewModelScope.launch(Dispatchers.IO) {
+            val deletedIds = mutableListOf<String>()
+            for (project in initialProjects) {
+                if (project.kind != ProjectKind.QUICK_PROJECT) continue
+                if (project.id == initialActiveProject?.id) continue
+                if (_state.value.activeProject?.id == project.id) continue
                 val chats = preferences.loadProjectChats(project.id)
                 val userMessages = chats.sumOf { preferences.loadMessages(project.id, it.id).count { m -> m.fromUser } }
                 val workspaceDir = File(application.filesDir, "workspaces/${project.id}")
@@ -829,29 +851,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         file.isFile && !file.name.startsWith(".claude") && file.name != ".pocket-dev-stacks.json"
                     }.count()
                 } else 0
-                val keep = userMessages > 0 || userFiles > 0
-                if (!keep) {
-                    workspaceDir.deleteRecursively()
-                    terminalCoordinator.deleteTerminalHistory(project.id)
-                    preferences.deleteProjectChats(project.id)
-                }
-                keep
-            } else true
-        }
-        if (cleanedProjects.size != loadedProjects.size) {
-            preferences.saveProjects(cleanedProjects)
-            _state.update { it.copy(projects = cleanedProjects) }
-        }
-        if (isWarmReady && initialActiveProject != null && cleanedProjects.any { it.id == initialActiveProject.id }) {
-            configureBridgeRoots(initialActiveProject.id, initialActiveProject.rootPath)
-            val terminal = loadProjectTerminal(initialActiveProject)
-            _state.update {
-                it.copy(
-                    projectTerminalLines = terminal.lines,
-                    projectTerminalCwd = terminal.cwd,
-                )
+                if (!isEmptyQuickProject(project.kind, userMessages, userFiles)) continue
+                // Re-check: the user may have opened this project while the
+                // scan was running.
+                if (_state.value.activeProject?.id == project.id) continue
+                workspaceDir.deleteRecursively()
+                terminalCoordinator.deleteTerminalHistory(project.id)
+                preferences.deleteProjectChats(project.id)
+                deletedIds.add(project.id)
             }
-            refreshProjectFiles()
+            if (deletedIds.isNotEmpty()) {
+                // Apply to CURRENT state (not the stale initial list) so a
+                // project created while the scan ran is never wiped.
+                _state.update { current ->
+                    current.copy(projects = current.projects.filter { it.id !in deletedIds })
+                }
+                preferences.saveProjects(_state.value.projects)
+            }
+            if (isWarmReady && initialActiveProject != null) {
+                configureBridgeRoots(initialActiveProject.id, initialActiveProject.rootPath)
+                val terminal = loadProjectTerminal(initialActiveProject)
+                _state.update {
+                    it.copy(
+                        projectTerminalLines = terminal.lines,
+                        projectTerminalCwd = terminal.cwd,
+                    )
+                }
+                refreshProjectFiles()
+            }
         }
     }
 
