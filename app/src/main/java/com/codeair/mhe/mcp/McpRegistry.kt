@@ -55,76 +55,7 @@ class McpRegistry(
     /**
      * Curated list of discoverable MCP servers available for installation.
      */
-    val catalogTemplates: List<McpCatalogTemplate> = listOf(
-        McpCatalogTemplate(
-            id = "sqlite",
-            name = "SQLite Server",
-            description = "Interact with and query SQLite databases directly via MCP tools.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-sqlite",
-            defaultArgs = listOf("--db", "workspace.db"),
-            category = "Database"
-        ),
-        McpCatalogTemplate(
-            id = "filesystem",
-            name = "Filesystem Explorer",
-            description = "Read, write, and inspect local project directories with secure boundaries.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-filesystem",
-            defaultArgs = listOf("/workspace"),
-            category = "Storage"
-        ),
-        McpCatalogTemplate(
-            id = "github",
-            name = "GitHub Platform",
-            description = "Search repos, create issues, view pull requests, and commit files via GitHub API.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-github",
-            requiredEnv = listOf("GITHUB_PERSONAL_ACCESS_TOKEN"),
-            category = "Development"
-        ),
-        McpCatalogTemplate(
-            id = "postgres",
-            name = "PostgreSQL Server",
-            description = "Inspect database schemas, query tables, and execute SQL statements.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-postgres",
-            requiredEnv = listOf("POSTGRES_CONNECTION_STRING"),
-            category = "Database"
-        ),
-        McpCatalogTemplate(
-            id = "fetch",
-            name = "Fetch & Markdown",
-            description = "Fetch web pages, extract content, and convert HTML to readable Markdown for agents.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-fetch",
-            category = "Web"
-        ),
-        McpCatalogTemplate(
-            id = "puppeteer",
-            name = "Puppeteer Automation",
-            description = "Automate browser interactions, capture screenshots, and scrape dynamic pages.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-puppeteer",
-            category = "Web Automation"
-        ),
-        McpCatalogTemplate(
-            id = "memory",
-            name = "Knowledge Graph Memory",
-            description = "Persistent graph-based memory for entities, relationships, and context recall.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-memory",
-            category = "Agent Memory"
-        ),
-        McpCatalogTemplate(
-            id = "brave-search",
-            name = "Brave Search",
-            description = "Perform private web searches and retrieve up-to-date web answers.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-brave-search",
-            requiredEnv = listOf("BRAVE_API_KEY"),
-            category = "Search"
-        ),
-        McpCatalogTemplate(
-            id = "sequential-thinking",
-            name = "Sequential Thinking",
-            description = "Structured step-by-step reasoning and hypothesis refinement server.",
-            defaultCommand = "npx -y @modelcontextprotocol/server-sequential-thinking",
-            category = "Reasoning"
-        )
-    )
+    val catalogTemplates: List<McpCatalogTemplate> = McpBuiltInCatalogTemplates
 
     fun listServers(projectId: String? = null): List<McpServerInfo> {
         return servers.values

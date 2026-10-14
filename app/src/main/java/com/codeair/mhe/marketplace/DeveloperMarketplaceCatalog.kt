@@ -1,5 +1,7 @@
 package com.codeair.mhe.marketplace
 
+import com.codeair.mhe.mcp.McpBuiltInCatalogTemplates
+import com.codeair.mhe.mcp.McpCatalogTemplate
 import java.util.UUID
 
 enum class MarketplaceCategory {
@@ -48,55 +50,23 @@ data class MarketplaceItem(
  */
 object DeveloperMarketplaceCatalog {
 
-    val curatedCatalog: List<MarketplaceItem> = listOf(
-        // MCP Servers
-        MarketplaceItem(
-            id = "catalog-mcp-postgres",
-            name = "PostgreSQL MCP Server",
-            category = MarketplaceCategory.MCP_SERVERS,
-            author = "Model Context Protocol",
-            description = "Read, inspect schemas, and query local & remote Postgres databases securely.",
-            installUrl = "npx -y @modelcontextprotocol/server-postgres",
-            tags = listOf("sql", "database", "postgres", "mcp"),
-        ),
-        MarketplaceItem(
-            id = "catalog-mcp-puppeteer",
-            name = "Puppeteer Browser MCP",
-            category = MarketplaceCategory.MCP_SERVERS,
-            author = "Model Context Protocol",
-            description = "Automate Chromium browser, inspect DOM, take screenshots, and scrape web pages.",
-            installUrl = "npx -y @modelcontextprotocol/server-puppeteer",
-            tags = listOf("browser", "automation", "dom", "headless"),
-        ),
-        MarketplaceItem(
-            id = "catalog-mcp-github",
-            name = "GitHub Context MCP",
-            category = MarketplaceCategory.MCP_SERVERS,
-            author = "GitHub",
-            description = "Fetch PRs, issues, diffs, and repository metadata directly into agent context.",
-            installUrl = "npx -y @modelcontextprotocol/server-github",
-            tags = listOf("github", "git", "pull-request", "ci"),
-        ),
-        MarketplaceItem(
-            id = "catalog-mcp-filesystem",
-            name = "Filesystem Extended MCP",
-            category = MarketplaceCategory.MCP_SERVERS,
-            author = "Anthropic",
-            description = "High-speed safe directory traversal, file search, and sandbox manipulation.",
-            installUrl = "npx -y @modelcontextprotocol/server-filesystem",
-            tags = listOf("files", "storage", "io"),
-        ),
-        MarketplaceItem(
-            id = "catalog-mcp-brave-search",
-            name = "Brave Search & Web Research MCP",
-            category = MarketplaceCategory.MCP_SERVERS,
-            author = "Brave Software",
-            description = "Real-time web search and content distillation for grounded factual coding.",
-            installUrl = "npx -y @modelcontextprotocol/server-brave-search",
-            tags = listOf("web", "search", "research"),
-        ),
+    /**
+     * The marketplace's MCP-server listings are derived from the same
+     * template list the Skills screen installs from, so the two surfaces
+     * can never disagree on names, descriptions, or install commands.
+     */
+    fun McpCatalogTemplate.toMarketplaceItem(): MarketplaceItem = MarketplaceItem(
+        id = "catalog-mcp-$id",
+        name = name,
+        category = MarketplaceCategory.MCP_SERVERS,
+        author = "Model Context Protocol",
+        description = description,
+        installUrl = (listOf(defaultCommand) + defaultArgs).joinToString(" "),
+        tags = listOf("mcp") + category.lowercase().split(" ").filter { it.isNotBlank() },
+    )
 
-        // Specialized Skills
+    val curatedCatalog: List<MarketplaceItem> =
+        McpBuiltInCatalogTemplates.map { it.toMarketplaceItem() } + listOf(
         MarketplaceItem(
             id = "catalog-skill-compose-architect",
             name = "Jetpack Compose Architect",

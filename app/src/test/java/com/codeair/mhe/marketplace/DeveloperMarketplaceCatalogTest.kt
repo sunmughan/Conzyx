@@ -123,6 +123,26 @@ class DeveloperMarketplaceCatalogTest {
     }
 
     @Test
+    fun marketplaceMcpListingsDeriveFromSharedTemplates() {
+        // QA M-SECMKT: the marketplace MCP catalog and the Skills MCP
+        // catalog must not drift — listings derive from McpBuiltInCatalogTemplates.
+        val mcpItems = DeveloperMarketplaceCatalog.curatedCatalog
+            .filter { it.category == MarketplaceCategory.MCP_SERVERS }
+        val templates = com.codeair.mhe.mcp.McpBuiltInCatalogTemplates
+        assertEquals(templates.size, mcpItems.size)
+        templates.forEach { template ->
+            val item = mcpItems.find { it.id == "catalog-mcp-${template.id}" }
+            assertNotNull("Marketplace listing missing for template ${template.id}", item)
+            assertEquals(template.name, item!!.name)
+            assertEquals(template.description, item.description)
+            assertEquals(
+                (listOf(template.defaultCommand) + template.defaultArgs).joinToString(" "),
+                item.installUrl
+            )
+        }
+    }
+
+    @Test
     fun marketplaceItemDefaultsToNoSocialProof() {
         val item = MarketplaceItem(
             name = "X",

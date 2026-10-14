@@ -96,7 +96,11 @@ class MarketplaceCoordinator(
      */
     private fun registerMarketplaceMcpServer(item: MarketplaceItem): String {
         if (item.category != MarketplaceCategory.MCP_SERVERS) return ""
-        val server = marketplaceItemToMcpServer(item)
+        val template = com.codeair.mhe.mcp.McpBuiltInCatalogTemplates
+            .find { "catalog-mcp-${it.id}" == item.id }
+        val server = marketplaceItemToMcpServer(item)?.copy(
+            secretEnvNames = template?.requiredEnv ?: emptyList()
+        )
             ?: return " (MCP server not registered: install value is not a command)"
         mcpRegistry.installServer(server)
         onMcpServersChanged()
