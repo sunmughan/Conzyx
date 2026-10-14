@@ -394,7 +394,7 @@ class AppFactoryLoopTest {
     }
 
     @Test
-    fun verifyStage_failsHonestlyWhenBuildSucceedsWithNullOutput() {
+    fun buildStage_failsHonestlyWhenBuildSucceedsWithNullOutput() {
         val tempDir = Files.createTempDirectory("factoryloop").toFile()
         try {
             val nullOutputBuild =
@@ -410,9 +410,10 @@ class AppFactoryLoopTest {
                 FactoryPipelineConfig(verifySignature = true),
             )
             assertFalse("pipeline must fail, not crash", result.success)
-            val verify = result.stageResults.first { it.stage == FactoryStage.VERIFY_SIGNATURE }
-            assertFalse(verify.success)
-            assertTrue(verify.message.contains("no output file"))
+            val build = result.stageResults.first { it.stage == FactoryStage.BUILD }
+            assertFalse(build.success)
+            assertTrue(build.message.contains("no output artifact"))
+            assertNull(result.outputArtifact)
         } finally {
             tempDir.deleteRecursively()
         }
