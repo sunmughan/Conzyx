@@ -211,12 +211,12 @@ fun AgentScreen(
     var openRouterAllowFallbacks by rememberSaveable(state.provider.openRouterAllowFallbacks) {
         mutableStateOf(state.provider.openRouterAllowFallbacks)
     }
-    var apiKey by rememberSaveable(selectedKind) { mutableStateOf(getSavedApiKey(selectedKind)) }
+    var apiKey by remember(selectedKind) { mutableStateOf(getSavedApiKey(selectedKind)) }
     var savedKeys by remember(selectedKind, state.activeApiKeyName) {
         mutableStateOf(getSavedApiKeys(selectedKind))
     }
     var newKeyName by rememberSaveable(selectedKind) { mutableStateOf("") }
-    var newApiKey by rememberSaveable(selectedKind) { mutableStateOf("") }
+    var newApiKey by remember(selectedKind) { mutableStateOf("") }
     var newKeyVisible by rememberSaveable(selectedKind, savedKeys.isEmpty()) { mutableStateOf(savedKeys.isEmpty()) }
     var models by remember(selectedKind, baseUrl) { mutableStateOf(emptyList<DiscoveredModel>()) }
     var modelSearch by rememberSaveable(selectedKind) { mutableStateOf("") }
@@ -2280,7 +2280,7 @@ private fun AgentCodexCard(
 ) {
     val currentProfile = state.provider.takeIf { it.kind == ProviderKind.OPENAI }
     var model by rememberSaveable { mutableStateOf(currentProfile?.model.orEmpty()) }
-    var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.OPENAI)) }
+    var apiKey by remember { mutableStateOf(getSavedApiKey(ProviderKind.OPENAI)) }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var savedTick by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
@@ -2382,7 +2382,7 @@ private fun AgentCustomCard(
     }
     var baseUrl by rememberSaveable { mutableStateOf(currentProfile?.baseUrl.orEmpty()) }
     var model by rememberSaveable { mutableStateOf(currentProfile?.model.orEmpty()) }
-    var apiKey by rememberSaveable { mutableStateOf(getSavedApiKey(ProviderKind.CUSTOM)) }
+    var apiKey by remember { mutableStateOf(getSavedApiKey(ProviderKind.CUSTOM)) }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var savedTick by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }

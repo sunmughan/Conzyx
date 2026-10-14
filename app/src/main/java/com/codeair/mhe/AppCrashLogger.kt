@@ -16,8 +16,7 @@ import java.util.Locale
  * Last-resort, synchronous crash/startup logger.
  *
  * The canonical log is kept in the app's private internal files directory as
- * crash.log. A mirror is also maintained in getExternalFilesDir(null) so the
- * user can retrieve the same log without granting broad storage access.
+ * crash.log. It is never mirrored to external storage.
  *
  * The logger deliberately does not depend on coroutines, Compose, preferences,
  * databases, networking, or the runtime installer: it must remain usable when
@@ -35,9 +34,6 @@ object AppCrashLogger {
     @Volatile
     private var internalFile: File? = null
 
-    @Volatile
-    private var externalFile: File? = null
-
     private val lock = Any()
     private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z", Locale.US)
 
@@ -48,7 +44,6 @@ object AppCrashLogger {
 
             val app = context.applicationContext
             internalFile = File(app.filesDir, FILE_NAME)
-            externalFile = app.getExternalFilesDir(null)?.let { File(it, FILE_NAME) }
 
             val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -73,7 +68,6 @@ object AppCrashLogger {
                     appendLine("device=${Build.MANUFACTURER} ${Build.MODEL}")
                     appendLine("abis=${Build.SUPPORTED_ABIS.joinToString()}")
                     appendLine("internalLog=${internalFile?.absolutePath}")
-                    appendLine("externalMirror=${externalFile?.absolutePath ?: "unavailable"}")
                     appendLine("============================================================")
                 },
             )
@@ -126,27 +120,22 @@ object AppCrashLogger {
 
     fun internalLogFile(context: Context): File = File(context.filesDir, FILE_NAME)
 
-    fun externalLogFile(context: Context): File? =
-        context.getExternalFilesDir(null)?.let { File(it, FILE_NAME) }
-
     private fun timestamp(): String = synchronized(timestampFormat) {
         timestampFormat.format(Date())
     }
 
     private fun write(text: String) {
         synchronized(lock) {
-            val targets = listOfNotNull(internalFile, externalFile).distinctBy { it.absolutePath }
-            for (target in targets) {
-                runCatching {
-                    target.parentFile?.mkdirs()
-                    FileOutputStream(target, true).use { output ->
-                        output.write(text.toByteArray(StandardCharsets.UTF_8))
-                        output.fd.sync()
-                    }
-                    trimIfNeeded(target)
-                }.onFailure { error ->
-                    Log.e(TAG, "Unable to persist crash log at ${target.absolutePath}", error)
+            val target = internalFile ?: return
+            runCatching {
+                target.parentFile?.mkdirs()
+                FileOutputStream(target, true).use { output ->
+                    output.write(text.toByteArray(StandardCharsets.UTF_8))
+                    output.fd.sync()
                 }
+                trimIfNeeded(target)
+            }.onFailure { error ->
+                Log.e(TAG, "Unable to persist crash log at ${target.absolutePath}", error)
             }
         }
     }

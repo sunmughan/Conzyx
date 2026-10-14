@@ -3,12 +3,23 @@ package com.codeair.mhe.runtime
 import android.content.Context
 import java.io.File
 import java.io.RandomAccessFile
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+
+internal fun sanitizeAntigravityEmail(email: String): String =
+    email.lowercase().replace(Regex("[^a-z0-9._-]"), "_")
+
+internal fun antigravityAccountFolderName(email: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(email.lowercase().toByteArray(Charsets.UTF_8))
+    val suffix = digest.joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }.take(16)
+    return "${sanitizeAntigravityEmail(email)}_$suffix"
+}
 
 /** Drives only agy's official interactive OAuth flow; it never reads the resulting credentials. */
 class AntigravityAuthController(
@@ -39,12 +50,19 @@ class AntigravityAuthController(
     ).apply { mkdirs() }
 
     private fun accountCredentialFile(email: String) = File(
-        accountsDir(),
-        "${sanitizeEmail(email)}/antigravity-oauth-token",
+        accountFolder(email),
+        "antigravity-oauth-token",
     )
 
-    private fun sanitizeEmail(email: String): String =
-        email.lowercase().replace(Regex("[^a-z0-9._-]"), "_")
+    private fun accountFolder(email: String): File {
+        val dir = accountsDir()
+        val migrated = File(dir, antigravityAccountFolderName(email))
+        val legacy = File(dir, sanitizeAntigravityEmail(email))
+        if (legacy.isDirectory && !migrated.exists()) {
+            runCatching { legacy.renameTo(migrated) }
+        }
+        return if (migrated.exists() || !legacy.exists()) migrated else legacy
+    }
 
     fun getSavedAccounts(): List<AntigravityAccount> {
         val raw = prefs.getString("accounts_json", "[]") ?: "[]"
@@ -227,7 +245,7 @@ class AntigravityAuthController(
     }
 
     suspend fun removeAccount(email: String) = withContext(Dispatchers.IO) {
-        val folder = File(accountsDir(), sanitizeEmail(email))
+        val folder = accountFolder(email)
         if (folder.isDirectory) folder.deleteRecursively()
         val remaining = getSavedAccounts().filter { !it.email.equals(email, ignoreCase = true) }
         saveAccounts(remaining)

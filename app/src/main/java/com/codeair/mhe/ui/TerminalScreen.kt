@@ -510,7 +510,7 @@ fun TerminalScreen(
                         // empty until the user types. A permanent prompt/cursor here
                         // changed the console height and made auto-scroll look like a
                         // full terminal refresh on every blink.
-                        val prefix = if (isRunning) "" else "root@pocket:$terminalPromptPath# "
+                        val prefix = if (isRunning) "" else "root@mhe:$terminalPromptPath# "
                         val prefixVisualTransformation = remember(prefix, isDark) {
                             VisualTransformation { text ->
                                 val transformed = buildAnnotatedString {
@@ -709,7 +709,7 @@ private fun TerminalCommandPrompt(promptPath: String, command: String, isDark: B
     val promptText = remember(promptPath, command, isDark) {
         buildAnnotatedString {
             withStyle(SpanStyle(color = promptGreen, fontWeight = FontWeight.Bold)) {
-                append("root@pocket:$promptPath# ")
+                append("root@mhe:$promptPath# ")
             }
             withStyle(SpanStyle(color = commandColor, fontWeight = FontWeight.SemiBold)) {
                 append(command)

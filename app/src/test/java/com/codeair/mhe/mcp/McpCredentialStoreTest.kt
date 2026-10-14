@@ -180,4 +180,20 @@ class McpCredentialStoreTest {
             McpCredentialStore.defaultKeyProviderForTests = null
         }
     }
+
+    @Test
+    fun `keystore provider clearKey removes the legacy sidecar key file`() {
+        val backendDir = File(baseDir, "keystore_clear_test").apply { mkdirs() }
+        val legacyKey = File(backendDir, "mcp_cred.key")
+        legacyKey.writeBytes(ByteArray(32) { it.toByte() })
+        val provider = AndroidKeyStoreKeyProvider(
+            alias = "test_mcp_credential_key",
+            legacyKeyFile = legacyKey,
+            storageFile = File(backendDir, "mcp_credentials.json"),
+        )
+
+        provider.clearKey()
+
+        assertFalse("legacy sidecar key must not linger after clear", legacyKey.exists())
+    }
 }

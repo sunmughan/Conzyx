@@ -97,6 +97,19 @@ class McpPlatformTest {
     }
 
     @Test
+    fun `search catalog ranks exact and prefix name matches first`() {
+        val results = registry.searchCatalog("github")
+        assertTrue(results.isNotEmpty())
+        val firstNameMatch = results.indexOfFirst { it.name.lowercase().contains("github") }
+        val firstDescriptionOnlyMatch = results.indexOfFirst {
+            !it.name.lowercase().contains("github") && it.description.lowercase().contains("github")
+        }
+        if (firstDescriptionOnlyMatch >= 0) {
+            assertTrue(firstNameMatch < firstDescriptionOnlyMatch)
+        }
+    }
+
+    @Test
     fun `mcp permission manager enforces project level and global boundaries`() {
         val server = McpServerInfo(
             id = "test-server",

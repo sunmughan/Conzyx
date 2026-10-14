@@ -214,12 +214,19 @@ class McpRegistry(
     fun searchCatalog(query: String): List<McpCatalogTemplate> {
         if (query.isBlank()) return catalogTemplates
         val q = query.lowercase().trim()
-        return catalogTemplates.filter {
-            it.name.lowercase().contains(q) ||
-            it.description.lowercase().contains(q) ||
-            it.category.lowercase().contains(q) ||
-            it.id.lowercase().contains(q)
-        }
+        return catalogTemplates.mapNotNull { template ->
+            val name = template.name.lowercase()
+            val rank = when {
+                name == q -> 0
+                name.startsWith(q) -> 1
+                name.contains(q) -> 2
+                template.description.lowercase().contains(q) -> 3
+                template.category.lowercase().contains(q) -> 4
+                template.id.lowercase().contains(q) -> 5
+                else -> return@mapNotNull null
+            }
+            rank to template
+        }.sortedBy { it.first }.map { it.second }
     }
 
     private fun loadPersisted() {

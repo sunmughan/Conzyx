@@ -1570,11 +1570,11 @@ fun PreviewTab(
                                 onClick = {
                                     val darkJs = """
                                         (function() {
-                                            var el = document.getElementById('pocket-dark-mode');
+                                            var el = document.getElementById('mhe-dark-mode');
                                             if (el) { el.remove(); }
                                             else {
                                                 var s = document.createElement('style');
-                                                s.id = 'pocket-dark-mode';
+                                                s.id = 'mhe-dark-mode';
                                                 s.innerHTML = 'html { filter: invert(90%) hue-rotate(180deg) !important; background: #121212 !important; } img, video, canvas { filter: invert(100%) hue-rotate(180deg) !important; }';
                                                 document.head.appendChild(s);
                                             }

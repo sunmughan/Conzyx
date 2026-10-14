@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import com.codeair.mhe.marketplace.DeveloperMarketplaceCatalog
 import com.codeair.mhe.marketplace.MarketplaceCategory
 import com.codeair.mhe.marketplace.MarketplaceItem
+import com.codeair.mhe.marketplace.SearchSort
 
 /**
  * AI Developer Marketplace (Phase 14).
@@ -93,6 +94,7 @@ fun MarketplaceScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<MarketplaceCategory?>(null) }
     var showOnlyInstalled by rememberSaveable { mutableStateOf(false) }
+    var sortBy by remember { mutableStateOf(SearchSort.RELEVANCE) }
     // Install state is owned by MarketplaceInstallManager (durable). The screen never
     // mutates install state locally: it renders the manager's set and delegates
     // install/uninstall to the callbacks, which report real results.
@@ -100,27 +102,22 @@ fun MarketplaceScreen(
     var showPublishDialog by rememberSaveable { mutableStateOf(false) }
     var catalogVersion by remember { mutableStateOf(0) }
 
-    val allItems = remember(searchQuery, selectedCategory, showOnlyInstalled, catalogVersion, installedSet) {
-        val base = if (selectedCategory == null) {
-            DeveloperMarketplaceCatalog.getAllItems()
-        } else {
-            DeveloperMarketplaceCatalog.filterByCategory(selectedCategory!!)
-        }
-        val searched = if (searchQuery.isBlank()) {
-            base
-        } else {
-            val q = searchQuery.trim().lowercase()
-            base.filter {
-                it.name.lowercase().contains(q) ||
-                    it.description.lowercase().contains(q) ||
-                    it.author.lowercase().contains(q) ||
-                    it.tags.any { tag -> tag.lowercase().contains(q) }
-            }
-        }
-        if (showOnlyInstalled) {
-            searched.filter { installedSet.contains(it.id) }
-        } else {
+    val allItems = remember(searchQuery, selectedCategory, showOnlyInstalled, catalogVersion, installedSet, sortBy) {
+        val searched = DeveloperMarketplaceCatalog.search(searchQuery)
+        val inCategory = if (selectedCategory == null) {
             searched
+        } else {
+            searched.filter { it.category == selectedCategory }
+        }
+        val visible = if (showOnlyInstalled) {
+            inCategory.filter { installedSet.contains(it.id) }
+        } else {
+            inCategory
+        }
+        when (sortBy) {
+            SearchSort.RATING -> visible.sortedByDescending { it.rating }
+            SearchSort.DOWNLOADS -> visible.sortedByDescending { it.downloads }
+            SearchSort.RELEVANCE -> visible
         }
     }
 
@@ -246,6 +243,37 @@ fun MarketplaceScreen(
                         },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
+                    )
+                }
+            }
+
+            // Sort control
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Sort:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SearchSort.entries.forEach { sort ->
+                    FilterChip(
+                        selected = sortBy == sort,
+                        onClick = { sortBy = sort },
+                        label = {
+                            Text(
+                                when (sort) {
+                                    SearchSort.RELEVANCE -> "Relevance"
+                                    SearchSort.RATING -> "Top rated"
+                                    SearchSort.DOWNLOADS -> "Most installed"
+                                }
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
                         ),
                     )
                 }

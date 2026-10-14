@@ -109,6 +109,7 @@ class AndroidKeyStoreKeyProvider(
             java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 .deleteEntry(alias)
         }
+        runCatching { legacyKeyFile.delete() }
     }
 
     private fun getOrCreateKeystoreKey(): SecretKey {

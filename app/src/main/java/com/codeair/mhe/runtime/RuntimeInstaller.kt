@@ -1625,7 +1625,7 @@ class RuntimeInstaller(private val context: Context) {
             "(curl -fsSL --connect-timeout 15 'https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ondrej-php.gpg 2>/dev/null || " +
             "add-apt-repository -y ppa:ondrej/php 2>/dev/null || true); " +
             "if [ -f /etc/apt/trusted.gpg.d/ondrej-php.gpg ]; then " +
-            "echo 'deb http://ppa.launchpad.net/ondrej/php/ubuntu focal main' > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list && " +
+            "echo 'deb https://ppa.launchpad.net/ondrej/php/ubuntu focal main' > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list && " +
             "apt-get -o DPkg::Lock::Timeout=120 update; fi"
         runGuestCommand(
             proot = proot,

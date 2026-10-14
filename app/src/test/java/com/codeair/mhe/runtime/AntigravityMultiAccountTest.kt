@@ -322,4 +322,28 @@ class AntigravityMultiAccountTest {
 
         assertEquals(listOf(official), antigravitySignOutAllTargets(official, missing))
     }
+
+    @Test
+    fun `colliding emails map to distinct account folders`() {
+        val plus = antigravityAccountFolderName("a+b@c.com")
+        val underscore = antigravityAccountFolderName("a_b@c.com")
+        assertEquals(sanitizeAntigravityEmail("a+b@c.com"), sanitizeAntigravityEmail("a_b@c.com"))
+        assertFalse(plus == underscore)
+    }
+
+    @Test
+    fun `account folder name is stable and case-insensitive`() {
+        val lower = antigravityAccountFolderName("User@Example.com")
+        val upper = antigravityAccountFolderName("user@example.com")
+        assertEquals(lower, upper)
+        assertEquals(lower, antigravityAccountFolderName("user@example.com"))
+    }
+
+    @Test
+    fun `account folder name is a single safe path segment`() {
+        val name = antigravityAccountFolderName("weird+name@exa mple.com")
+        assertFalse(name.contains("/"))
+        assertFalse(name.contains("\\"))
+        assertTrue(name.isNotBlank())
+    }
 }
