@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
@@ -304,7 +305,7 @@ fun TerminalScreen(
                             shape = RoundedCornerShape(8.dp),
                             color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
                             border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
-                            modifier = Modifier.height(30.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -441,7 +442,7 @@ fun TerminalScreen(
             val promptGreen = if (isDark) PocketGreen else Color(0xFF0D7A3E)
             val commandTextColor = if (isDark) Color(0xFFF0F6FC) else MaterialTheme.colorScheme.onSurface
             val outputTextColor = if (isDark) Color(0xFFC9D1D9) else MaterialTheme.colorScheme.onSurface
-            val emptyStateColor = if (isDark) Color(0xFF6E7681) else MaterialTheme.colorScheme.onSurfaceVariant
+            val emptyStateColor = if (isDark) Color(0xFF8B949E) else MaterialTheme.colorScheme.onSurfaceVariant
 
             // Console output area
             Surface(
@@ -675,7 +676,7 @@ private fun TerminalKeyButton(
     androidx.compose.material3.OutlinedButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-        modifier = Modifier.height(34.dp).then(if (fixedWidth) Modifier.width(78.dp) else Modifier),
+        modifier = Modifier.heightIn(min = 48.dp).then(if (fixedWidth) Modifier.width(78.dp) else Modifier),
         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
             containerColor = if (active) PocketOrange.copy(alpha = 0.18f) else Color.Transparent,
             contentColor = if (active) PocketOrange else MaterialTheme.colorScheme.onSurface,

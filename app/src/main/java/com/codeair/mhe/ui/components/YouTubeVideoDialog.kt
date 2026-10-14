@@ -2,6 +2,7 @@ package com.codeair.mhe.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -58,7 +59,7 @@ import androidx.compose.ui.window.Dialog
 import com.codeair.mhe.util.YouTubeUrlValidator
 import com.codeair.mhe.util.YouTubeVideoInfo
 
-val YouTubeBrandRed = Color(0xFFFF0000)
+val YouTubeBrandRed = Color(0xFFE60000)
 
 private val FOCUS_PRESETS = listOf(
     "Full Deep Summary",
@@ -88,6 +89,7 @@ fun YouTubeVideoDialog(
     val isValid = validationResult?.isSuccess == true
     val videoInfo = validationResult?.getOrNull()
     val errorMessage = validationResult?.exceptionOrNull()?.message
+    val validationGreen = if (isSystemInDarkTheme()) Color(0xFF81C784) else Color(0xFF2E7D32)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -204,7 +206,7 @@ fun YouTubeVideoDialog(
                         }
                     },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = if (isValid) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary,
+                        focusedBorderColor = if (isValid) validationGreen else MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     ),
                 )
@@ -220,14 +222,14 @@ fun YouTubeVideoDialog(
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = "Valid",
-                                    tint = Color(0xFF2E7D32),
+                                    tint = validationGreen,
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Text(
                                     text = "Ready to analyze: Video ID [${videoInfo.videoId}]" +
                                             if (videoInfo.isShort) " (Short)" else if (videoInfo.isLive) " (Live)" else "",
                                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                    color = Color(0xFF2E7D32),
+                                    color = validationGreen,
                                 )
                             }
                         } else if (errorMessage != null) {
