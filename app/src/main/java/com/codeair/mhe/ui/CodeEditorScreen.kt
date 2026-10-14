@@ -1272,6 +1272,7 @@ fun CodeEditorScreen(
                 Modifier
                     .fillMaxWidth()
                     .height(460.dp)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 18.dp),
             ) {
                 Text("Call Hierarchy: '${getSymbolUnderCursor()}'", style = MaterialTheme.typography.titleLarge)
@@ -1303,8 +1304,8 @@ fun CodeEditorScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(filePath.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium)
-                        Text(filePath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(filePath.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(filePath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
                 navigationIcon = {
