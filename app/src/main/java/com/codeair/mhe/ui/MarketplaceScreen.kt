@@ -1,8 +1,15 @@
 package com.codeair.mhe.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +29,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
@@ -35,6 +43,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -43,6 +53,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -93,6 +104,8 @@ fun MarketplaceScreen(
     initiallyInstalledIds: Set<String> = emptySet(),
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var searchOpen by remember { mutableStateOf(false) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<MarketplaceCategory?>(null) }
     var showOnlyInstalled by rememberSaveable { mutableStateOf(false) }
     var sortBy by remember { mutableStateOf(SearchSort.RELEVANCE) }
@@ -146,20 +159,32 @@ fun MarketplaceScreen(
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                         )
-                        Column {
-                            Text("Marketplace", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Agents, MCP, Skills & Templates", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy((-1).dp),
+                        ) {
+                            Text(
+                                "Marketplace",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                lineHeight = 21.sp,
+                            )
+                            Text(
+                                "Agents, MCP, Skills & Templates",
+                                fontSize = 11.sp,
+                                lineHeight = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 },
                 actions = {
+                    IconButton(onClick = { searchOpen = !searchOpen }) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search marketplace",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     IconButton(onClick = { showPublishDialog = true }) {
                         Icon(
                             Icons.Default.Add,
@@ -174,26 +199,17 @@ fun MarketplaceScreen(
             )
         },
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(padding),
         ) {
-            // Search Input
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search catalog by name, author, or tags...") },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-            )
-
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
             // Category & Installed Filter Chips
             Row(
                 modifier = Modifier
@@ -252,30 +268,57 @@ fun MarketplaceScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.End,
             ) {
                 Text(
-                    "Sort:",
+                    when (sortBy) {
+                        SearchSort.RELEVANCE -> "Relevance"
+                        SearchSort.RATING -> "Top rated"
+                        SearchSort.DOWNLOADS -> "Most installed"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SearchSort.entries.forEach { sort ->
-                    FilterChip(
-                        selected = sortBy == sort,
-                        onClick = { sortBy = sort },
-                        label = {
-                            Text(
-                                when (sort) {
-                                    SearchSort.RELEVANCE -> "Relevance"
-                                    SearchSort.RATING -> "Top rated"
-                                    SearchSort.DOWNLOADS -> "Most installed"
-                                }
+                Box {
+                    IconButton(onClick = { sortMenuOpen = true }) {
+                        Icon(
+                            Icons.Default.Sort,
+                            contentDescription = "Sort options",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuOpen,
+                        onDismissRequest = { sortMenuOpen = false },
+                    ) {
+                        SearchSort.entries.forEach { sort ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        when (sort) {
+                                            SearchSort.RELEVANCE -> "Relevance"
+                                            SearchSort.RATING -> "Top rated"
+                                            SearchSort.DOWNLOADS -> "Most installed"
+                                        },
+                                        fontSize = 13.sp,
+                                    )
+                                },
+                                onClick = {
+                                    sortBy = sort
+                                    sortMenuOpen = false
+                                },
+                                leadingIcon = {
+                                    if (sortBy == sort) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                },
                             )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        ),
-                    )
+                        }
+                    }
                 }
             }
 
@@ -331,6 +374,62 @@ fun MarketplaceScreen(
                         } else null,
                     )
                 }
+            }
+            AnimatedVisibility(
+                visible = searchOpen,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() },
+                        ) { searchOpen = false },
+                )
+            }
+            AnimatedVisibility(
+                visible = searchOpen,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter),
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    placeholder = { Text("Search catalog by name, author, or tags...") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            searchQuery = ""
+                            searchOpen = false
+                        }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                )
+            }
             }
         }
     }
