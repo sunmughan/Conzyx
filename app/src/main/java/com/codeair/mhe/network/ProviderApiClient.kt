@@ -145,47 +145,61 @@ class ProviderApiClient {
         connectTimeoutMs: Int = 12_000,
         readTimeoutMs: Int = 20_000,
     ): HttpResult {
-        // Explicit type arg: the while(true) tail would otherwise widen
-        // the inferred Result type to Any.
-        return runCatching<HttpResult> {
-            // QA Medium: one transient 429/5xx used to be final. Retry
-            // with backoff, honoring the server's Retry-After header.
-            var attempt = 0
-            while (true) {
-                val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = method
-                    connectTimeout = connectTimeoutMs
-                    readTimeout = readTimeoutMs
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("Content-Type", "application/json")
-                    if (apiKey.isNotBlank()) {
-                        setRequestProperty("Authorization", "Bearer $apiKey")
-                    }
-                    if (endpoint.startsWith("https://opencode.ai/zen/")) {
-                        // OpenCode Zen expects requests to identify the OpenCode client and session.
-                        setRequestProperty("User-Agent", "opencode/1.18.20")
-                        setRequestProperty("x-session-id", "session-${UUID.randomUUID()}")
-                    }
-                    if (apiKey.isNotBlank() && protocol != ProviderProtocol.OPENROUTER && protocol != ProviderProtocol.OPENAI_CHAT && protocol != ProviderProtocol.OPENAI_RESPONSES) {
-                        setRequestProperty("x-api-key", apiKey)
-                        setRequestProperty("anthropic-version", "2023-06-01")
-                    }
-                    if (body != null) doOutput = true
-                }
-                if (body != null) connection.outputStream.use { it.write(body.toByteArray()) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                val retryAfter = connection.getHeaderField("Retry-After")
-                connection.disconnect()
-                if (HttpRetry.isRetryable(code) && attempt < HttpRetry.MAX_ATTEMPTS - 1) {
-                    HttpRetry.sleepBeforeRetry(attempt, retryAfter)
-                    attempt++
-                    continue
-                }
-                return@runCatching HttpResult(code, responseBody)
+        // QA Medium: one transient 429/5xx used to be final. Retry with
+        // backoff, honoring the server's Retry-After header.
+        var attempt = 0
+        while (true) {
+            val result = runCatching {
+                attemptRequest(endpoint, method, apiKey, body, protocol, connectTimeoutMs, readTimeoutMs)
+            }.getOrElse {
+                return HttpResult(0, "", it.message ?: "Network connection failed")
             }
-        }.getOrElse { HttpResult(0, "", it.message ?: "Network connection failed",) }
+            if (!HttpRetry.isRetryable(result.code) || attempt >= HttpRetry.MAX_ATTEMPTS - 1) {
+                return HttpResult(result.code, result.body)
+            }
+            HttpRetry.sleepBeforeRetry(attempt, result.retryAfter)
+            attempt++
+        }
+    }
+
+    private data class AttemptResult(val code: Int, val body: String, val retryAfter: String?)
+
+    private fun attemptRequest(
+        endpoint: String,
+        method: String,
+apiKey: <redacted>
+        body: String?,
+        protocol: ProviderProtocol,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+    ): AttemptResult {
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Content-Type", "application/json")
+            if (apiKey.isNotBlank()) {
+                setRequestProperty("Authorization", "Bearer $apiKey")
+            }
+            if (endpoint.startsWith("https://opencode.ai/zen/")) {
+                // OpenCode Zen expects requests to identify the OpenCode client and session.
+                setRequestProperty("User-Agent", "opencode/1.18.20")
+                setRequestProperty("x-session-id", "session-${UUID.randomUUID()}")
+            }
+            if (apiKey.isNotBlank() && protocol != ProviderProtocol.OPENROUTER && protocol != ProviderProtocol.OPENAI_CHAT && protocol != ProviderProtocol.OPENAI_RESPONSES) {
+                setRequestProperty("x-api-key", apiKey)
+                setRequestProperty("anthropic-version", "2023-06-01")
+            }
+            if (body != null) doOutput = true
+        }
+        if (body != null) connection.outputStream.use { it.write(body.toByteArray()) }
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        val retryAfter = connection.getHeaderField("Retry-After")
+        connection.disconnect()
+        return AttemptResult(code, responseBody, retryAfter)
     }
 
     private fun modelEndpoints(baseUrl: String, protocol: ProviderProtocol): List<String> {
