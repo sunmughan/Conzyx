@@ -1004,9 +1004,9 @@ class RuntimeInstaller(private val context: Context) {
         }
 
         val prefix = when (id) {
-            "core" -> "pocketdev-core-arm64-"
-            "python" -> "pocketdev-python-arm64-"
-            "android" -> "pocketdev-android-arm64-"
+            "core" -> "mhe-core-arm64-"
+            "python" -> "mhe-python-arm64-"
+            "android" -> "mhe-android-arm64-"
             else -> return null
         }
 
@@ -3292,7 +3292,7 @@ main().catch((err) => {
         private const val DSH_ANDROID_COMPATIBILITY_VERSION = "copyfile-excl-v1"
         private val CORE_BUNDLE = RuntimeBundle(
             label = "Core",
-            fileName = "pocketdev-core-arm64-2026.09.5.tar.zst",
+            fileName = "mhe-core-arm64-2026.09.5.tar.zst",
             sha256 = "df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012",
             compressedBytes = 72_185_773L,
         )
@@ -3300,31 +3300,31 @@ main().catch((err) => {
         private const val CLAUDE_GUEST_PATH = "/usr/local/bin/claude"
         private val CLAUDE_BUNDLE = RuntimeBundle(
             label = "Claude Code",
-            fileName = "pocketdev-claude-arm64-2026.09.1.tar.zst",
+            fileName = "mhe-claude-arm64-2026.09.1.tar.zst",
             sha256 = "0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724",
             compressedBytes = 75_289_800L,
         )
         private val PYTHON_BUNDLE = RuntimeBundle(
             label = "Python",
-            fileName = "pocketdev-python-arm64-2026.09.2.tar.zst",
+            fileName = "mhe-python-arm64-2026.09.2.tar.zst",
             sha256 = "6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85",
             compressedBytes = 55_419_626L,
         )
         private val ANDROID_BUNDLE = RuntimeBundle(
             label = "Android",
-            fileName = "pocketdev-android-arm64-2026.09.1.tar.zst",
+            fileName = "mhe-android-arm64-2026.09.1.tar.zst",
             sha256 = "01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6",
             compressedBytes = 569_652_007L,
         )
         private val DSH_BUNDLE = RuntimeBundle(
             label = "DeepSeek Harness",
-            fileName = "pocketdev-dsh-arm64-2026.09.1.tar.zst",
+            fileName = "mhe-dsh-arm64-2026.09.1.tar.zst",
             sha256 = "88e6a23ba74e1cd74a2c923b7e0d6bd78ba4b7e5f8a9b649f12bf4ffe158cce5",
             compressedBytes = 27_752_194L,
         )
         private val AGY_BUNDLE = RuntimeBundle(
             label = "Antigravity CLI",
-            fileName = "pocketdev-agy-arm64-2026.09.1.tar.zst",
+            fileName = "mhe-agy-arm64-2026.09.1.tar.zst",
             sha256 = "a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78",
             compressedBytes = 41_870_025L,
         )

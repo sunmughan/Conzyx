@@ -574,6 +574,20 @@ fun PreviewTab(
 
                 }
 
+                if (toolbarCollapsed) {
+                    IconButton(
+                        onClick = { toolbarCollapsed = false },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExpandMore,
+                            contentDescription = "Show toolbar",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+
                 // Second row: browser action buttons (refresh, tabs, viewport, AI, desktop, inspector, devtools)
                 AnimatedVisibility(
                     visible = !toolbarCollapsed,
@@ -925,38 +939,6 @@ fun PreviewTab(
                         )
                     }
                 }
-                }
-
-                if (toolbarCollapsed) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(0.dp),
-                        contentAlignment = Alignment.TopEnd,
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            tonalElevation = 6.dp,
-                            border = BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                            ),
-                            modifier = Modifier.offset(y = 10.dp),
-                        ) {
-                            IconButton(
-                                onClick = { toolbarCollapsed = false },
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ExpandMore,
-                                    contentDescription = "Show toolbar",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
                 }
 
                 // Horizontal Tabs Strip (shown when toggled or multiple tabs open)

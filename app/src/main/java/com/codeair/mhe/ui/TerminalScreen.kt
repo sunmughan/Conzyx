@@ -51,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -194,6 +195,7 @@ fun TerminalScreen(
 
     Scaffold(
         modifier = if (compactHeader) Modifier else Modifier.statusBarsPadding(),
+        contentWindowInsets = if (compactHeader) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
             if (!compactHeader) {
                 TopAppBar(

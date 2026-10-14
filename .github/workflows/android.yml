@@ -116,6 +116,9 @@ jobs:
               "agy": "pocketdev-agy-arm64-",
           }
 
+          def published_name(name):
+              return "mhe-" + name.removeprefix("pocketdev-")
+
           def version_key(value):
               return tuple(int(x) for x in re.findall(r"\d+", value)) or (0,)
 
@@ -144,7 +147,8 @@ jobs:
           manifest = {}
           for component, (_, version, asset) in selected.items():
               name = asset["name"]
-              out = os.path.join("dist/runtime-bundles", name)
+              out_name = published_name(name)
+              out = os.path.join("dist/runtime-bundles", out_name)
               download = urllib.request.Request(
                   asset["url"],
                   headers={
@@ -163,7 +167,7 @@ jobs:
                   raise SystemExit(f"SHA-256 mismatch for {name}: {actual} != {digest}")
               manifest[component] = {
                   "version": version,
-                  "file": name,
+                  "file": out_name,
                   "sha256": digest.lower(),
                   "sizeBytes": os.path.getsize(out),
               }

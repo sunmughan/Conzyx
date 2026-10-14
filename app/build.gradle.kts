@@ -38,7 +38,7 @@ val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
     // The release workflow resolves the newest verified runtime assets before every build.
     from(runtimeBundleDir) {
-        include("manifest.json", "pocketdev-agy-arm64-*.tar.zst")
+        include("manifest.json", "mhe-agy-arm64-*.tar.zst")
     }
     into(generatedRuntimeAssets.map { it.dir("shared/runtime") })
 }
@@ -47,11 +47,11 @@ val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAss
     from(runtimeBundleDir) {
         include(
             "manifest.json",
-            "pocketdev-core-arm64-*.tar.zst",
-            "pocketdev-claude-arm64-*.tar.zst",
-            "pocketdev-python-arm64-*.tar.zst",
-            "pocketdev-android-arm64-*.tar.zst",
-            "pocketdev-dsh-arm64-*.tar.zst",
+            "mhe-core-arm64-*.tar.zst",
+            "mhe-claude-arm64-*.tar.zst",
+            "mhe-python-arm64-*.tar.zst",
+            "mhe-android-arm64-*.tar.zst",
+            "mhe-dsh-arm64-*.tar.zst",
         )
     }
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })

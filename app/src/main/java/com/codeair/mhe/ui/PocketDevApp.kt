@@ -5179,14 +5179,16 @@ private fun WorkspaceScreen(
                                     }
                                 }
                             }
-                            Text(
-                                activeChat?.title ?: "Chat",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(start = 25.dp),
-                            )
+                            if (selectedTab == WorkspaceTab.CHAT) {
+                                Text(
+                                    activeChat?.title ?: "Chat",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = 25.dp),
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
