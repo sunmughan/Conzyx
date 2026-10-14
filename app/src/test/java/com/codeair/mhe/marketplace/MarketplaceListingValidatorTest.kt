@@ -156,4 +156,37 @@ class MarketplaceListingValidatorTest {
         val result = validateMarketplaceItem(validItem().copy(installUrl = "npx -y some-mcp-server"))
         assertTrue(result.isValid)
     }
+
+    @Test
+    fun malformedSha256Fails() {
+        val result = validateMarketplaceItem(validItem().copy(sha256 = "not-a-hash"))
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("sha256") })
+    }
+
+    @Test
+    fun wellFormedSha256Passes() {
+        val result = validateMarketplaceItem(validItem().copy(sha256 = "a".repeat(64)))
+        assertTrue(result.isValid)
+    }
+
+    @Test
+    fun malformedTagFails() {
+        val result = validateMarketplaceItem(validItem().copy(tags = listOf("good-tag", "bad tag!")))
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("bad tag!") })
+    }
+
+    @Test
+    fun tooManyTagsFail() {
+        val result = validateMarketplaceItem(validItem().copy(tags = (1..11).map { "tag$it" }))
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { it.contains("10 tags") })
+    }
+
+    @Test
+    fun wellFormedTagsPass() {
+        val result = validateMarketplaceItem(validItem().copy(tags = listOf("mcp", "database", "postgres")))
+        assertTrue(result.isValid)
+    }
 }

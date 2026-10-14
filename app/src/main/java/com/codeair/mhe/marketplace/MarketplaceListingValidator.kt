@@ -105,5 +105,16 @@ fun validateMarketplaceItem(item: MarketplaceItem): ListingValidationResult {
     if (item.installUrl.isBlank()) {
         errors += "install command or URL is required"
     }
+    if (item.sha256.isNotBlank() && !SHA256_REGEX.matches(item.sha256.trim())) {
+        errors += "sha256 must be 64 hex characters"
+    }
+    if (item.tags.size > 10) {
+        errors += "at most 10 tags allowed, got ${item.tags.size}"
+    }
+    item.tags.forEach { tag ->
+        if (!TAG_REGEX.matches(tag)) {
+            errors += "tag '$tag' must be 1-32 chars of letters, digits, '.', '_' or '-'"
+        }
+    }
     return ListingValidationResult(isValid = errors.isEmpty(), errors = errors)
 }

@@ -68,6 +68,7 @@ import com.codeair.mhe.marketplace.DeveloperMarketplaceCatalog
 import com.codeair.mhe.marketplace.MarketplaceCategory
 import com.codeair.mhe.marketplace.MarketplaceItem
 import com.codeair.mhe.marketplace.SearchSort
+import com.codeair.mhe.marketplace.validateMarketplaceItem
 
 /**
  * AI Developer Marketplace (Phase 14).
@@ -570,6 +571,22 @@ private fun PublishMarketplaceItemDialog(
     var author by rememberSaveable { mutableStateOf("Local Developer") }
     var description by rememberSaveable { mutableStateOf("") }
     var installUrl by rememberSaveable { mutableStateOf("") }
+    var tagsText by rememberSaveable { mutableStateOf("") }
+    var sha256 by rememberSaveable { mutableStateOf("") }
+
+    val draftItem = MarketplaceItem(
+        name = name.trim(),
+        category = selectedCat,
+        author = author.trim().ifBlank { "Local Developer" },
+        description = description.trim(),
+        installUrl = installUrl.trim(),
+        isCustom = true,
+        tags = tagsText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+        sha256 = sha256.trim().lowercase(),
+    )
+    val draftErrors = validateMarketplaceItem(draftItem).errors
+    val touched = name.isNotBlank() || description.isNotBlank() || installUrl.isNotBlank() ||
+        tagsText.isNotBlank() || sha256.isNotBlank()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -581,6 +598,14 @@ private fun PublishMarketplaceItemDialog(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Text(
+                    "Describe what the item does and how to use it (20+ characters). " +
+                        "For MCP servers the install value is usually a command such as npx -y <package>. " +
+                        "If the install URL points to a downloadable file, paste its SHA-256 checksum " +
+                        "so installs refuse tampered bytes. Comma-separated tags help others find it.",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -635,6 +660,34 @@ private fun PublishMarketplaceItemDialog(
                     shape = RoundedCornerShape(10.dp),
                 )
 
+                OutlinedTextField(
+                    value = tagsText,
+                    onValueChange = { tagsText = it },
+                    label = { Text("Tags (optional)") },
+                    placeholder = { Text("e.g. mcp, database, postgres") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+
+                OutlinedTextField(
+                    value = sha256,
+                    onValueChange = { sha256 = it },
+                    label = { Text("SHA-256 Checksum (optional)") },
+                    placeholder = { Text("64 hex characters") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+
+                if (touched && draftErrors.isNotEmpty()) {
+                    Text(
+                        draftErrors.joinToString(separator = "\n"),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
                 Text(
                     "Saved on this device. No registry is configured, so this item is not shared with other devices.",
                     fontSize = 11.5.sp,
@@ -645,21 +698,14 @@ private fun PublishMarketplaceItemDialog(
         confirmButton = {
             // Medium: the Install Command field is labelled required (*)
             // but the button used to enable without it, and a blank
-            // installUrl was accepted. All three *-fields gate the button.
-            val canPublish = name.isNotBlank() && description.isNotBlank() && installUrl.isNotBlank()
+            // installUrl was accepted. All three *-fields gate the button,
+            // and the item must pass publish validation (name/description
+            // length, checksum and tag format).
+            val canPublish = draftErrors.isEmpty()
             Button(
                 onClick = {
                     if (canPublish) {
-                        onPublish(
-                            MarketplaceItem(
-                                name = name.trim(),
-                                category = selectedCat,
-                                author = author.trim().ifBlank { "Local Developer" },
-                                description = description.trim(),
-                                installUrl = installUrl.trim(),
-                                isCustom = true,
-                            )
-                        )
+                        onPublish(draftItem)
                     }
                 },
                 enabled = canPublish,
