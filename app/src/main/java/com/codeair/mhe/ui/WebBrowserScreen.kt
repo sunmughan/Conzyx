@@ -11,6 +11,10 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -326,6 +330,7 @@ fun PreviewTab(
     var aiDebuggerNotes by remember { mutableStateOf("") }
     var aiDebuggerSnapshot by remember { mutableStateOf<VisualSnapshot?>(null) }
     var showViewportDropdown by remember { mutableStateOf(false) }
+    var toolbarCollapsed by rememberSaveable { mutableStateOf(false) }
 
     // Find in Page state
     var showFindInPage by remember { mutableStateOf(false) }
@@ -570,14 +575,19 @@ fun PreviewTab(
                 }
 
                 // Second row: browser action buttons (refresh, tabs, viewport, AI, desktop, inspector, devtools)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                AnimatedVisibility(
+                    visible = !toolbarCollapsed,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                     // Tab Counter
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -901,6 +911,50 @@ fun PreviewTab(
                                     Toast.makeText(context, "Attached visual preview context to Agent", Toast.LENGTH_SHORT).show()
                                 },
                             )
+                        }
+                    }
+                    IconButton(
+                        onClick = { toolbarCollapsed = true },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExpandLess,
+                            contentDescription = "Hide toolbar",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                }
+
+                if (toolbarCollapsed) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(0.dp),
+                        contentAlignment = Alignment.TopEnd,
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            tonalElevation = 6.dp,
+                            border = BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                            ),
+                            modifier = Modifier.offset(y = 10.dp),
+                        ) {
+                            IconButton(
+                                onClick = { toolbarCollapsed = false },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ExpandMore,
+                                    contentDescription = "Show toolbar",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                     }
                 }
