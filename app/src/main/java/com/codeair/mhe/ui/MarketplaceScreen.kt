@@ -59,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codeair.mhe.marketplace.DeveloperMarketplaceCatalog
@@ -254,6 +255,37 @@ fun MarketplaceScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // Medium: no empty state — a search with no matches used to
+                // show a blank list with no explanation.
+                if (allItems.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp, horizontal = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = when {
+                                    searchQuery.isNotBlank() -> "No items match \"$searchQuery\""
+                                    showOnlyInstalled -> "Nothing installed yet"
+                                    else -> "No items in this category yet"
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                text = when {
+                                    searchQuery.isNotBlank() -> "Try a different search."
+                                    showOnlyInstalled -> "Browse the catalog and tap Install on anything you want."
+                                    else -> "Try another category."
+                                },
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
                 items(allItems, key = { it.id }) { item ->
                     val isInstalled = installedSet.contains(item.id)
                     MarketplaceItemCard(

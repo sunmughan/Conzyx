@@ -5308,6 +5308,7 @@ private fun WorkspaceScreen(
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
                     loading = state.filesLoading,
+                    filesError = state.filesError,
                     suggestedProjectRoot = state.suggestedProjectRoot,
                     onRefresh = onRefreshFiles,
                     onOpenFile = onOpenFile,
@@ -5517,6 +5518,11 @@ private fun ChatSwitcherDialog(
                 if (!switchingEnabled) {
                     Text("New conversations can be created now. Switch to them after the running task finishes.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // Medium: no empty state — zero chats used to show only the
+                // "New chat" button with no explanation.
+                if (chats.isEmpty()) {
+                    Text("No chats yet. Tap New chat to start your first conversation.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(chats, key = { it.id }) { chat ->
                         Surface(
@@ -5633,6 +5639,7 @@ private fun ChatSwitcherDialog(
 private fun FilesTab(
     files: List<WorkspaceEntry>,
     loading: Boolean,
+    filesError: String? = null,
     suggestedProjectRoot: String?,
     onRefresh: () -> Unit,
     onOpenFile: (WorkspaceEntry) -> Unit,
@@ -5769,6 +5776,35 @@ private fun FilesTab(
                         )
                         Button(onClick = onUseSuggestedProjectRoot, modifier = Modifier.fillMaxWidth()) {
                             Text("Use $suggestedProjectRoot as project root")
+                        }
+                    }
+                }
+            }
+        }
+        if (!loading && filesError != null) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.error)
+                        Text("Could not load project files", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            filesError,
+                            textAlign = TextAlign.Center,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(onClick = onRefresh, shape = RoundedCornerShape(12.dp)) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Retry")
                         }
                     }
                 }

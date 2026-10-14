@@ -1142,6 +1142,17 @@ private fun TeamCommsTab(orchestrator: AgentTeamOrchestrator) {
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Medium: no empty state — a new run used to show a blank list.
+            if (filteredMessages.isEmpty()) {
+                item {
+                    Text(
+                        text = if (filterRole != null) "No messages from this role yet." else "No messages yet. Agent chatter will appear here once the run starts.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                }
+            }
             items(filteredMessages, key = { it.id }) { msg ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1295,6 +1306,17 @@ private fun TeamBlackboardTab(orchestrator: AgentTeamOrchestrator) {
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Medium: no empty state — a new run used to show a blank list.
+            if (filteredArtifacts.isEmpty()) {
+                item {
+                    Text(
+                        text = if (filterType != null) "No artifacts of this type yet." else "No artifacts yet. Finished work will be pinned here as the run progresses.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                }
+            }
             items(filteredArtifacts, key = { it.id }) { artifact ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),

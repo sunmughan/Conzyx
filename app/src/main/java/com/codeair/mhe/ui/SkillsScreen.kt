@@ -67,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -337,6 +338,31 @@ fun SkillsScreen(
                                 }
                                 Button(onClick = { onImportGitHub(result.repositoryUrl) }, enabled = !busy) { Text("Import") }
                             }
+                        }
+                    }
+                }
+
+                // Medium: no empty state — zero installed skills and zero
+                // search results used to show a blank list. Not shown while
+                // a search is running (results are still arriving).
+                if (!busy && installed.isEmpty() && results.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = if (query.isNotBlank()) "No skills found for \"$query\"" else "No skills installed yet",
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                text = if (query.isNotBlank()) "Try different keywords, or import one directly below." else "Search GitHub above or import one directly.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
                         }
                     }
                 }

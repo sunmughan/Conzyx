@@ -517,6 +517,16 @@ private fun ScaffoldTab(
                         Text(file.parentFile?.name.orEmpty(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            } else if (!isScaffolding) {
+                // Medium: no empty state — zero scaffolded files used to
+                // show only the button, no guidance.
+                item {
+                    Text(
+                        "No files scaffolded yet. Tap the button above to generate the project from the blueprint.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -672,6 +682,16 @@ private fun BuildAutomationTab(
                         }
                     }
                 }
+            }
+        } else if (buildResult == null && !isBuilding) {
+            // Medium: no empty state — no result and no logs used to show
+            // nothing below the build button.
+            item {
+                Text(
+                    "No build run yet. Choose an artifact above and tap Compile to run your first build.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

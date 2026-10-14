@@ -230,6 +230,10 @@ data class AppUiState(
     val workspaceFiles: List<WorkspaceEntry> = emptyList(),
     val androidProjectDetected: Boolean = false,
     val filesLoading: Boolean = false,
+    // Medium: file-list load failure used to look identical to "empty
+    // project" (and left filesLoading stuck on). Non-null = the last
+    // refresh failed; the Files tab shows it with a Retry button.
+    val filesError: String? = null,
     val openedFilePath: String? = null,
     val openedFileContent: String? = null,
     val openEditorTabs: List<String> = emptyList(),
@@ -2838,23 +2842,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshProjectFiles() {
         val project = _state.value.activeProject ?: return
-        _state.update { it.copy(filesLoading = true) }
+        _state.update { it.copy(filesLoading = true, filesError = null) }
         viewModelScope.launch {
-            val (entries, suggestedRoot, androidProjectDetected) = withContext(Dispatchers.IO) {
-                Triple(
-                    readWorkspace(project),
-                    if (project.rootPath.isBlank()) detectNestedProjectRoot(project) else null,
-                    findAndroidGradleProjectRoot(projectWorkspaceRoot(project)) != null,
-                )
-            }
-            if (_state.value.activeProject?.id == project.id) {
-                _state.update {
-                    it.copy(
-                        workspaceFiles = entries,
-                        filesLoading = false,
-                        suggestedProjectRoot = suggestedRoot,
-                        androidProjectDetected = androidProjectDetected,
+            // Medium: a load failure used to kill this coroutine with no
+            // catch — filesLoading stayed true forever (endless spinner)
+            // and the failure looked exactly like an empty project.
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    Triple(
+                        readWorkspace(project),
+                        if (project.rootPath.isBlank()) detectNestedProjectRoot(project) else null,
+                        findAndroidGradleProjectRoot(projectWorkspaceRoot(project)) != null,
                     )
+                }
+            }.onSuccess { (entries, suggestedRoot, androidProjectDetected) ->
+                if (_state.value.activeProject?.id == project.id) {
+                    _state.update {
+                        it.copy(
+                            workspaceFiles = entries,
+                            filesLoading = false,
+                            filesError = null,
+                            suggestedProjectRoot = suggestedRoot,
+                            androidProjectDetected = androidProjectDetected,
+                        )
+                    }
+                }
+            }.onFailure { error ->
+                if (_state.value.activeProject?.id == project.id) {
+                    _state.update {
+                        it.copy(
+                            filesLoading = false,
+                            filesError = error.message?.take(200) ?: "Could not load project files",
+                        )
+                    }
                 }
             }
         }
