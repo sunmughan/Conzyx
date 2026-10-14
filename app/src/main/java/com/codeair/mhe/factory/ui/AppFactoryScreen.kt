@@ -93,6 +93,10 @@ import com.codeair.mhe.factory.model.StoreListingBundle
 import com.codeair.mhe.factory.model.VersionBumpType
 import java.io.File
 
+@Composable
+private fun adaptiveCheckGreen(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
+
 private enum class FactoryTab(val title: String, val icon: ImageVector) {
     BLUEPRINT("Blueprint", Icons.Default.AutoAwesome),
     SCAFFOLD("Code & DB", Icons.Default.Code),
@@ -510,7 +514,7 @@ private fun ScaffoldTab(
                             .padding(vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(file.name, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.width(6.dp))
@@ -766,7 +770,7 @@ private fun SigningTab(
 
                     if (keystoreConfig != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Keystore active: ${keystoreConfig.keystoreFile.name}", fontSize = 12.sp)
                         }
@@ -863,17 +867,17 @@ private fun PlayStoreTab(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Policy & Target SDK Compliance", fontWeight = FontWeight.Bold)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Target SDK 35 (Meets Android 14/15 minimum of 34)", fontSize = 12.sp)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("GDPR/CCPA Privacy Policy Generated", fontSize = 12.sp)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("64-bit Native Architectures Enabled", fontSize = 12.sp)
                         }
