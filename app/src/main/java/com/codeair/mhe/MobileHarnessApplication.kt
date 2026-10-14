@@ -27,7 +27,11 @@ class MobileHarnessApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppCrashLogger.initialize(this)
-        // Crashlytics: auto-capture all uncaught exceptions to Firebase console.
+        runCatching {
+            if (com.codeair.mhe.data.AppPreferences(this).agentBrowserDriveEnabled) {
+                android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+            }
+        }
         runCatching {
             FirebaseApp.initializeApp(this)
             FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = true

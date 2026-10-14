@@ -2890,12 +2890,18 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
 
     private fun pocketBrowserScriptContent(): String = """#!/usr/bin/env node
 const http = require('http');
+const net = require('net');
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = 9222;
 const PID_FILE = '/tmp/pocket-chromium.pid';
+const ATTACH_FILE = '/tmp/pocket-browser-attach.json';
+const WEBVIEW_FILE = '/tmp/pocket-browser-webview.json';
+const BRIDGE_PORT = 9223;
+const AGENT_LOG = '/tmp/pocket-browser-agent.log';
+const DISCOVERY_MAX_AGE_MS = 60000;
 
 function getPuppeteer() {
   try {
@@ -2922,6 +2928,52 @@ function isPortOpen(port) {
       resolve(false);
     });
   });
+}
+
+function readJsonFile(p) {
+  try {
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) { return null; }
+}
+
+function agentLog(cmd, detail) {
+  const line = `[agent-browser] ${'$'}{new Date().toISOString()} ${'$'}{cmd}${'$'}{detail ? ' ' + detail : ''}`;
+  console.log(line);
+  try { fs.appendFileSync(AGENT_LOG, line + '\n'); } catch (e) {}
+}
+
+function rewriteWsUrl(wsUrl, port) {
+  return String(wsUrl).replace(/^ws:\/\/127\.0\.0\.1:\d+/, `ws://127.0.0.1:${'$'}{port}`);
+}
+
+function sleepMs(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function getAttachState() {
+  const st = readJsonFile(ATTACH_FILE);
+  if (!st || st.mode !== 'attached' || !st.webSocketDebuggerUrl) return null;
+  return st;
+}
+
+function clearAttachState() {
+  try { if (fs.existsSync(ATTACH_FILE)) fs.unlinkSync(ATTACH_FILE); } catch (e) {}
+  try { execSync('pkill -f "pocket-browser __bridge" 2>/dev/null || true'); } catch (e) {}
+}
+
+async function ensureBridge(socketName, port) {
+  if (await isPortOpen(port)) return;
+  const child = spawn(process.execPath, [process.argv[1], '__bridge', socketName, String(port)], {
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
+  for (let i = 0; i < 20; i++) {
+    await sleepMs(250);
+    if (await isPortOpen(port)) return;
+  }
+  throw new Error('DevTools bridge failed to start on port ' + port);
 }
 
 function findChromium() {
@@ -2983,6 +3035,24 @@ async function ensureChromium() {
 }
 
 async function getBrowserAndPage() {
+  const attached = getAttachState();
+  if (attached) {
+    const puppeteer = getPuppeteer();
+    if (attached.devtoolsSocket) {
+      try { await ensureBridge(attached.devtoolsSocket, BRIDGE_PORT); }
+      catch (e) { clearAttachState(); throw new Error('Lost the bridge to the browser tab. Run pocket-browser attach again.'); }
+    }
+    try {
+      const browser = await puppeteer.connect({ browserWSEndpoint: attached.webSocketDebuggerUrl, defaultViewport: null });
+      const pages = await browser.pages();
+      const page = pages[0];
+      if (!page) throw new Error('no page target');
+      return { browser, page, attached: true };
+    } catch (e) {
+      clearAttachState();
+      throw new Error('Lost connection to the browser tab. Run pocket-browser attach again.');
+    }
+  }
   await ensureChromium();
   const puppeteer = getPuppeteer();
   const browser = await puppeteer.connect({
@@ -2991,7 +3061,7 @@ async function getBrowserAndPage() {
   });
   const pages = await browser.pages();
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
-  return { browser, page };
+  return { browser, page, attached: false };
 }
 
 async function main() {
@@ -3006,8 +3076,99 @@ async function main() {
       break;
     }
 
+    case 'attach': {
+      const cdpFlag = args.indexOf('--cdp');
+      const cdpOverride = cdpFlag >= 0 ? args[cdpFlag + 1] : null;
+      let wsUrl;
+      let devtoolsSocket = null;
+      let tabUrl = '';
+      let tabTitle = '';
+      if (cdpOverride) {
+        wsUrl = cdpOverride;
+      } else {
+        const disc = readJsonFile(WEBVIEW_FILE);
+        if (!disc || !disc.webSocketDebuggerUrl || !disc.devtoolsSocket) {
+          console.error('No browser tab found. Open a page in the app browser tab first, then run attach again.');
+          process.exit(1);
+        }
+        if (Date.now() - (disc.discoveredAt || 0) > DISCOVERY_MAX_AGE_MS) {
+          console.error('Browser tab discovery is stale. Bring the app browser tab to the foreground and run attach again.');
+          process.exit(1);
+        }
+        devtoolsSocket = disc.devtoolsSocket;
+        tabUrl = disc.tabUrl || '';
+        tabTitle = disc.tabTitle || '';
+        try { await ensureBridge(devtoolsSocket, BRIDGE_PORT); }
+        catch (e) { console.error('PocketBrowser error:', e.message || e); process.exit(1); }
+        wsUrl = rewriteWsUrl(disc.webSocketDebuggerUrl, BRIDGE_PORT);
+      }
+      const puppeteer = getPuppeteer();
+      try {
+        const browser = await puppeteer.connect({ browserWSEndpoint: wsUrl, defaultViewport: null });
+        const pages = await browser.pages();
+        if (!pages[0]) throw new Error('no page target');
+        if (!tabUrl) tabUrl = pages[0].url();
+        try { if (!tabTitle) tabTitle = await pages[0].title(); } catch (e) {}
+        browser.disconnect();
+      } catch (e) {
+        console.error('Could not attach to the browser tab:', e.message || e);
+        process.exit(1);
+      }
+      fs.writeFileSync(ATTACH_FILE, JSON.stringify({
+        mode: 'attached',
+        webSocketDebuggerUrl: wsUrl,
+        devtoolsSocket: devtoolsSocket,
+        tabUrl: tabUrl,
+        tabTitle: tabTitle,
+        attachedAt: Date.now()
+      }, null, 2));
+      agentLog('attach', tabUrl || wsUrl);
+      console.log(JSON.stringify({ status: 'attached', url: tabUrl, title: tabTitle }));
+      console.log('The user is watching live in the browser tab and can take over anytime.');
+      process.exit(0);
+      break;
+    }
+
+    case 'detach': {
+      clearAttachState();
+      agentLog('detach', '');
+      console.log('Detached from the browser tab. The user has full control again.');
+      process.exit(0);
+      break;
+    }
+
+    case '__bridge': {
+      const socketName = args[0];
+      const port = parseInt(args[1] || String(BRIDGE_PORT), 10);
+      if (!socketName) {
+        console.error('Usage: pocket-browser __bridge <socket> <port>');
+        process.exit(1);
+      }
+      const server = net.createServer((tcp) => {
+        let unix = null;
+        const cleanup = () => {
+          try { tcp.destroy(); } catch (e) {}
+          try { if (unix) unix.destroy(); } catch (e) {}
+        };
+        try {
+          unix = net.createConnection('\0' + socketName);
+        } catch (e) { tcp.destroy(); return; }
+        tcp.on('error', cleanup);
+        unix.on('error', cleanup);
+        tcp.on('close', cleanup);
+        unix.on('close', cleanup);
+        tcp.pipe(unix);
+        unix.pipe(tcp);
+      });
+      server.on('error', (e) => { console.error('Bridge error:', e.message); process.exit(1); });
+      server.listen(port, '127.0.0.1', () => {});
+      setInterval(() => {}, 3600000);
+      break;
+    }
+
     case 'stop':
     case 'close': {
+      clearAttachState();
       try {
         if (fs.existsSync(PID_FILE)) {
           const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);
@@ -3022,6 +3183,20 @@ async function main() {
     }
 
     case 'status': {
+      const attached = getAttachState();
+      if (attached) {
+        try {
+          const conn = await getBrowserAndPage();
+          const url = conn.page.url();
+          const title = await conn.page.title().catch(() => '');
+          console.log(JSON.stringify({ status: 'running', mode: 'attached', url, title }));
+          conn.browser.disconnect();
+        } catch (e) {
+          console.log(JSON.stringify({ status: 'detached', reason: e.message || String(e) }));
+        }
+        process.exit(0);
+        break;
+      }
       const running = await isPortOpen(PORT);
       if (!running) {
         console.log(JSON.stringify({ status: 'stopped', port: PORT }));
@@ -3030,7 +3205,7 @@ async function main() {
         const url = page.url();
         const title = await page.title();
         const pages = await browser.pages();
-        console.log(JSON.stringify({ status: 'running', port: PORT, url, title, tabCount: pages.length }));
+        console.log(JSON.stringify({ status: 'running', mode: 'headless', port: PORT, url, title, tabCount: pages.length }));
         browser.disconnect();
       }
       process.exit(0);
@@ -3058,6 +3233,10 @@ async function main() {
 
     case 'new-tab':
     case 'open-tab': {
+      if (getAttachState()) {
+        console.error('Tab management is disabled while attached to the user browser tab.');
+        process.exit(1);
+      }
       const url = args[0] || 'about:blank';
       const targetUrl = url.includes('://') ? url : (url === 'about:blank' ? url : 'http://' + url);
       await ensureChromium();
@@ -3078,6 +3257,10 @@ async function main() {
     }
 
     case 'switch-tab': {
+      if (getAttachState()) {
+        console.error('Tab management is disabled while attached to the user browser tab.');
+        process.exit(1);
+      }
       const idx = parseInt(args[0] || '0', 10);
       await ensureChromium();
       const puppeteer = getPuppeteer();
@@ -3097,6 +3280,10 @@ async function main() {
     }
 
     case 'close-tab': {
+      if (getAttachState()) {
+        console.error('Tab management is disabled while attached to the user browser tab.');
+        process.exit(1);
+      }
       const idx = parseInt(args[0] || '0', 10);
       await ensureChromium();
       const puppeteer = getPuppeteer();
@@ -3128,6 +3315,7 @@ async function main() {
       const current = page.url();
       const title = await page.title();
       console.log(`Navigated to: ${'$'}{current} ("${'$'}{title}")`);
+      agentLog('open', targetUrl);
       browser.disconnect();
       process.exit(0);
       break;
@@ -3143,6 +3331,7 @@ async function main() {
       await page.waitForSelector(selector, { timeout: 10000 });
       await page.click(selector);
       console.log(`Clicked: ${'$'}{selector}`);
+      agentLog('click', selector);
       browser.disconnect();
       process.exit(0);
       break;
@@ -3161,6 +3350,7 @@ async function main() {
       await page.click(selector, { clickCount: 3 }).catch(() => {});
       await page.type(selector, text);
       console.log(`Typed into ${'$'}{selector}: "${'$'}{text}"`);
+      agentLog('type', selector);
       browser.disconnect();
       process.exit(0);
       break;
@@ -3171,6 +3361,7 @@ async function main() {
       const { browser, page } = await getBrowserAndPage();
       await page.keyboard.press(key);
       console.log(`Pressed key: ${'$'}{key}`);
+      agentLog('press', key);
       browser.disconnect();
       process.exit(0);
       break;
@@ -3182,6 +3373,7 @@ async function main() {
       const { browser, page } = await getBrowserAndPage();
       await page.screenshot({ path: absPath, fullPage: false });
       console.log(`Screenshot saved to: ${'$'}{absPath}`);
+      agentLog('screenshot', absPath);
       browser.disconnect();
       process.exit(0);
       break;
@@ -3196,6 +3388,7 @@ async function main() {
         return await page.content();
       });
       console.log(text ? text.trim() : '');
+      agentLog('get-text', selector);
       browser.disconnect();
       process.exit(0);
       break;
@@ -3211,6 +3404,7 @@ async function main() {
       const { browser, page } = await getBrowserAndPage();
       const result = await page.evaluate(code);
       console.log(JSON.stringify(result, null, 2));
+      agentLog('eval', code.slice(0, 80));
       browser.disconnect();
       process.exit(0);
       break;
@@ -3221,8 +3415,10 @@ async function main() {
 
 Commands:
   start                     Start headless Chromium on port ${'$'}{PORT}
-  stop                      Stop Chromium process
-  status                    Show active page URL, title, tab count, and port
+  stop                      Stop Chromium process (also detaches from browser tab)
+  attach [--cdp <wsUrl>]    Attach to the visible in-app browser tab (user watches live)
+  detach                    Release the browser tab back to the user
+  status                    Show active page URL, title, tab count, mode, and port
   tabs                      List all open tabs / pages
   new-tab [url]             Open a new tab (optionally with URL)
   switch-tab <index>        Switch active page to tab index

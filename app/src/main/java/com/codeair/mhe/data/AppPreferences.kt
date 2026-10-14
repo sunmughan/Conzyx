@@ -186,6 +186,10 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name
         set(value) { preferences.edit().putString("execution_mode", value).commit() }
 
+    var agentBrowserDriveEnabled: Boolean
+        get() = preferences.getBoolean("agent_browser_drive_enabled", true)
+        set(value) { preferences.edit().putBoolean("agent_browser_drive_enabled", value).commit() }
+
 
     fun saveProvider(profile: ProviderProfile, agent: AgentKind? = null) {
         val editor = preferences.edit()

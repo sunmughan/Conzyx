@@ -129,6 +129,7 @@ import com.codeair.mhe.model.providersForAgent
 import com.codeair.mhe.network.ConnectionValidation
 import com.codeair.mhe.network.DiscoveredModel
 import com.codeair.mhe.network.ModelDiscoveryResult
+import com.codeair.mhe.data.AppPreferences
 import com.codeair.mhe.runtime.AntigravityAuthStatus
 import com.codeair.mhe.runtime.EnvironmentComponentState
 import com.codeair.mhe.runtime.EnvironmentManifestComponent
@@ -209,6 +210,8 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val runtimeInstaller = remember { RuntimeInstaller(context) }
+    val appPrefs = remember { AppPreferences(context) }
+    var agentBrowserDriveEnabled by remember { mutableStateOf(appPrefs.agentBrowserDriveEnabled) }
     val installedEnvVersions = remember(state.installedDevStacks) {
         runCatching { runtimeInstaller.installedEnvironmentVersions() }.getOrDefault(emptyMap())
     }
@@ -941,6 +944,35 @@ fun SettingsScreen(
                             Switch(
                                 checked = state.allowAccessEnv,
                                 onCheckedChange = { onTogglePermissionPolicy(com.codeair.mhe.security.PermissionCategory.ACCESS_ENV, it) },
+                            )
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Let agents drive the browser tab", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text("Agents can control the visible browser tab with pocket-browser attach. You watch live and can take over anytime.", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = agentBrowserDriveEnabled,
+                                onCheckedChange = {
+                                    appPrefs.agentBrowserDriveEnabled = it
+                                    agentBrowserDriveEnabled = it
+                                    if (it) {
+                                        runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
+                                    } else {
+                                        runCatching {
+                                            runtimeInstaller.installedRuntime().rootfs
+                                        }.getOrNull()?.let { rootfs ->
+                                            java.io.File(rootfs, "tmp/pocket-browser-attach.json").delete()
+                                        }
+                                    }
+                                },
                             )
                         }
 

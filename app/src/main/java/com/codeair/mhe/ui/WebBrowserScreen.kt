@@ -21,6 +21,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -61,6 +63,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.input.pointer.pointerInput
+import com.codeair.mhe.browser.AgentBrowserAttachState
+import com.codeair.mhe.browser.clearAgentBrowserAttachState
+import com.codeair.mhe.browser.readAgentBrowserAttachState
+import com.codeair.mhe.browser.refreshWebViewTargetFile
+import com.codeair.mhe.data.AppPreferences
+import com.codeair.mhe.runtime.RuntimeInstaller
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import com.codeair.mhe.visual.*
 import com.codeair.mhe.visual.ui.VisualComparisonViewer
 import com.codeair.mhe.visual.ui.VisualDevToolsSheet
@@ -253,6 +266,52 @@ private const val MOBILE_CHROME_USER_AGENT =
 private val UnsetSaveVisualSnapshot: (android.graphics.Bitmap, String, String, (VisualSnapshot) -> Unit) -> Unit =
     { _, _, _, _ -> }
 
+@Composable
+private fun AgentDriveBanner(tabLabel: String, onTakeOver: () -> Unit) {
+    Surface(
+        color = PocketOrange.copy(alpha = 0.16f),
+        border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.65f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.SmartToy,
+                contentDescription = null,
+                tint = PocketOrange,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Agent is controlling this tab",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = PocketOrange,
+                )
+                Text(
+                    tabLabel.ifBlank { "Watching live. Tap anywhere or Take over to reclaim control." },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Button(
+                onClick = onTakeOver,
+                colors = ButtonDefaults.buttonColors(containerColor = PocketOrange, contentColor = Color.White),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Text("Take over", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PreviewTab(
@@ -331,6 +390,36 @@ fun PreviewTab(
     var aiDebuggerSnapshot by remember { mutableStateOf<VisualSnapshot?>(null) }
     var showViewportDropdown by remember { mutableStateOf(false) }
     var toolbarCollapsed by rememberSaveable { mutableStateOf(false) }
+
+    val appPrefs = remember { AppPreferences(context) }
+    val agentDriveAllowed = remember { appPrefs.agentBrowserDriveEnabled }
+    val browserRootfsTmp = remember {
+        runCatching { RuntimeInstaller(context).installedRuntime().rootfs }.getOrNull()
+            ?.let { java.io.File(it, "tmp") }
+    }
+    var agentDrive by remember { mutableStateOf<AgentBrowserAttachState?>(null) }
+    val takeOverBrowserTab: () -> Unit = {
+        browserRootfsTmp?.let { clearAgentBrowserAttachState(it) }
+        agentDrive = null
+        Toast.makeText(context, "You took over the browser tab", Toast.LENGTH_SHORT).show()
+    }
+    LaunchedEffect(agentDriveAllowed, currentTab.activeUrl) {
+        while (isActive) {
+            try {
+                withContext(Dispatchers.IO) {
+                    browserRootfsTmp?.let { tmp ->
+                        if (agentDriveAllowed) {
+                            tmp.mkdirs()
+                            refreshWebViewTargetFile(tmp, currentTab.activeUrl)
+                        }
+                        agentDrive = readAgentBrowserAttachState(tmp)
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            delay(2500)
+        }
+    }
 
     // Find in Page state
     var showFindInPage by remember { mutableStateOf(false) }
@@ -1244,6 +1333,12 @@ fun PreviewTab(
         } else {
             val isCustomViewport = activeViewportPreset.widthDp > 0
             Column(Modifier.fillMaxSize()) {
+                if (agentDrive != null) {
+                    AgentDriveBanner(
+                        tabLabel = agentDrive?.tabTitle?.ifBlank { null } ?: agentDrive?.tabUrl.orEmpty(),
+                        onTakeOver = takeOverBrowserTab,
+                    )
+                }
                 pageError?.let { error ->
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,
@@ -1295,6 +1390,9 @@ fun PreviewTab(
                 ) {
                     AndroidView(
                         factory = { ctx ->
+                            if (agentDriveAllowed) {
+                                runCatching { WebView.setWebContentsDebuggingEnabled(true) }
+                            }
                             WebView(ctx).apply {
                         webView = this
                         settings.javaScriptEnabled = true
@@ -1473,10 +1571,22 @@ fun PreviewTab(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-        }
+                }
+                if (agentDrive != null) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(takeOverBrowserTab) {
+                                awaitEachGesture {
+                                    awaitFirstDown()
+                                    takeOverBrowserTab()
+                                }
+                            },
+                    )
+                }
+            }
         }
     }
-}
 }
 
     // History & Bookmarks Modal Sheet

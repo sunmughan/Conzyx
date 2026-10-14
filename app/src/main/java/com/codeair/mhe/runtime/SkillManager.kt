@@ -367,27 +367,46 @@ class SkillManager(
         val description: String,
         val source: String,
         val content: String,
+        val version: Int = 1,
     )
 
     fun ensureDefaultSkills() {
         val defaultSpecs = listOf(
             DefaultSkillSpec(
                 name = "browser-automation",
-                description = "Control Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.",
+                description = "Drive the user's visible in-app browser tab live in synced mode, or automate headless Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.",
                 source = "built-in",
+                version = 2,
                 content = """---
 name: browser-automation
-description: Control Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.
+description: Drive the user's visible in-app browser tab live in synced mode, or automate headless Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.
 ---
 
 # Browser Automation Skill
 
-Use `pocket-browser` CLI to automate Chromium and Puppeteer on port 9222.
-The live browser viewport is displayed in real-time in the project's Preview tab.
+Two modes. Prefer SYNCED mode whenever the user asks you to act on a page they can see.
 
-## Commands
+## Synced mode: drive the visible browser tab
+
+`pocket-browser attach` connects your commands to the browser tab the user is looking at inside the app. Every navigate, click, and keystroke appears on their screen in real time.
+
+- `pocket-browser attach`: attach to the visible browser tab. The user watches everything live and can take over instantly by tapping the tab or the Take over button.
+- Once attached, `open`, `click`, `type`, `press`, `screenshot`, `get-text`, `eval`, and `status` all drive the visible tab.
+- `pocket-browser detach`: release the tab when you are done. The user gets full control back immediately.
+- Rules: attach ONLY when the user explicitly asked you in chat to do something in the browser. Never attach silently, speculatively, or on your own initiative. When you attach, tell the user in chat that you are now driving their visible tab and they can take over at any moment. You cannot open, close, or switch the user's tabs. Every action is logged to the session transcript automatically.
+- If `attach` fails, tell the user to open the page in the app's browser tab first, then try again.
+
+## Headless mode: background automation
+
+For work the user does not need to watch:
 
 - `pocket-browser start`: Start headless Chromium daemon on port 9222.
+- `pocket-browser stop`: Terminate Chromium (also detaches from the browser tab).
+- `pocket-browser status`: Check active URL, title, tab count, mode, and connection state.
+- `pocket-browser tabs`: List open tabs. `new-tab [url]`, `switch-tab <index>`, `close-tab <index>`: manage headless tabs.
+
+## Shared commands
+
 - `pocket-browser open <url>`: Navigate to any website (e.g. `pocket-browser open "https://github.com"`).
 - `pocket-browser click <selector>`: Click an element by CSS selector.
 - `pocket-browser type <selector> <text>`: Type text into an input field or textarea.
@@ -395,8 +414,6 @@ The live browser viewport is displayed in real-time in the project's Preview tab
 - `pocket-browser screenshot [path]`: Capture a screenshot of the active page.
 - `pocket-browser get-text [selector]`: Extract inner text from elements for AI analysis.
 - `pocket-browser eval "<code>"`: Evaluate JavaScript expression in the page context.
-- `pocket-browser status`: Check active URL, title, and connection state.
-- `pocket-browser stop`: Terminate Chromium.
 """,
             ),
             DefaultSkillSpec(
@@ -1069,9 +1086,13 @@ User experience architecture, touch ergonomic design, accessibility, and modern 
         defaultSpecs.forEach { spec ->
             val dir = File(root, spec.name)
             val file = File(dir, "SKILL.md")
-            if (!file.isFile) {
+            val wanted = spec.content.trimIndent() + "\n"
+            val versionFile = File(dir, ".skill-version")
+            val currentVersion = versionFile.takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull() ?: 0
+            if (!file.isFile || (spec.version > 1 && currentVersion < spec.version)) {
                 dir.mkdirs()
-                file.writeText(spec.content.trimIndent() + "\n")
+                file.writeText(wanted)
+                versionFile.writeText(spec.version.toString())
             }
             ensurePortableSkillLayout(dir)
             val existing = currentRegistry.firstOrNull { it.optString("name") == spec.name }
