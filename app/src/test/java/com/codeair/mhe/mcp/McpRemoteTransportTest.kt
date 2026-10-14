@@ -110,6 +110,37 @@ class McpRemoteTransportTest {
     }
 
     @Test
+    fun `plain json containing data colon is not treated as sse`() {
+        http.handler = { _, _, body ->
+            val id = JSONObject(body).opt("id")
+            val plain = rpcOk(
+                id,
+                JSONObject().put(
+                    "tools",
+                    org.json.JSONArray().put(
+                        JSONObject().put("name", "search").put("description", "matches data: patterns")
+                    )
+                )
+            )
+            McpHttpResponse(200, plain, "application/json")
+        }
+        val tools = client().listTools()
+        assertEquals(1, tools.size)
+        assertEquals("search", tools[0].name)
+    }
+
+    @Test
+    fun `sse without content type is detected from data line`() {
+        http.handler = { _, _, body ->
+            val sse = "data: ${toolsListBody(JSONObject(body).opt("id"))}\n\n"
+            McpHttpResponse(200, sse, "application/json")
+        }
+        val tools = client().listTools()
+        assertEquals(1, tools.size)
+        assertEquals("search", tools[0].name)
+    }
+
+    @Test
     fun `callTool returns text outcome`() {
         http.handler = { _, _, body ->
             val id = JSONObject(body).opt("id")
