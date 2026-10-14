@@ -2494,17 +2494,6 @@ private fun RootScreenHost(
                 }
             }
         },
-        floatingActionButton = {
-            if (screen == RootScreen.PROJECTS && !keyboardVisible && !showQuickTerminal) {
-                ExtendedFloatingActionButton(
-                    onClick = { showQuickTerminal = true },
-                    icon = { Icon(Icons.Default.Terminal, contentDescription = null) },
-                    text = { Text("Terminal", fontWeight = FontWeight.SemiBold) },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
-        },
     ) { padding ->
         val authState = authViewModel?.authState?.collectAsStateWithLifecycle()?.value ?: AuthState.Unauthenticated
         val authUiState = authViewModel?.uiState?.collectAsStateWithLifecycle()?.value
