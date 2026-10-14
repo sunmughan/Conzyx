@@ -5101,7 +5101,7 @@ private fun WorkspaceScreen(
     }
     Scaffold(
         topBar = {
-            if (selectedTab != WorkspaceTab.PREVIEW) {
+            if (selectedTab != WorkspaceTab.PREVIEW && selectedTab != WorkspaceTab.TERMINAL) {
                 TopAppBar(
                     title = {
                         Column(Modifier.fillMaxWidth().padding(end = 4.dp)) {
