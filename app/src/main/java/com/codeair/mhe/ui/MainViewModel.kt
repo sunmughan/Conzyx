@@ -419,6 +419,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val claudeRuntime = ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
     private val dshRuntime = DshRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
     private val installer = RuntimeInstaller(application)
+    private var agentInstallJob: Job? = null
+    private var agentUpdateJob: Job? = null
     private val antigravityRuntime = AntigravityRuntimeBridge(
         application,
         model = { _state.value.antigravityModel },
@@ -1312,6 +1314,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startRuntimeSetup() =
         runtimeCoordinator.startRuntimeSetup()
 
+    fun cancelRuntimeSetup() =
+        runtimeCoordinator.cancelRuntimeSetup()
+
     fun retryStartup() =
         runtimeCoordinator.retryStartup()
 
@@ -1442,7 +1447,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 agentBytesPerSecond = null,
             )
         }
-        viewModelScope.launch {
+        agentInstallJob?.cancel()
+        val installJob = viewModelScope.launch {
             var sampleBytes = 0L
             var sampleAt = SystemClock.elapsedRealtime()
             val result = runCatching {
@@ -1488,6 +1494,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+        agentInstallJob = installJob
+        installJob.invokeOnCompletion { if (agentInstallJob === installJob) agentInstallJob = null }
+    }
+
+    fun cancelAgentInstall() {
+        agentInstallJob?.cancel(CancellationException("Agent install cancelled"))
+        agentInstallJob = null
+        installer.cancelActiveDownloads()
+        _state.update {
+            it.copy(
+                agentInstalling = null,
+                agentProgress = 0f,
+                agentDownloadedBytes = null,
+                agentTotalBytes = null,
+                agentBytesPerSecond = null,
+                agentMessage = "Install cancelled",
+            )
+        }
     }
 
     fun checkAgentUpdates() {
@@ -1525,7 +1549,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 agentUpdateBytesPerSecond = null,
             )
         }
-        viewModelScope.launch {
+        agentUpdateJob?.cancel()
+        val updateJob = viewModelScope.launch {
             var sampleBytes = 0L
             var sampleAt = SystemClock.elapsedRealtime()
             val result = withContext(Dispatchers.IO) {
@@ -1567,6 +1592,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     agentUpdateBytesPerSecond = null,
                 )
             }
+        }
+        agentUpdateJob = updateJob
+        updateJob.invokeOnCompletion { if (agentUpdateJob === updateJob) agentUpdateJob = null }
+    }
+
+    fun cancelAgentUpdate() {
+        agentUpdateJob?.cancel(CancellationException("Agent update cancelled"))
+        agentUpdateJob = null
+        installer.cancelActiveDownloads()
+        _state.update {
+            it.copy(
+                agentUpdating = null,
+                agentUpdateProgress = 0f,
+                agentUpdateDownloadedBytes = null,
+                agentUpdateTotalBytes = null,
+                agentUpdateBytesPerSecond = null,
+                agentUpdateMessage = "Update cancelled",
+            )
         }
     }
 

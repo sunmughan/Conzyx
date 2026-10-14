@@ -149,6 +149,14 @@ class RuntimeCoordinator(
         resumeRuntimeSetupService()
     }
 
+    fun cancelRuntimeSetup() {
+        if (host.state().startupStage != StartupStage.INSTALLING) return
+        ContextCompat.startForegroundService(
+            host.appContext,
+            Intent(host.appContext, RuntimeSetupService::class.java).setAction(RuntimeSetupService.ACTION_STOP),
+        )
+    }
+
     fun retryStartup() {
         if (installer.isInstalled()) host.scope.launch { initializeRuntime() } else {
             host.updateState { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupError = null) }

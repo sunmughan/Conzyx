@@ -178,8 +178,10 @@ fun AgentScreen(
     onRemoveApiKey: (ProviderKind, String) -> List<ApiKeyInfo>,
     onSelectAgent: (AgentKind) -> Unit = {},
     onInstallAgent: (AgentKind) -> Unit = {},
+    onCancelAgentInstall: () -> Unit = {},
     onCheckAgentUpdates: () -> Unit = {},
     onUpdateAgent: (AgentKind) -> Unit = {},
+    onCancelAgentUpdate: (AgentKind) -> Unit = {},
     onRefreshInstalledAgents: () -> Unit = {},
     onStartAntigravityLogin: () -> Unit = {},
     onSubmitAntigravityCode: (String) -> Unit = {},
@@ -998,6 +1000,12 @@ fun AgentScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
+                                Spacer(Modifier.height(4.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    TextButton(onClick = onCancelAgentInstall) {
+                                        Text("Cancel install", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                                    }
+                                }
                             }
                         }
                     } else if (!viewedAgentInstalled) {
@@ -1261,6 +1269,7 @@ fun AgentScreen(
                     viewedAgent = viewedAgent,
                     onCheck = onCheckAgentUpdates,
                     onUpdate = onUpdateAgent,
+                    onCancelUpdate = onCancelAgentUpdate,
                 )
             }
 
@@ -2532,6 +2541,7 @@ private fun AgentUpdateBlock(
     viewedAgent: AgentKind,
     onCheck: () -> Unit,
     onUpdate: (AgentKind) -> Unit,
+    onCancelUpdate: (AgentKind) -> Unit = {},
 ) {
     // Each tab shows ONLY its own agent's update checker — never another agent's.
     val update = state.agentUpdates[viewedAgent]
@@ -2614,6 +2624,11 @@ private fun AgentUpdateBlock(
                     if (updating) {
                         state.agentUpdateMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onCancelUpdate(agent) }) {
+                                Text("Cancel update", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                            }
+                        }
                     } else {
                         Button(
                             onClick = { onUpdate(agent) },

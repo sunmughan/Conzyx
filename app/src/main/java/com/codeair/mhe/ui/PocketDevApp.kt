@@ -476,6 +476,7 @@ fun PocketDevApp(
                 state = state,
                 themeMode = state.themeMode,
                 onToggleTheme = viewModel::toggleTheme,
+                onCancelSetup = viewModel::cancelRuntimeSetup,
             )
         state.startupStage == StartupStage.INSTALLING || state.startupStage == StartupStage.INITIALIZING ->
             StartupLoadingScreen(
@@ -1832,6 +1833,7 @@ private fun RuntimeInstallationScreen(
     state: AppUiState,
     themeMode: AppThemeMode = AppThemeMode.DARK,
     onToggleTheme: () -> Unit = {},
+    onCancelSetup: () -> Unit = {},
 ) {
     val view = LocalView.current
     DisposableEffect(Unit) {
@@ -1960,6 +1962,14 @@ private fun RuntimeInstallationScreen(
                 lineHeight = 16.sp,
                 textAlign = TextAlign.Center,
             )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onCancelSetup,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("Stop setup", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
@@ -2551,8 +2561,10 @@ private fun RootScreenHost(
                     onRemoveApiKey = viewModel::removeApiKey,
                     onSelectAgent = viewModel::selectAgent,
                     onInstallAgent = viewModel::installAgent,
+                    onCancelAgentInstall = viewModel::cancelAgentInstall,
                     onCheckAgentUpdates = viewModel::checkAgentUpdates,
                     onUpdateAgent = viewModel::updateAgent,
+                    onCancelAgentUpdate = viewModel::cancelAgentUpdate,
                     onRefreshInstalledAgents = viewModel::refreshInstalledAgents,
                     onStartAntigravityLogin = viewModel::startAntigravityLogin,
                     onSubmitAntigravityCode = viewModel::submitAntigravityCode,
