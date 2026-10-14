@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1313,6 +1314,8 @@ private fun AgentAntigravityCard(
 ) {
     val clipboard = LocalClipboardManager.current
     val auth = state.antigravityAuth
+    var submittingCode by remember { mutableStateOf(false) }
+    LaunchedEffect(code) { submittingCode = false }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -1536,12 +1539,27 @@ private fun AgentAntigravityCard(
                         shape = RoundedCornerShape(12.dp),
                     )
                     Button(
-                        onClick = onSubmitCode,
-                        enabled = code.isNotBlank(),
+                        onClick = {
+                            if (!submittingCode) {
+                                submittingCode = true
+                                onSubmitCode()
+                            }
+                        },
+                        enabled = code.isNotBlank() && !submittingCode,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Text("Complete Sign-in")
+                        if (submittingCode) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Signing in…")
+                        } else {
+                            Text("Complete Sign-in")
+                        }
                     }
                 }
                 AntigravityAuthStatus.SIGNED_OUT, AntigravityAuthStatus.ERROR -> {
@@ -1739,7 +1757,7 @@ private fun AgentAntigravityCard(
                 OutlinedButton(
                     onClick = onTest,
                     enabled = state.apiPingStatus != ApiPingStatus.PINGING,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     shape = RoundedCornerShape(13.dp),
                     border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
                 ) {
@@ -2168,7 +2186,7 @@ private fun AgentProviderCard(
                 onClick = onValidate,
                 enabled = apiKey.isNotBlank() && !isDiscovering && !isValidating &&
                     (selectedKind == ProviderKind.CLAUDE || (baseUrl.isNotBlank() && model.isNotBlank())),
-                modifier = Modifier.fillMaxWidth().height(46.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(13.dp),
                 border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
             ) {

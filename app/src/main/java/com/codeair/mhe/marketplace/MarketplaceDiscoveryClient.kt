@@ -71,27 +71,56 @@ class MarketplaceDiscoveryClient(
         }
     }
 
-    /** GET /api/v1/listings — the full public listing index. */
+    /**
+     * GET /api/v1/listings — the full public listing index, fetched page by page
+     * so a growing registry does not arrive as one unbounded response.
+     */
     fun fetchIndex(): ListingIndexResult {
         requireConfigured("fetching the listing index")?.let {
             return ListingIndexResult(it, emptyList())
         }
-        val res = transport.send(
-            config.registryUrl,
-            MarketplaceTransportRequest("GET", "/api/v1/listings")
-        )
-        checkTransport(res, "listing index fetch")?.let { return ListingIndexResult(it, emptyList()) }
-        if (res.statusCode != 200) {
-            return ListingIndexResult(
-                OperationResult.failure(
-                    error = "Marketplace listing index fetch failed: HTTP ${res.statusCode}.",
-                    exitCode = res.statusCode,
-                    logs = listOf(res.body.take(2000))
-                ),
-                emptyList()
+        val all = mutableListOf<RemoteListing>()
+        val seenIds = mutableSetOf<String>()
+        val logs = mutableListOf<String>()
+        var page = 1
+        while (page <= MAX_INDEX_PAGES) {
+            val res = transport.send(
+                config.registryUrl,
+                MarketplaceTransportRequest("GET", "/api/v1/listings?page=$page&per_page=$INDEX_PAGE_SIZE")
             )
+            checkTransport(res, "listing index fetch")?.let { return ListingIndexResult(it, emptyList()) }
+            if (res.statusCode != 200) {
+                return ListingIndexResult(
+                    OperationResult.failure(
+                        error = "Marketplace listing index fetch failed: HTTP ${res.statusCode}.",
+                        exitCode = res.statusCode,
+                        logs = listOf(res.body.take(2000))
+                    ),
+                    emptyList()
+                )
+            }
+            val parsed = parseListingArray(res.body, "listing index fetch")
+            if (!parsed.result.isSuccess) return parsed
+            val newOnPage = parsed.listings.filter { seenIds.add(it.id) }
+            if (newOnPage.isEmpty()) break
+            all += newOnPage
+            logs += "Fetched index page $page (${parsed.listings.size} listings)."
+            if (parsed.listings.size < INDEX_PAGE_SIZE) break
+            page++
         }
-        return parseListingArray(res.body, "listing index fetch")
+        return ListingIndexResult(
+            OperationResult.success(
+                logs = logs + "Fetched ${all.size} listings from the registry.",
+                artifacts = all.map { it.id },
+                verificationEvidence = "HTTP 200 across ${logs.size} index page(s) with ${all.size} parsed listings"
+            ),
+            all
+        )
+    }
+
+    companion object {
+        const val INDEX_PAGE_SIZE = 100
+        const val MAX_INDEX_PAGES = 50
     }
 
     /** GET /api/v1/listings/search — filtered discovery. */

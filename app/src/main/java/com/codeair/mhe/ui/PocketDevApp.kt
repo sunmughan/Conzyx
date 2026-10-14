@@ -4507,7 +4507,7 @@ private fun ImportSourceButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(46.dp),
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 10.dp),
     ) {
@@ -5222,7 +5222,7 @@ private fun WorkspaceScreen(
                         if (state.runtimeRecoveryCanResume) {
                             Button(
                                 onClick = onResumeTask,
-                                modifier = Modifier.height(30.dp),
+                                modifier = Modifier.heightIn(min = 48.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 // Medium: this used to read "Resume", identical
@@ -5255,7 +5255,7 @@ private fun WorkspaceScreen(
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = onResumeInterruptedSession,
-                            modifier = Modifier.height(30.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             shape = RoundedCornerShape(8.dp),
                             // Medium: this used to read "Resume", identical
@@ -7272,7 +7272,7 @@ private fun ChangesTab(
                     if (expanded) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Column(
-                            Modifier.fillMaxWidth().background(Color(0xFF0B0E14)).horizontalScroll(rememberScrollState()),
+                            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)).horizontalScroll(rememberScrollState()),
                         ) {
                             change.diffLines.forEach { line -> DiffLineRow(line) }
                         }

@@ -196,11 +196,14 @@ class McpRemoteClient(
     private fun extractJsonPayload(body: String, contentType: String?): String? {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return null
-        if (contentType?.contains("text/event-stream") == true || trimmed.contains("data:")) {
+        if (contentType?.contains("text/event-stream") == true || hasSseDataLine(trimmed)) {
             return McpProtocol.firstSsePayload(body)
         }
         return trimmed
     }
+
+    private fun hasSseDataLine(body: String): Boolean =
+        body.lineSequence().any { it.trim().startsWith("data:") }
 }
 
 /**

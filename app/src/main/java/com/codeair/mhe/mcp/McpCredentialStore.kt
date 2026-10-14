@@ -21,6 +21,7 @@ interface McpCredentialBackend {
     fun put(key: String, secret: String)
     fun get(key: String): String?
     fun remove(key: String)
+    fun removeAllForServer(serverId: String)
     fun clear()
 }
 
@@ -30,7 +31,21 @@ class InMemoryCredentialBackend : McpCredentialBackend {
     override fun put(key: String, secret: String) { map[key] = secret }
     override fun get(key: String): String? = map[key]
     override fun remove(key: String) { map.remove(key) }
+    override fun removeAllForServer(serverId: String) {
+        map.keys.removeIf { credentialKeyBelongsToServer(it, serverId) }
+    }
     override fun clear() { map.clear() }
+}
+
+/**
+ * True when a stored credential key was created for [serverId].
+ * Keys have the shape `serverId::name`; a remainder containing `::`
+ * belongs to a project-scoped child id (`template::project`), not to
+ * [serverId] itself, so sibling installs are never purged together.
+ */
+internal fun credentialKeyBelongsToServer(key: String, serverId: String): Boolean {
+    if (!key.startsWith("$serverId::")) return false
+    return !key.removePrefix("$serverId::").contains("::")
 }
 
 /**
@@ -224,6 +239,18 @@ class AesGcmFileCredentialBackend(
         }
     }
 
+    override fun removeAllForServer(serverId: String) {
+        synchronized(lock) {
+            val entries = readCredentialEntries(storage)
+            val doomed = entries.keys().asSequence()
+                .filter { credentialKeyBelongsToServer(it, serverId) }
+                .toList()
+            if (doomed.isEmpty()) return
+            doomed.forEach { entries.remove(it) }
+            writeCredentialEntries(storage, entries)
+        }
+    }
+
     override fun clear() {
         synchronized(lock) {
             if (storage.exists()) storage.delete()
@@ -287,6 +314,10 @@ class McpCredentialStore(
      */
     fun removeServerCredentials(serverId: String, knownNames: List<String>) {
         knownNames.forEach { removeCredential(serverId, it) }
+    }
+
+    fun removeAllServerCredentials(serverId: String) {
+        backend.removeAllForServer(serverId)
     }
 
     fun clear() = backend.clear()

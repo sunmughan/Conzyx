@@ -120,6 +120,10 @@ class McpRegistry(
     ): McpServerInfo {
         val template = catalogTemplates.find { it.id == templateId }
             ?: throw IllegalArgumentException("Template with ID '$templateId' not found.")
+        val secretOverrides = envOverrides.keys.intersect(template.requiredEnv.toSet())
+        require(secretOverrides.isEmpty()) {
+            "Refusing to persist secret env in plaintext server config: ${secretOverrides.joinToString()}"
+        }
 
         // A template installed for a project gets a project-scoped id, so
         // installing it for project B no longer overwrites project A's entry.
@@ -166,9 +170,8 @@ class McpRegistry(
      * secrets so credentials do not linger after uninstall.
      */
     fun removeServerAndCredentials(id: String, credentialStore: McpCredentialStore): Boolean {
-        val server = servers[id] ?: return false
-        val names = (server.secretEnvNames + listOfNotNull(server.credentialName)).distinct()
-        credentialStore.removeServerCredentials(id, names)
+        if (!servers.containsKey(id)) return false
+        credentialStore.removeAllServerCredentials(id)
         return removeServer(id)
     }
 

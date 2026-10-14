@@ -209,7 +209,7 @@ class ClaudeRuntimeBridge(
                 add("--max-turns")
                 add("25")
             }
-            Log.d("ClaudeBridge", "Launching command: $command")
+            if (BuildConfig.DEBUG) Log.d("ClaudeBridge", "Launching command: $command")
             val process = installer.process(
                 installed.proot,
                 installed.rootfs,

@@ -30,6 +30,7 @@ internal class LocalFormatGateway(
     private fun acceptLoop() {
         while (running.get()) {
             runCatching { server.accept() }.getOrNull()?.let { socket ->
+                socket.soTimeout = CLI_SOCKET_TIMEOUT_MS
                 Thread({ socket.use(::handle) }, "mh-format-request").apply { isDaemon = true; start() }
             }
         }
@@ -250,5 +251,9 @@ internal class LocalFormatGateway(
     override fun close() {
         running.set(false)
         runCatching { server.close() }
+    }
+
+    private companion object {
+        const val CLI_SOCKET_TIMEOUT_MS = 180_000
     }
 }

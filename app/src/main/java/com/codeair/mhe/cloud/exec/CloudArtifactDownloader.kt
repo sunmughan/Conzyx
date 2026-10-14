@@ -42,17 +42,6 @@ class CloudArtifactDownloader(
                 0, 0, emptyList()
             )
         }
-        val listRes = client.listArtifacts(worker, remoteJobId)
-        if (listRes.status != OperationStatus.SUCCESS) {
-            return ArtifactFetchResult(
-                OperationResult.failure(
-                    error = "Artifact fetch failed: could not list artifacts: ${listRes.error}",
-                    startedAt = startedAt,
-                    logs = listRes.logs
-                ),
-                0, 0, emptyList()
-            )
-        }
         val logs = mutableListOf<String>()
         val fetched = mutableListOf<CloudArtifact>()
         var downloaded = 0
@@ -62,7 +51,7 @@ class CloudArtifactDownloader(
         if (typed.result.status != OperationStatus.SUCCESS) {
             return ArtifactFetchResult(
                 OperationResult.failure(
-                    error = "Artifact fetch failed: descriptor parse failed: ${typed.result.error}",
+                    error = "Artifact fetch failed: could not list artifacts: ${typed.result.error}",
                     startedAt = startedAt,
                     logs = listOfNotNull(typed.result.error)
                 ),

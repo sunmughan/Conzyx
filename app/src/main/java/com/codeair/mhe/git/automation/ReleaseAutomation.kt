@@ -105,11 +105,11 @@ class ReleaseAutomation(
                         startedAt = startedAt,
                     )
                 }
-                val bytes = asset.file.readBytes()
                 val uploadedAsset = client.uploadReleaseAsset(
                     uploadUrlTemplate = release.uploadUrl,
                     fileName = asset.name,
-                    content = bytes,
+                    contentStream = { asset.file.inputStream() },
+                    contentLength = asset.file.length(),
                     contentType = asset.contentType,
                     token = token,
                 )

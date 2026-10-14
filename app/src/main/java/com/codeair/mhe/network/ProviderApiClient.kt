@@ -193,10 +193,10 @@ class ProviderApiClient {
             }
             if (body != null) doOutput = true
         }
-        if (body != null) connection.outputStream.use { it.write(body.toByteArray()) }
+        if (body != null) connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         val code = connection.responseCode
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-        val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        val responseBody = stream?.use { readCappedBody(it) }.orEmpty()
         val retryAfter = connection.getHeaderField("Retry-After")
         connection.disconnect()
         return AttemptResult(code, responseBody, retryAfter)
@@ -338,4 +338,22 @@ object ModelResponseParser {
             }
         }.distinctBy { it.id }.sortedWith(compareByDescending<DiscoveredModel> { it.isFree }.thenBy { it.displayName.lowercase() })
     }.getOrDefault(emptyList())
+
+    private fun readCappedBody(stream: java.io.InputStream): String {
+        val reader = stream.bufferedReader(Charsets.UTF_8)
+        val sb = StringBuilder()
+        val buffer = CharArray(8192)
+        var total = 0
+        while (total < MAX_RESPONSE_CHARS) {
+            val read = reader.read(buffer, 0, minOf(buffer.size, MAX_RESPONSE_CHARS - total))
+            if (read <= 0) break
+            sb.append(buffer, 0, read)
+            total += read
+        }
+        return sb.toString()
+    }
+
+    companion object {
+        const val MAX_RESPONSE_CHARS = 10 * 1024 * 1024
+    }
 }

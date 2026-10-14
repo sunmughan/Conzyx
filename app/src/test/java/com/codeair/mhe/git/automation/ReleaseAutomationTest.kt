@@ -49,14 +49,15 @@ private class FakeReleaseClient(
     override fun uploadReleaseAsset(
         uploadUrlTemplate: String,
         fileName: String,
-        content: ByteArray,
+        contentStream: () -> java.io.InputStream,
+        contentLength: Long,
         contentType: String,
         token: String,
     ): GitHubReleaseAsset {
         uploadedNames += fileName
         return GitHubReleaseAsset(
             id = uploadedNames.size.toLong(), name = fileName,
-            sizeBytes = content.size.toLong(), downloadUrl = "https://example.com/$fileName",
+            sizeBytes = contentLength, downloadUrl = "https://example.com/$fileName",
             contentType = contentType,
         )
     }

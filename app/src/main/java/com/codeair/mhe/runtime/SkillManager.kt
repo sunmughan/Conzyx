@@ -31,6 +31,8 @@ data class SkillUpdateInfo(
     val source: String,
 )
 
+class SkillDownloadException(val httpStatus: Int, message: String) : java.io.IOException(message)
+
 class SkillManager(
     private val context: Context? = null,
     baseDir: File? = null,
@@ -127,10 +129,12 @@ class SkillManager(
     fun installFromGitHub(repositoryUrl: String): List<SkillInfo> {
         val normalized = normalizeGitHubRepositoryUrl(repositoryUrl)
         val ownerRepo = URI(normalized).path.trim('/').removeSuffix(".git")
-        return runCatching {
-            installZipDownload("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/main", normalized)
-        }.getOrElse {
-            installZipDownload("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/master", normalized)
+        val mainUrl = "https://codeload.github.com/$ownerRepo/zip/refs/heads/main"
+        return try {
+            installZipDownload(mainUrl, normalized)
+        } catch (e: SkillDownloadException) {
+            if (e.httpStatus != 404) throw e
+            installZipDownload("https://codeload.github.com/$ownerRepo/zip/refs/heads/master", normalized)
         }
     }
 
@@ -253,7 +257,7 @@ class SkillManager(
         }
         try {
             val status = connection.responseCode
-            check(status in 200..299) { "GitHub skill download failed with HTTP " + status }
+            if (status !in 200..299) throw SkillDownloadException(status, "GitHub skill download failed with HTTP $status")
             connection.inputStream.use { input -> destination.outputStream().use { output -> input.copyTo(output) } }
         } finally {
             connection.disconnect()

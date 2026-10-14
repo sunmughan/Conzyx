@@ -58,6 +58,26 @@ class McpRegistryRemoveTest {
     }
 
     @Test
+    fun removeServerAndCredentialsPurgesUnlistedCredentialNames() {
+        registry.installServer(
+            McpServerInfo(
+                id = "srv-1",
+                name = "Secretful",
+                command = "node",
+                secretEnvNames = listOf("API_TOKEN"),
+            )
+        )
+        credentials.setCredential("srv-1", "API_TOKEN", "token-secret")
+        credentials.setCredential("srv-1", "SOME_UNLISTED_NAME", "lingering-secret")
+
+        assertTrue(registry.removeServerAndCredentials("srv-1", credentials))
+
+        assertNull(registry.getServer("srv-1"))
+        assertNull(credentials.getCredential("srv-1", "API_TOKEN"))
+        assertNull(credentials.getCredential("srv-1", "SOME_UNLISTED_NAME"))
+    }
+
+    @Test
     fun removeServerAndCredentialsOnUnknownIdReturnsFalse() {
         assertFalse(registry.removeServerAndCredentials("nope", credentials))
     }

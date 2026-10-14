@@ -597,13 +597,15 @@ open class GitHubClient {
 
     /**
      * Uploads a release asset. `uploadUrlTemplate` is the release's `upload_url`
-     * (e.g. `https://uploads.github.com/.../assets{?name,label}`). Content is passed
-     * as bytes so tests can fake this without touching disk.
+     * (e.g. `https://uploads.github.com/.../assets{?name,label}`). Content is streamed
+     * through `contentStream` so the caller never holds the whole file in memory
+     * and tests can fake this without touching disk.
      */
     open fun uploadReleaseAsset(
         uploadUrlTemplate: String,
         fileName: String,
-        content: ByteArray,
+        contentStream: () -> java.io.InputStream,
+        contentLength: Long,
         contentType: String,
         token: String,
     ): GitHubReleaseAsset {
@@ -619,14 +621,18 @@ open class GitHubClient {
             if (token.isNotBlank()) setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
             setRequestProperty("User-Agent", "PocketDev-Android")
-            setFixedLengthStreamingMode(content.size)
+            setFixedLengthStreamingMode(contentLength)
         }
-        connection.outputStream.use { it.write(content) }
+        contentStream().use { input ->
+            connection.outputStream.use { output ->
+                input.copyTo(output, bufferSize = 64 * 1024)
+            }
+        }
         val json = readResponse(connection) as JSONObject
         return GitHubReleaseAsset(
             id = json.getLong("id"),
             name = json.getString("name"),
-            sizeBytes = json.optLong("size", content.size.toLong()),
+            sizeBytes = json.optLong("size", contentLength),
             downloadUrl = json.optString("browser_download_url", ""),
             contentType = json.optString("content_type", contentType),
         )

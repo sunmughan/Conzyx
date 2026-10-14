@@ -187,50 +187,47 @@ class CloudExecutionClient(
     }
 
     /** GET /api/v1/jobs/{id}/artifacts — descriptors for finished jobs. */
-    fun listArtifacts(worker: CloudWorkerSpec, remoteJobId: String): OperationResult {
-        requireAuth(worker)?.let { return it }
-        val res = transport.send(
-            worker.endpointUrl,
-            CloudTransportRequest("GET", "/api/v1/jobs/$remoteJobId/artifacts", authHeaders(worker))
-        )
-        checkTransport(res, "artifact listing")?.let { return it }
-        if (res.statusCode != 200) {
-            return OperationResult.failure(
-                error = "Cloud artifact listing failed: HTTP ${res.statusCode} for job $remoteJobId.",
-                exitCode = res.statusCode,
-                logs = listOf(res.body.take(2000))
-            )
-        }
-        val descriptors = runCatching { parseArtifactDescriptors(res.body) }.getOrElse {
-            return OperationResult.failure(
-                error = "Cloud artifact listing returned unparseable JSON for job $remoteJobId.",
-                logs = listOf(res.body.take(2000))
-            )
-        }
-        return OperationResult.success(
-            logs = descriptors.map { "artifact ${it.filename} (${it.sizeBytes} bytes, sha256 ${it.sha256.take(12)}...)" },
-            artifacts = descriptors.map { it.id },
-            verificationEvidence = "HTTP 200, ${descriptors.size} artifact descriptors"
-        )
-    }
+    fun listArtifacts(worker: CloudWorkerSpec, remoteJobId: String): OperationResult =
+        listArtifactDescriptors(worker, remoteJobId).result
 
     /** Typed variant of [listArtifacts] returning parsed descriptors for downloaders. */
     fun listArtifactDescriptors(
         worker: CloudWorkerSpec,
         remoteJobId: String
     ): ArtifactDescriptorListResult {
-        val res = listArtifacts(worker, remoteJobId)
-        if (res.status != OperationStatus.SUCCESS) {
-            return ArtifactDescriptorListResult(res, emptyList())
-        }
-        // Re-issue the raw request through the transport to parse descriptors with a
-        // single source of truth (parseArtifactDescriptors in CloudProtocol).
-        val raw = transport.send(
+        requireAuth(worker)?.let { return ArtifactDescriptorListResult(it, emptyList()) }
+        val res = transport.send(
             worker.endpointUrl,
             CloudTransportRequest("GET", "/api/v1/jobs/$remoteJobId/artifacts", authHeaders(worker))
         )
-        val descriptors = runCatching { parseArtifactDescriptors(raw.body) }.getOrDefault(emptyList())
-        return ArtifactDescriptorListResult(res, descriptors)
+        checkTransport(res, "artifact listing")?.let { return ArtifactDescriptorListResult(it, emptyList()) }
+        if (res.statusCode != 200) {
+            return ArtifactDescriptorListResult(
+                OperationResult.failure(
+                    error = "Cloud artifact listing failed: HTTP ${res.statusCode} for job $remoteJobId.",
+                    exitCode = res.statusCode,
+                    logs = listOf(res.body.take(2000))
+                ),
+                emptyList()
+            )
+        }
+        val descriptors = runCatching { parseArtifactDescriptors(res.body) }.getOrElse {
+            return ArtifactDescriptorListResult(
+                OperationResult.failure(
+                    error = "Cloud artifact listing returned unparseable JSON for job $remoteJobId.",
+                    logs = listOf(res.body.take(2000))
+                ),
+                emptyList()
+            )
+        }
+        return ArtifactDescriptorListResult(
+            OperationResult.success(
+                logs = descriptors.map { "artifact ${it.filename} (${it.sizeBytes} bytes, sha256 ${it.sha256.take(12)}...)" },
+                artifacts = descriptors.map { it.id },
+                verificationEvidence = "HTTP 200, ${descriptors.size} artifact descriptors"
+            ),
+            descriptors
+        )
     }
 
     /**

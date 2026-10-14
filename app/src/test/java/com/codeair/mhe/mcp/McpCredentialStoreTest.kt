@@ -69,6 +69,43 @@ class McpCredentialStoreTest {
     }
 
     @Test
+    fun `removeAllServerCredentials purges unlisted names too`() {
+        val store = McpCredentialStore(baseDir, InMemoryCredentialBackend())
+        store.setCredential("srv1", "A", "1")
+        store.setCredential("srv1", "UNDOCUMENTED_NAME", "2")
+        store.setCredential("srv2", "A", "3")
+        store.removeAllServerCredentials("srv1")
+        assertNull(store.getCredential("srv1", "A"))
+        assertNull(store.getCredential("srv1", "UNDOCUMENTED_NAME"))
+        assertEquals("3", store.getCredential("srv2", "A"))
+    }
+
+    @Test
+    fun `removeAllServerCredentials leaves project-scoped sibling installs alone`() {
+        val store = McpCredentialStore(baseDir, InMemoryCredentialBackend())
+        store.setCredential("filesystem", "TOKEN", "global-secret")
+        store.setCredential("filesystem::projA", "TOKEN", "project-secret")
+        store.removeAllServerCredentials("filesystem")
+        assertNull(store.getCredential("filesystem", "TOKEN"))
+        assertEquals("project-secret", store.getCredential("filesystem::projA", "TOKEN"))
+        store.removeAllServerCredentials("filesystem::projA")
+        assertNull(store.getCredential("filesystem::projA", "TOKEN"))
+    }
+
+    @Test
+    fun `removeAllServerCredentials purges every key on the encrypted file backend`() {
+        val backendDir = File(baseDir, "purge_aes")
+        val store = McpCredentialStore(backendDir, AesGcmFileCredentialBackend(File(backendDir, "creds.json")))
+        store.setCredential("srv1", "A", "1")
+        store.setCredential("srv1", "B", "2")
+        store.setCredential("srv2", "A", "3")
+        store.removeAllServerCredentials("srv1")
+        assertNull(store.getCredential("srv1", "A"))
+        assertNull(store.getCredential("srv1", "B"))
+        assertEquals("3", store.getCredential("srv2", "A"))
+    }
+
+    @Test
     fun `aes-gcm backend round trips and survives recreation`() {
         val backendDir = File(baseDir, "aes")
         val store = McpCredentialStore(backendDir, AesGcmFileCredentialBackend(File(backendDir, "creds.json")))

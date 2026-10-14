@@ -43,7 +43,7 @@ class MarketplaceDiscoveryClientTest {
 
     @Test
     fun fetchIndexReturnsListingsOnSuccess() {
-        transport.respond("GET", "/api/v1/listings", 200, indexBody("a", "b"))
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody("a", "b"))
         val result = client.fetchIndex()
         assertEquals(OperationStatus.SUCCESS, result.result.status)
         assertEquals(2, result.listings.size)
@@ -52,7 +52,7 @@ class MarketplaceDiscoveryClientTest {
 
     @Test
     fun fetchIndexTransportErrorIsFailed() {
-        transport.respondTransportError("GET", "/api/v1/listings")
+        transport.respondTransportError("GET", "/api/v1/listings?page=1&per_page=100")
         val result = client.fetchIndex()
         assertEquals(OperationStatus.FAILED, result.result.status)
         assertTrue(result.listings.isEmpty())
@@ -60,7 +60,7 @@ class MarketplaceDiscoveryClientTest {
 
     @Test
     fun fetchIndexNon2xxIsFailed() {
-        transport.respond("GET", "/api/v1/listings", 503, "unavailable")
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 503, "unavailable")
         val result = client.fetchIndex()
         assertEquals(OperationStatus.FAILED, result.result.status)
         assertEquals(503, result.result.exitCode)
@@ -68,7 +68,7 @@ class MarketplaceDiscoveryClientTest {
 
     @Test
     fun fetchIndexBadJsonIsFailed() {
-        transport.respond("GET", "/api/v1/listings", 200, "not json at all")
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, "not json at all")
         val result = client.fetchIndex()
         assertEquals(OperationStatus.FAILED, result.result.status)
     }
@@ -112,7 +112,7 @@ class MarketplaceDiscoveryClientTest {
 
     @Test
     fun cacheServesFreshWithoutNetworkCall() {
-        transport.respond("GET", "/api/v1/listings", 200, indexBody("a"))
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody("a"))
         val cache = MarketplaceDiscoveryCache(client, ttlMs = 60_000, clock = { 1_000L })
         val first = cache.getOrRefresh()
         assertEquals(OperationStatus.SUCCESS, first.result.status)
@@ -128,14 +128,14 @@ class MarketplaceDiscoveryClientTest {
     @Test
     fun cacheRefreshesWhenStale() {
         var now = 0L
-        transport.respond("GET", "/api/v1/listings", 200, indexBody("a"))
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody("a"))
         val cache = MarketplaceDiscoveryCache(client, ttlMs = 1_000, clock = { now })
         cache.getOrRefresh()
         assertEquals(1, transport.callCount())
 
         now = 5_000L // past TTL
         assertTrue(cache.isStale)
-        transport.respond("GET", "/api/v1/listings", 200, indexBody("a", "b"))
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody("a", "b"))
         val refreshed = cache.getOrRefresh()
         assertEquals(2, refreshed.listings.size)
         assertEquals(2, transport.callCount())
@@ -144,12 +144,12 @@ class MarketplaceDiscoveryClientTest {
     @Test
     fun failedRefreshKeepsOldCache() {
         var now = 0L
-        transport.respond("GET", "/api/v1/listings", 200, indexBody("a"))
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody("a"))
         val cache = MarketplaceDiscoveryCache(client, ttlMs = 1_000, clock = { now })
         cache.getOrRefresh()
 
         now = 5_000L
-        transport.respondTransportError("GET", "/api/v1/listings")
+        transport.respondTransportError("GET", "/api/v1/listings?page=1&per_page=100")
         val failed = cache.refresh()
         assertEquals(OperationStatus.FAILED, failed.result.status)
         assertEquals(1, cache.getCached().size) // old cache intact
@@ -157,11 +157,33 @@ class MarketplaceDiscoveryClientTest {
 
     @Test
     fun invalidateClearsCache() {
-        transport.respond("GET", "/api/v1/listings", 200, indexBody("a"))
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody("a"))
         val cache = MarketplaceDiscoveryCache(client, clock = { 1_000L })
         cache.getOrRefresh()
         cache.invalidate()
         assertTrue(cache.isStale)
         assertTrue(cache.getCached().isEmpty())
+    }
+
+    @Test
+    fun fetchIndexPagesThroughFullFirstPage() {
+        val page1Ids = (0 until MarketplaceDiscoveryClient.INDEX_PAGE_SIZE).map { "p1-$it" }.toTypedArray()
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody(*page1Ids))
+        transport.respond("GET", "/api/v1/listings?page=2&per_page=100", 200, indexBody("p2-a"))
+        val result = client.fetchIndex()
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        assertEquals(MarketplaceDiscoveryClient.INDEX_PAGE_SIZE + 1, result.listings.size)
+        assertEquals(2, transport.callCount())
+    }
+
+    @Test
+    fun fetchIndexStopsWhenRegistryIgnoresPagination() {
+        val ids = (0 until MarketplaceDiscoveryClient.INDEX_PAGE_SIZE).map { "dup-$it" }.toTypedArray()
+        transport.respond("GET", "/api/v1/listings?page=1&per_page=100", 200, indexBody(*ids))
+        transport.respond("GET", "/api/v1/listings?page=2&per_page=100", 200, indexBody(*ids))
+        val result = client.fetchIndex()
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        assertEquals(MarketplaceDiscoveryClient.INDEX_PAGE_SIZE, result.listings.size)
+        assertEquals(2, transport.callCount())
     }
 }

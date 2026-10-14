@@ -38,6 +38,7 @@ internal class OpenRouterRoutingGateway(
     private fun acceptLoop() {
         while (running.get()) {
             runCatching { server.accept() }.getOrNull()?.let { socket ->
+                socket.soTimeout = CLI_SOCKET_TIMEOUT_MS
                 Thread({ socket.use(::handle) }, "mh-openrouter-request").apply { isDaemon = true; start() }
             }
         }
@@ -144,5 +145,6 @@ internal class OpenRouterRoutingGateway(
     private companion object {
         const val MAX_REQUEST_BYTES = 16 * 1024 * 1024
         const val MAX_HEADER_LINE_BYTES = 16 * 1024
+        const val CLI_SOCKET_TIMEOUT_MS = 180_000
     }
 }
