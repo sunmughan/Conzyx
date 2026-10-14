@@ -824,18 +824,11 @@ fun AgentScreen(
                         shape = RoundedCornerShape(50),
                         border = BorderStroke(1.dp, dot.copy(alpha = 0.35f)),
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        Box(
+                            Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(Modifier.size(6.5.dp).background(dot, CircleShape))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (pillLoading) "Checking" else label,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = dot,
-                            )
+                            Box(Modifier.size(7.dp).background(dot, CircleShape))
                         }
                     }
                     IconButton(onClick = {
