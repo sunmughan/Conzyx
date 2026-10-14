@@ -37,15 +37,15 @@ class FullAccessLaunchGateTest {
     private fun snapshot(events: MutableList<RuntimeEvent>): List<RuntimeEvent> =
         synchronized(events) { events.toList() }
 
-    private suspend fun awaitPrompt(events: MutableList<RuntimeEvent>): RuntimeEvent.ToolRequested {
-        return withTimeout(10_000) {
-            while (true) {
-                val snap = snapshot(events)
-                (snap.filterIsInstance<RuntimeEvent.ToolRequested>().firstOrNull())?.let { return@withTimeout it }
-                delay(25)
+    private suspend fun awaitPrompt(events: MutableList<RuntimeEvent>): RuntimeEvent.ToolRequested =
+        withTimeout(10_000) {
+            var result: RuntimeEvent.ToolRequested? = null
+            while (result == null) {
+                result = snapshot(events).filterIsInstance<RuntimeEvent.ToolRequested>().firstOrNull()
+                if (result == null) delay(25)
             }
+            result
         }
-    }
 
     @Test
     fun killSwitchDeniesLaunchWithoutPrompt() = runBlocking {

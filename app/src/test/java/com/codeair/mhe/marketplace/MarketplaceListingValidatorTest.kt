@@ -178,7 +178,7 @@ class MarketplaceListingValidatorTest {
     }
 
     @Test
-    fun tooManyTagsFail() {
+    fun tooManyTagsFailOnItem() {
         val result = validateMarketplaceItem(validItem().copy(tags = (1..11).map { "tag$it" }))
         assertFalse(result.isValid)
         assertTrue(result.errors.any { it.contains("10 tags") })
