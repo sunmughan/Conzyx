@@ -43,7 +43,9 @@ class HttpRetryTest {
 
     @Test
     fun `retry-after seconds parse to millis`() {
-        assertEquals(120_000L, HttpRetry.retryAfterMs("120"))
+        // 60s cap: use a value under the cap here; the cap itself is
+        // covered by the next test.
+        assertEquals(45_000L, HttpRetry.retryAfterMs("45"))
         assertEquals(1_000L, HttpRetry.retryAfterMs("1"))
     }
 

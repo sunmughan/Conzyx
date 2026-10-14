@@ -65,6 +65,7 @@ class CustomAgentBridgeStopTest {
 
             val sessionIdRef = AtomicReference<String>()
             val startedLatch = CountDownLatch(1)
+            val firstDeltaLatch = CountDownLatch(1)
             val terminalRef = AtomicReference<RuntimeEvent>()
             val doneLatch = CountDownLatch(1)
             thread(isDaemon = true) {
@@ -75,6 +76,10 @@ class CustomAgentBridgeStopTest {
                                 sessionIdRef.set(event.sessionId)
                                 startedLatch.countDown()
                             }
+                            // The first delta proves the SSE stream is live
+                            // and the connection is tracked, so stopSession
+                            // below cannot race ahead of it.
+                            is RuntimeEvent.AssistantDelta -> firstDeltaLatch.countDown()
                             is RuntimeEvent.SessionCompleted,
                             is RuntimeEvent.SessionFailed -> {
                                 terminalRef.set(event)
@@ -100,6 +105,7 @@ class CustomAgentBridgeStopTest {
             }
 
             assertTrue("session never started", startedLatch.await(10, TimeUnit.SECONDS))
+            assertTrue("no SSE data arrived", firstDeltaLatch.await(10, TimeUnit.SECONDS))
             val stopAt = System.currentTimeMillis()
             runBlocking { bridge.stopSession(sessionIdRef.get()) }
             assertTrue("session did not end after stop", doneLatch.await(10, TimeUnit.SECONDS))
