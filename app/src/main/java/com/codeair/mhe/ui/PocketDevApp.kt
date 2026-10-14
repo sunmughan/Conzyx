@@ -839,10 +839,10 @@ private fun BackgroundTaskSetupScreen(
                                         "EXTENDED",
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                                         color = MaterialTheme.colorScheme.primary,
-                                        fontSize = 6.5.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 0.45.sp,
-                                        lineHeight = 8.sp,
+                                        lineHeight = 12.sp,
                                     )
                                 }
                             }
@@ -913,7 +913,7 @@ private fun BackgroundTaskSetupScreen(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("STEP ${currentStep + 1} OF 3", color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                            Text("STEP ${currentStep + 1} OF 3", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
                             Text(currentTitle, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         }
                         if (currentGranted) Icon(Icons.Default.Check, "Granted", tint = PocketGreen)
@@ -1161,10 +1161,10 @@ private fun RuntimeSetupPromptScreen(
                                         "EXTENDED",
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                                         color = MaterialTheme.colorScheme.primary,
-                                        fontSize = 6.5.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 0.45.sp,
-                                        lineHeight = 8.sp,
+                                        lineHeight = 12.sp,
                                     )
                                 }
                             }
@@ -1714,7 +1714,7 @@ private fun AgentChoiceRow(
                             "Recommended",
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 9.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             softWrap = false,
@@ -2357,10 +2357,10 @@ private fun StartupErrorScreen(
                                         "EXTENDED",
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                                         color = MaterialTheme.colorScheme.primary,
-                                        fontSize = 6.5.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 0.45.sp,
-                                        lineHeight = 8.sp,
+                                        lineHeight = 12.sp,
                                     )
                                 }
                             }
@@ -3157,7 +3157,7 @@ private fun ProviderChoiceRow(
                             "Beta",
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                             color = MaterialTheme.colorScheme.primary,
-                            fontSize = 8.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -3930,10 +3930,10 @@ private fun ProjectsScreen(
                                     text = "EXTENDED",
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                                     color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 6.5.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.45.sp,
-                                    lineHeight = 8.sp,
+                                    lineHeight = 12.sp,
                                 )
                             }
                         }
