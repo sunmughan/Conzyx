@@ -192,6 +192,9 @@ private const val DESKTOP_USER_AGENT =
 private const val MOBILE_CHROME_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
+private val UnsetSaveVisualSnapshot: (android.graphics.Bitmap, String, String, (VisualSnapshot) -> Unit) -> Unit =
+    { _, _, _, _ -> }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PreviewTab(
@@ -213,13 +216,22 @@ fun PreviewTab(
     onSetInspectedDomElement: (DomElementInfo?) -> Unit = {},
     onClearVisualLogs: () -> Unit = {},
     onSetViewportPreset: (ViewportPreset) -> Unit = {},
-    onSaveVisualSnapshot: (android.graphics.Bitmap, String, String, (VisualSnapshot) -> Unit) -> Unit = { _, _, _, cb -> cb(VisualSnapshot(title = "test", url = "", screenshotPath = "")) },
+    onSaveVisualSnapshot: (android.graphics.Bitmap, String, String, (VisualSnapshot) -> Unit) -> Unit = UnsetSaveVisualSnapshot,
     onSetBaselineSnapshot: (VisualSnapshot) -> Unit = {},
     onSetComparisonSnapshot: (VisualSnapshot) -> Unit = {},
     onDispatchAiVisualBugReport: (String, String, VisualSnapshot?, () -> Unit) -> Unit = { _, _, _, cb -> cb() },
     onRequestSwitchToChat: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val effectiveOnSaveVisualSnapshot: (android.graphics.Bitmap, String, String, (VisualSnapshot) -> Unit) -> Unit =
+        if (onSaveVisualSnapshot === UnsetSaveVisualSnapshot) {
+            { bmp, title, url, cb ->
+                val dir = java.io.File(context.cacheDir, "visual_snapshots").apply { mkdirs() }
+                val file = java.io.File(dir, "snapshot_${System.currentTimeMillis()}.png")
+                runCatching { file.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+                cb(VisualSnapshot(title = title.ifBlank { "Snapshot" }, url = url, screenshotPath = file.absolutePath))
+            }
+        } else onSaveVisualSnapshot
     LaunchedEffect(Unit) { onScanPorts {} }
 
     // Multi-tab state
@@ -336,6 +348,12 @@ fun PreviewTab(
             s.loadWithOverviewMode = true
         }
         webView?.reload()
+    }
+
+    val toggleDomInspector: () -> Unit = {
+        isInspectorActive = !isInspectorActive
+        webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(isInspectorActive), null)
+        Toast.makeText(context, if (isInspectorActive) "DOM Inspector enabled: Tap element" else "DOM Inspector disabled", Toast.LENGTH_SHORT).show()
     }
 
     val isBookmarked = bookmarksList.any { it.url == currentTab.url && it.url.isNotBlank() }
@@ -501,19 +519,6 @@ fun PreviewTab(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    // Refresh
-                    IconButton(
-                        onClick = { webView?.reload() ?: navigate() },
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Reload",
-                            modifier = Modifier.size(18.dp),
-                            tint = if (currentTab.activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
                     // Tab Counter
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -578,7 +583,7 @@ fun PreviewTab(
                             val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
                             val bmp = webView?.let { VisualCaptureEngine.captureWebView(it) }
                             if (bmp != null) {
-                                onSaveVisualSnapshot(bmp, "Visual Bug Snapshot", targetUrl) { snap ->
+                                effectiveOnSaveVisualSnapshot(bmp, "Visual Bug Snapshot", targetUrl) { snap ->
                                     aiDebuggerSnapshot = snap
                                     showAiDebuggerDialog = true
                                 }
@@ -596,26 +601,9 @@ fun PreviewTab(
                         )
                     }
 
-                    // Desktop site toggle
-                    IconButton(
-                        onClick = toggleDesktopSite,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DesktopWindows,
-                            contentDescription = "Desktop site",
-                            tint = if (currentTab.isDesktopMode) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-
                     // DOM Touch Inspector Toggle
                     IconButton(
-                        onClick = {
-                            isInspectorActive = !isInspectorActive
-                            webView?.evaluateJavascript(DomInspectorEngine.buildInspectorScript(isInspectorActive), null)
-                            Toast.makeText(context, if (isInspectorActive) "DOM Inspector enabled: Tap element" else "DOM Inspector disabled", Toast.LENGTH_SHORT).show()
-                        },
+                        onClick = toggleDomInspector,
                         modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
@@ -1554,33 +1542,11 @@ fun PreviewTab(
                             }
                             Button(
                                 onClick = {
-                                    val inspectJs = """
-                                        (function() {
-                                            if (window.__mh_inspect_active) {
-                                                window.__mh_inspect_active = false;
-                                                console.log('MH_DOM_INSPECT: Inspector disabled');
-                                                return;
-                                            }
-                                            window.__mh_inspect_active = true;
-                                            document.addEventListener('click', function(e) {
-                                                if (!window.__mh_inspect_active) return;
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                var t = e.target;
-                                                var tag = t.tagName.toLowerCase();
-                                                var id = t.id ? '#' + t.id : '';
-                                                var cls = t.className ? '.' + (typeof t.className === 'string' ? t.className.trim().split(/\s+/).join('.') : '') : '';
-                                                var text = (t.innerText || '').slice(0, 50).trim();
-                                                console.log('MH_DOM_INSPECT: <' + tag + id + cls + '> "' + text + '"');
-                                            }, true);
-                                            console.log('MH_DOM_INSPECT: Inspector enabled. Tap any element.');
-                                        })();
-                                    """.trimIndent()
-                                    webView?.evaluateJavascript(inspectJs, null)
+                                    toggleDomInspector()
                                     showExtensionsModal = false
                                 },
                             ) {
-                                Text("Inspect", fontSize = 11.sp)
+                                Text(if (isInspectorActive) "Stop" else "Inspect", fontSize = 11.sp)
                             }
                         }
                     }
@@ -1693,7 +1659,7 @@ fun PreviewTab(
                 val targetUrl = currentTab.activeUrl.orEmpty().ifBlank { address }
                 val bmp = webView?.let { VisualCaptureEngine.captureWebView(it) }
                 if (bmp != null) {
-                    onSaveVisualSnapshot(bmp, title, targetUrl) { snap ->
+                    effectiveOnSaveVisualSnapshot(bmp, title, targetUrl) { snap ->
                         Toast.makeText(context, "Captured snapshot: ${snap.title}", Toast.LENGTH_SHORT).show()
                     }
                 }
