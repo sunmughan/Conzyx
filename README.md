@@ -34,6 +34,7 @@ Run a real Linux development environment, command multi-agent AI engineering tea
 ## Table of Contents
 
 - [What is Conzyx?](#-what-is-conzyx)
+- [Documentation](#-documentation)
 - [Features](#-features)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
@@ -59,6 +60,15 @@ The app ships in two editions:
 | **Offline** | ~1.2 GB | Fully bundled. All toolchains (core, Python, Android SDK, Claude Code, DeepSeek, Antigravity) ship inside the APK. Works without network after install. |
 
 Both editions share the same application ID (`com.codeair.mhe`) and the same feature set; only the runtime delivery differs.
+
+---
+
+## 📚 Documentation
+
+Want the full in-depth guide? Start here:
+
+- [**Complete Documentation (PDF, 171 pages)**](docs/Conzyx-Complete-Documentation.pdf) — every screen, every feature, every setting explained in depth: agent system, terminal, file manager, marketplace, skills, settings, build variants, permissions, troubleshooting, and FAQ.
+- [**Pitch Deck (PDF)**](docs/Conzyx-Pitch-Deck.pdf) — the product story: what Conzyx is, who it is for, and why it exists.
 
 ---
 
