@@ -2653,32 +2653,6 @@ private fun formatAgentBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-/**
- * Fixed-size three-dot wave. All three dots are always laid out, only their
- * alpha animates — so surrounding text never shifts while loading.
- */
-@Composable
-private fun AgentTypingDots(
-    color: Color,
-    modifier: Modifier = Modifier,
-    dotSize: androidx.compose.ui.unit.Dp = 6.dp,
-    spacing: androidx.compose.ui.unit.Dp = 4.dp,
-) {
-    val transition = rememberInfiniteTransition(label = "agent-typing")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing), repeatMode = RepeatMode.Restart),
-        label = "wave",
-    )
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) {
-        repeat(3) { index ->
-            val alpha = 0.25f + 0.75f * ((phase + index / 3f) % 1f)
-            Box(Modifier.size(dotSize).background(color.copy(alpha = alpha), CircleShape))
-        }
-    }
-}
-
 @Composable
 private fun AgentSelectionDot(selected: Boolean) {
     Box(
