@@ -42,9 +42,12 @@ import org.json.JSONObject
 class DshRuntimeBridge(
     private val context: Context,
     private val secretFor: (ProviderProfile) -> String?,
+    private val safetyGateway: com.codeair.mhe.security.SafetyGateway,
+    private val interactiveApprovals: Boolean = true,
 ) : RuntimeBridge {
     private val installer = RuntimeInstaller(context)
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
+    private val launchGate = FullAccessLaunchGate(safetyGateway)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
     override val supportsSessionRecovery: Boolean = true
@@ -84,6 +87,24 @@ class DshRuntimeBridge(
             )
             return@withContext sessionId
         }
+        val launchAcknowledged = launchGate.authorizeLaunch(
+            agentLabel = "DeepSeek Harness",
+            sessionId = sessionId,
+            projectId = projectId,
+            operation = com.codeair.mhe.security.SafetyOperation.ShellExec(
+                "dsh --profile sdk (DSH_PERMISSION_MODE=danger-full-access)",
+                "/workspace/$projectSlug",
+            ),
+            explanation = "DeepSeek Harness runs with full access (DSH_PERMISSION_MODE=danger-full-access): " +
+                "it can run any shell command and read, write or delete any file in the project workspace " +
+                "without asking again. Approve only if you trust this task.",
+            affectedPaths = listOf("/workspace/$projectSlug"),
+            interactive = interactiveApprovals,
+            emit = { eventBus.emit(it) },
+        )
+        if (!launchAcknowledged) {
+            return@withContext sessionId
+        }
 
         var openRouterGateway: OpenRouterRoutingGateway? = null
         runCatching {
@@ -119,8 +140,8 @@ class DshRuntimeBridge(
             writeDshSettings(installed.rootfs, route, provider)
             val environment = linkedMapOf(
                 "DSH_HOME" to DSH_HOME_GUEST_PATH,
-                // PocketDev already confines the whole Linux guest with PRoot. Let dsh
-                // use every tool inside that boundary without an unavailable approval UI.
+                // The full-access mode is gated behind an explicit user
+                // acknowledgment (FullAccessLaunchGate) before the launch.
                 "DSH_PERMISSION_MODE" to "danger-full-access",
                 route.keyEnv to secret,
             )
@@ -346,12 +367,13 @@ class DshRuntimeBridge(
     }
 
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) {
-        // Headless one-shot runs expose no approval channel; nothing is ever requested.
+        launchGate.respondToApproval(request.approvalId, approved)
     }
 
     override suspend fun stopSession(sessionId: String) = withContext(Dispatchers.IO) {
         if (activeSessionId == sessionId) {
             userStopRequested = true
+            launchGate.abortPending()
             activeProcess?.destroy()
             delay(500)
             if (activeProcess?.isAlive == true) activeProcess?.destroyForcibly()

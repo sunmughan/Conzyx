@@ -37,7 +37,8 @@ class SafetyGateway(
         val verdict: SafetyVerdict,
         val reason: String,
         val prompt: AuthorizationPrompt? = null,
-        val category: PermissionCategory
+        val category: PermissionCategory,
+        val level: PermissionLevel? = null
     )
 
     fun authorize(
@@ -124,13 +125,13 @@ class SafetyGateway(
 
         return when {
             policyDecision.allowed ->
-                SafetyDecision(SafetyVerdict.ALLOW, policyDecision.reason, null, category)
+                SafetyDecision(SafetyVerdict.ALLOW, policyDecision.reason, null, category, policyDecision.level)
             policyDecision.requiresPrompt -> {
                 val prompt = AuthorizationPrompt.forOperation(operation, policyEngine.commandDetector)
-                SafetyDecision(SafetyVerdict.PROMPT, policyDecision.reason, prompt, category)
+                SafetyDecision(SafetyVerdict.PROMPT, policyDecision.reason, prompt, category, policyDecision.level)
             }
             else ->
-                SafetyDecision(SafetyVerdict.DENY, policyDecision.reason, null, category)
+                SafetyDecision(SafetyVerdict.DENY, policyDecision.reason, null, category, policyDecision.level)
         }
     }
 

@@ -417,7 +417,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mcpServerResolver = { serverId -> mcpRegistry.getServer(serverId) },
     )
     private val claudeRuntime = ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
-    private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+    private val dshRuntime = DshRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
     private val installer = RuntimeInstaller(application)
     private val antigravityRuntime = AntigravityRuntimeBridge(
         application,
@@ -429,6 +429,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         saveConversationId = { projectId, id ->
             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
         },
+        safetyGateway = safetyGateway,
     )
     private val customRuntime = CustomAgentBridge { profile -> vault.get(profile.kind.name) }
     private val codexRuntime = CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
@@ -491,7 +492,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // separate OS process, which is what makes parallel agents real.
                 when (kind) {
                     AgentKind.CLAUDE_CODE -> ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
-                    AgentKind.DEEPSEEK_HARNESS -> DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+                    AgentKind.DEEPSEEK_HARNESS -> DshRuntimeBridge(
+                        application,
+                        { profile -> vault.get(profile.kind.name) },
+                        safetyGateway,
+                        interactiveApprovals = false,
+                    )
                     AgentKind.ANTIGRAVITY -> AntigravityRuntimeBridge(
                         application,
                         model = { _state.value.antigravityModel },
@@ -502,6 +508,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         saveConversationId = { projectId, id ->
                             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
                         },
+                        safetyGateway = safetyGateway,
+                        interactiveApprovals = false,
                     )
                     AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
                     AgentKind.CODEX -> CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
@@ -1347,6 +1355,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun installAppUpdate() =
         runtimeCoordinator.installAppUpdate()
+
+    fun cancelAppUpdateDownload() =
+        runtimeCoordinator.cancelAppUpdateDownload()
 
     fun dismissAppUpdateError() =
         runtimeCoordinator.dismissAppUpdateError()

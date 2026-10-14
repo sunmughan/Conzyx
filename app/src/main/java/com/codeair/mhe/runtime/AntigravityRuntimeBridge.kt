@@ -152,10 +152,13 @@ class AntigravityRuntimeBridge(
     private val effort: () -> String,
     private val conversationId: (String) -> String?,
     private val saveConversationId: (String, String) -> Unit,
+    private val safetyGateway: com.codeair.mhe.security.SafetyGateway,
+    private val interactiveApprovals: Boolean = true,
 ) : RuntimeBridge {
     override val supportsSessionRecovery: Boolean = true
     private val installer = RuntimeInstaller(context)
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
+    private val launchGate = FullAccessLaunchGate(safetyGateway)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
     private val finished = ConcurrentHashMap.newKeySet<String>()
@@ -184,7 +187,6 @@ class AntigravityRuntimeBridge(
                     addAll(listOf("--input-format", "stream-json"))
                     addAll(listOf("--output-format", "stream-json"))
                     addAll(listOf("--print-timeout", "2m"))
-                    add("--dangerously-skip-permissions")
                     addAntigravitySelection(model(), effort())
                     add("--new-project")
                 }
@@ -290,6 +292,24 @@ class AntigravityRuntimeBridge(
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         if (!installer.isAgentInstalled(com.codeair.mhe.model.AgentKind.ANTIGRAVITY)) {
             emitFailure(sessionId, "Antigravity CLI is not installed. Open Settings → Coding agent to install it.")
+            return@withContext sessionId
+        }
+        val launchAcknowledged = launchGate.authorizeLaunch(
+            agentLabel = "Antigravity CLI",
+            sessionId = sessionId,
+            projectId = projectId,
+            operation = com.codeair.mhe.security.SafetyOperation.ShellExec(
+                "agy --dangerously-skip-permissions",
+                "/workspace/$projectSlug",
+            ),
+            explanation = "Antigravity CLI runs with --dangerously-skip-permissions: it can run any shell command " +
+                "and read, write or delete any file in the project workspace without asking again. " +
+                "Approve only if you trust this task.",
+            affectedPaths = listOf("/workspace/$projectSlug"),
+            interactive = interactiveApprovals,
+            emit = { eventBus.emit(it) },
+        )
+        if (!launchAcknowledged) {
             return@withContext sessionId
         }
 
@@ -461,14 +481,13 @@ class AntigravityRuntimeBridge(
     }
 
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) {
-        // agy headless streaming rejects control_response messages. This driver is
-        // intentionally launched with --dangerously-skip-permissions by explicit
-        // product choice, so no Antigravity approval can be pending here.
+        launchGate.respondToApproval(request.approvalId, approved)
     }
 
     override suspend fun stopSession(sessionId: String) {
         if (activeSessionId == sessionId) {
             userStopRequested = true
+            launchGate.abortPending()
             activeProcess?.destroy()
             emitFailure(sessionId, "Stopped by user")
         }
@@ -617,8 +636,9 @@ internal fun antigravityCommand(model: String, effort: String, conversationId: S
     addAll(listOf("--input-format", "stream-json"))
     addAll(listOf("--output-format", "stream-json"))
     addAll(listOf("--print-timeout", "60m"))
-    // This is intentionally explicit and covered by tests. Antigravity tool calls
-    // do not pass through PocketDev approval dialogs while this mode is enabled.
+    // Covered by tests. Tool calls themselves have no approval channel in headless
+    // agy; the bridge gates the whole launch behind an explicit user
+    // acknowledgment (FullAccessLaunchGate) before this flag is used.
     add("--dangerously-skip-permissions")
     addAntigravitySelection(model, effort)
     conversationId?.takeIf(String::isNotBlank)?.let {
