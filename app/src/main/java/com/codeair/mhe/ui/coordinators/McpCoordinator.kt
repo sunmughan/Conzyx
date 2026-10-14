@@ -73,7 +73,7 @@ class McpCoordinator(
 
     fun removeMcpServer(serverId: String) {
         toolRegistry.stopServer(serverId)
-        mcpRegistry.removeServer(serverId)
+        mcpRegistry.removeServerAndCredentials(serverId, credentialStore)
         refreshMcpServers()
     }
 

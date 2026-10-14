@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.widget.Toast
+import java.io.File
 
 class AndroidAppInstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -24,6 +25,13 @@ class AndroidAppInstallReceiver : BroadcastReceiver() {
             return
         }
         val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME) ?: return
+        if (packageName == context.packageName) {
+            // Our own update installed: the downloaded APK served its
+            // purpose — drop it instead of keeping it in filesDir forever.
+            // (Factory-built APKs install other package names and live
+            // outside the updates dir, so they are untouched.)
+            clearDownloadedUpdateApks(File(context.filesDir, "updates"))
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             runCatching {
                 context.packageManager.getLaunchIntentSenderForPackage(packageName).sendIntent(

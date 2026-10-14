@@ -277,6 +277,10 @@ class EnvironmentUpdateManager(
         preflightStorage(item.sizeBytes)
         if (old == item.version) return
 
+        // A previous crashed/failed run may have left package zips and
+        // staging dirs behind; start from a clean slate.
+        cleanup()
+
         val componentRoot = File(components, item.id)
         val target = File(componentRoot, item.version)
         val staging = File(componentRoot, "." + item.version + ".installing")
@@ -318,6 +322,8 @@ class EnvironmentUpdateManager(
             if (old != null && File(backups, item.id + ".zip").isFile) {
                 runCatching { restore(item, old) }
             }
+            // The failed run's package zip must not accumulate in cache.
+            cleanup()
             throw IllegalStateException(item.label + " update failed: " + (error.message ?: "unknown error"), error)
         }
     }
@@ -353,10 +359,7 @@ class EnvironmentUpdateManager(
     }
 
     fun cleanup() {
-        downloads.listFiles().orEmpty().forEach { if (it.name.endsWith(".zip") || it.name.endsWith(".part")) it.delete() }
-        components.listFiles().orEmpty().forEach { dir ->
-            dir.listFiles().orEmpty().filter { it.name.contains(".installing") || it.name.contains(".restore") }.forEach(File::deleteRecursively)
-        }
+        purgeStaleUpdateFiles(downloads, components)
     }
 
     private fun currentVersion(id: String): String? {
@@ -518,5 +521,21 @@ class EnvironmentUpdateManager(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+}
+
+/**
+ * Deletes stale environment-update leftovers: abandoned package zips /
+ * partials in [downloads], and orphaned .installing / .restore staging dirs
+ * under [components]. Pure file logic so it stays unit-testable; the
+ * manager's [EnvironmentUpdateManager.cleanup] delegates to it.
+ */
+internal fun purgeStaleUpdateFiles(downloads: File, components: File) {
+    downloads.listFiles().orEmpty()
+        .forEach { if (it.name.endsWith(".zip") || it.name.endsWith(".part")) it.delete() }
+    components.listFiles().orEmpty().forEach { dir ->
+        dir.listFiles().orEmpty()
+            .filter { it.name.contains(".installing") || it.name.contains(".restore") }
+            .forEach(File::deleteRecursively)
     }
 }

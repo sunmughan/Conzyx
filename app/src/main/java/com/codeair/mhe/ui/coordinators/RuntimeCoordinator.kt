@@ -398,6 +398,18 @@ class RuntimeCoordinator(
             return
         }
         if (host.state().appUpdateStatus == AppUpdateStatus.DOWNLOADING) return
+        // Installing relaunches the process — an in-flight agent task
+        // would be killed with no warning. The offer stays; the user can
+        // install after stopping the task.
+        if (host.state().isRunning) {
+            host.updateState {
+                it.copy(
+                    appUpdateStatus = AppUpdateStatus.ERROR,
+                    appUpdateError = "An agent task is running — installing the update now would kill it. Stop the task first, then install.",
+                )
+            }
+            return
+        }
         host.updateState {
             it.copy(appUpdateStatus = AppUpdateStatus.DOWNLOADING, appUpdateDownloadedBytes = 0L, appUpdateTotalBytes = info.sizeBytes, appUpdateError = null)
         }

@@ -178,8 +178,10 @@ class RuntimeInstaller(private val context: Context) {
             extractZstdTar(archive, staging)
             stripMacosMetadataArtifacts(staging)
             require(File(staging, "usr/bin/bash").isFile) { "Core bundle is missing Bash" }
-            rootfs.deleteRecursively()
-            check(staging.renameTo(rootfs)) { "Could not activate the Linux environment" }
+            // The old code deleted the live rootfs before the rename: a
+            // kill or storage failure in between destroyed the runtime.
+            // Swap via a backup so a failed activation restores the old one.
+            activateStagingDir(staging, rootfs, File(runtimeDir, "ubuntu.previous"))
             check(ensureRootfsCompatibilityLinks()) { "Core runtime has an invalid Linux filesystem layout" }
             writeResolver()
             if (archive.parentFile == downloads) archive.delete()
@@ -3213,4 +3215,23 @@ main().catch((err) => {
         private const val MAX_PROCESS_OUTPUT_BYTES = 256 * 1024
         private val ANSI_ESCAPE = Regex("\\u001B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))")
     }
+}
+
+/**
+ * Activates a staged directory as [target] without a destroy-the-target
+ * window: the live target is first moved to [backup], then staging takes
+ * its place. If activation fails, the backup is restored and the error
+ * propagates. Top-level and pure so it stays unit-testable.
+ */
+internal fun activateStagingDir(staging: File, target: File, backup: File) {
+    backup.deleteRecursively()
+    val hadTarget = target.exists()
+    if (hadTarget) check(target.renameTo(backup)) { "Could not back up the existing directory" }
+    try {
+        check(staging.renameTo(target)) { "Could not activate the new directory" }
+    } catch (e: Throwable) {
+        if (hadTarget) runCatching { backup.renameTo(target) }
+        throw e
+    }
+    backup.deleteRecursively()
 }

@@ -105,3 +105,14 @@ object AndroidAppInstaller {
     private fun isCustomOemDevice(): Boolean = Build.MANUFACTURER.lowercase() in
         setOf("xiaomi", "redmi", "poco", "oppo", "vivo", "realme", "oneplus", "transsion", "infinix", "tecno")
 }
+
+/**
+ * Deletes downloaded self-update APKs from [updatesDir]. Only .apk files
+ * are removed; partials and other files are left alone. Kept top-level
+ * and pure so it stays unit-testable (the receiver needs a Context).
+ */
+internal fun clearDownloadedUpdateApks(updatesDir: File) {
+    updatesDir.listFiles().orEmpty()
+        .filter { it.isFile && it.name.endsWith(".apk", ignoreCase = true) }
+        .forEach { runCatching { it.delete() } }
+}
