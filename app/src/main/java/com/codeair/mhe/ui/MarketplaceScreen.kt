@@ -248,7 +248,6 @@ fun MarketplaceScreen(
                 }
             }
 
-            // Sort control
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
