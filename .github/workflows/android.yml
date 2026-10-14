@@ -458,12 +458,12 @@ jobs:
               ),
               "artifacts": {
                   "online": {
-                      "url": f"https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/{tag}/app-online-release.apk",
+                      "url": f"https://github.com/sunmughan/Conzyx/releases/download/{tag}/app-online-release.apk",
                       "sha256": os.environ["ONLINE_SHA"],
                       "sizeBytes": int(os.environ["ONLINE_SIZE"]),
                   },
                   "offline": {
-                      "url": f"https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/{tag}/app-offline-release.apk",
+                      "url": f"https://github.com/sunmughan/Conzyx/releases/download/{tag}/app-offline-release.apk",
                       "sha256": os.environ["OFFLINE_SHA"],
                       "sizeBytes": int(os.environ["OFFLINE_SIZE"]),
                   },

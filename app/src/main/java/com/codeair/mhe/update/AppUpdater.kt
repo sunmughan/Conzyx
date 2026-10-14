@@ -66,7 +66,7 @@ class AppUpdater(
                 // third fallback here — a repo this project does not
                 // control presenting update offers. Removed: only this
                 // project's own manifest and its own releases API answer.
-                "https://api.github.com/repos/sunmughan/Mobile-Harness-Extended/releases/latest",
+                "https://api.github.com/repos/sunmughan/Conzyx/releases/latest",
             )
         }
 

@@ -99,7 +99,7 @@ class SkillManager(
             connectTimeout = 10_000
             readTimeout = 15_000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "Mobile-Harness-Extended")
+            setRequestProperty("User-Agent", "Conzyx")
         }
         return try {
             val status = connection.responseCode
@@ -253,7 +253,7 @@ class SkillManager(
             connectTimeout = 15_000
             readTimeout = 30_000
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "Mobile-Harness-Extended")
+            setRequestProperty("User-Agent", "Conzyx")
         }
         try {
             val status = connection.responseCode

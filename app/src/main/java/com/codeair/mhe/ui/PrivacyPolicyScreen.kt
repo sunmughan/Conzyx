@@ -108,7 +108,7 @@ This policy may be updated as Conzyx changes. Material changes will be reflected
 ## Contact
 
 For privacy questions or requests, open an issue in the Conzyx repository:
-https://github.com/sunmughan/Mobile-Harness-Extended/issues
+https://github.com/sunmughan/Conzyx/issues
 """
 
 @OptIn(ExperimentalMaterial3Api::class)

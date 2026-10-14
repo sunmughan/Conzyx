@@ -13,7 +13,7 @@ class MarkdownTextTest {
     fun testMarkdownLinkGeneratesLinkAnnotation() {
         var clickedUrl = ""
         val annotated = buildMarkdownAnnotatedString(
-            text = "Check out [Release Page](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.20) for details.",
+            text = "Check out [Release Page](https://github.com/sunmughan/Conzyx/releases/tag/v1.0.20) for details.",
             primaryColor = Color.Blue,
             codeColor = Color.Red,
             codeBg = Color.Gray,
@@ -24,18 +24,18 @@ class MarkdownTextTest {
         val linkAnnotations = annotated.getLinkAnnotations(0, annotated.length)
         assertEquals(1, linkAnnotations.size)
         val link = linkAnnotations[0].item as LinkAnnotation.Url
-        assertEquals("https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.20", link.url)
+        assertEquals("https://github.com/sunmughan/Conzyx/releases/tag/v1.0.20", link.url)
 
         // Test interaction listener callback
         link.linkInteractionListener?.onClick(link)
-        assertEquals("https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.20", clickedUrl)
+        assertEquals("https://github.com/sunmughan/Conzyx/releases/tag/v1.0.20", clickedUrl)
     }
 
     @Test
     fun testRawUrlGeneratesLinkAnnotation() {
         var clickedUrl = ""
         val annotated = buildMarkdownAnnotatedString(
-            text = "Release Page:\nhttps://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.20",
+            text = "Release Page:\nhttps://github.com/sunmughan/Conzyx/releases/tag/v1.0.20",
             primaryColor = Color.Blue,
             codeColor = Color.Red,
             codeBg = Color.Gray,
@@ -45,10 +45,10 @@ class MarkdownTextTest {
         val linkAnnotations = annotated.getLinkAnnotations(0, annotated.length)
         assertEquals(1, linkAnnotations.size)
         val link = linkAnnotations[0].item as LinkAnnotation.Url
-        assertEquals("https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.20", link.url)
+        assertEquals("https://github.com/sunmughan/Conzyx/releases/tag/v1.0.20", link.url)
 
         link.linkInteractionListener?.onClick(link)
-        assertEquals("https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.20", clickedUrl)
+        assertEquals("https://github.com/sunmughan/Conzyx/releases/tag/v1.0.20", clickedUrl)
     }
 
     @Test
@@ -74,8 +74,8 @@ class MarkdownTextTest {
         val markdown = """
             | Asset | File Name | Size | Direct Download URL |
             | :--- | :--- | :--- | :--- |
-            | Online Release APK | app-online-release.apk | ~91.3 MB | [Download Online APK](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.20/app-online-release.apk) |
-            | Offline Release APK | app-offline-release.apk | ~888.4 MB | [Download Offline APK](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.20/app-offline-release.apk) |
+            | Online Release APK | app-online-release.apk | ~91.3 MB | [Download Online APK](https://github.com/sunmughan/Conzyx/releases/download/v1.0.20/app-online-release.apk) |
+            | Offline Release APK | app-offline-release.apk | ~888.4 MB | [Download Offline APK](https://github.com/sunmughan/Conzyx/releases/download/v1.0.20/app-offline-release.apk) |
         """.trimIndent()
 
         val blocks = parseMarkdown(markdown)

@@ -75,8 +75,8 @@ class AppUpdaterTest {
 
     @Test
     fun testIsGitHubDomain() {
-        assertTrue(AppUpdater.isGitHubDomain("https://api.github.com/repos/sunmughan/Mobile-Harness-Extended/releases/latest"))
-        assertTrue(AppUpdater.isGitHubDomain("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/manifest.json"))
+        assertTrue(AppUpdater.isGitHubDomain("https://api.github.com/repos/sunmughan/Conzyx/releases/latest"))
+        assertTrue(AppUpdater.isGitHubDomain("https://github.com/sunmughan/Conzyx/releases/latest/download/manifest.json"))
         assertTrue(AppUpdater.isGitHubDomain("https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/manifest.json"))
         assertTrue(AppUpdater.isGitHubDomain("https://objects.githubusercontent.com/github-production-release-asset-2e65be/"))
 

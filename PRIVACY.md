@@ -79,4 +79,4 @@ This policy may be updated as Mobile Harness Extended changes. Material changes 
 ## Contact
 
 For privacy questions or requests, open an issue in the Mobile Harness Extended repository:
-https://github.com/sunmughan/Mobile-Harness-Extended/issues
+https://github.com/sunmughan/Conzyx/issues

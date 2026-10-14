@@ -16,7 +16,7 @@ val testSecrets = Properties().apply {
 val playBuild = providers.gradleProperty("playBuild").orNull?.toBoolean() == true ||
     providers.gradleProperty("playFeasibility").orNull?.toBoolean() == true
 val privacyPolicyUrl = providers.gradleProperty("privacyPolicyUrl").orNull
-    ?: "https://github.com/sunmughan/Mobile-Harness-Extended/blob/main/PRIVACY.md"
+    ?: "https://github.com/sunmughan/Conzyx/blob/main/PRIVACY.md"
 val uploadStorePath = providers.environmentVariable("MH_UPLOAD_STORE_FILE").orNull
 val uploadStorePassword = providers.environmentVariable("MH_UPLOAD_STORE_PASSWORD").orNull
 val uploadKeyAlias = providers.environmentVariable("MH_UPLOAD_KEY_ALIAS").orNull
@@ -29,9 +29,9 @@ val hasUploadSigning = listOf(
 ).all { !it.isNullOrBlank() }
 val appVersionName = providers.gradleProperty("appVersionName").orNull ?: "3.1.0"
 val runtimeReleaseBaseUrl =
-    "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v$appVersionName"
+    "https://github.com/sunmughan/Conzyx/releases/download/v$appVersionName"
 val appUpdateManifestUrl =
-    "https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/mobile-harness-update.json"
+    "https://github.com/sunmughan/Conzyx/releases/latest/download/mobile-harness-update.json"
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 

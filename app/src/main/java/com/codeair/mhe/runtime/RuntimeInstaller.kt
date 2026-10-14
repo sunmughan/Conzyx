@@ -1011,7 +1011,7 @@ class RuntimeInstaller(private val context: Context) {
         }
 
         val releases = runCatching {
-            JSONArray(fetchText("https://api.github.com/repos/sunmughan/Mobile-Harness-Extended/releases?per_page=30"))
+            JSONArray(fetchText("https://api.github.com/repos/sunmughan/Conzyx/releases?per_page=30"))
         }.getOrNull()
 
         if (releases != null) {
