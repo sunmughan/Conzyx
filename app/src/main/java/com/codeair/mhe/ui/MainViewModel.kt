@@ -1651,6 +1651,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     listOf(com.codeair.mhe.runtime.RuntimeInstaller.AGY_GUEST_PATH, "models"),
                     guestWorkspacePath = "/workspace/antigravity-models",
                     emulateHardLinks = false,
+                    extraBinds = installer.antigravityCredentialBinds(),
                 )
                 while (process.isAlive) delay(50)
                 check(process.waitFor() == 0) { "Could not list Antigravity models" }

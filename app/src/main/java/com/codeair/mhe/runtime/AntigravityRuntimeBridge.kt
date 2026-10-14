@@ -198,6 +198,7 @@ class AntigravityRuntimeBridge(
                     guestWorkspacePath = "/workspace/hello",
                     emulateHardLinks = false,
                     outputFile = outputFile,
+                    extraBinds = installer.antigravityCredentialBinds(),
                 )
                 try {
                     val request = JSONObject()
@@ -311,6 +312,7 @@ class AntigravityRuntimeBridge(
                 command,
                 guestWorkspacePath = "/workspace/$projectSlug",
                 emulateHardLinks = false,
+                extraBinds = installer.antigravityCredentialBinds(),
             )
             activeProcess = process
             if (userStopRequested) process.destroy()

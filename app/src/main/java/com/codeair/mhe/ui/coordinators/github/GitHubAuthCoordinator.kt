@@ -82,6 +82,7 @@ class GitHubAuthCoordinator(
                         ),
                         guestWorkspacePath = "/workspace/github-auth",
                         outputFile = outputFile,
+                        extraBinds = installer.githubCredentialBinds(),
                     )
                     githubAuthProcess = process
                     var offset = 0L
@@ -316,6 +317,7 @@ class GitHubAuthCoordinator(
                             command,
                             guestWorkspacePath = "/workspace/${identity.slug}",
                             outputFile = output,
+                            extraBinds = if (useGitHubCli && repositoryName != null) installer.githubCredentialBinds() else emptyList(),
                         )
                         cloneProcess = process
                         val exit = process.waitFor()
@@ -390,8 +392,9 @@ class GitHubAuthCoordinator(
     private fun githubCliEnvironment(): Map<String, String> = mapOf(
         "GH_PROMPT_DISABLED" to "1",
         "GH_NO_UPDATE_NOTIFIER" to "1",
-        // Android PRoot has no Secret Service. This keeps the official gh-owned
-        // credential in PocketDev's private Linux home instead of exporting it.
+        // Android PRoot has no Secret Service. The gh-owned credential file is
+        // kept in app-private credential storage and bind-mounted only into
+        // this coordinator's own gh invocations, never into agent sessions.
         "BROWSER" to "/bin/false",
     )
 
@@ -410,6 +413,7 @@ class GitHubAuthCoordinator(
                 listOf(RuntimeInstaller.GITHUB_CLI_GUEST_PATH) + arguments,
                 guestWorkspacePath = "/workspace/github-auth",
                 outputFile = outputFile,
+                extraBinds = installer.githubCredentialBinds(),
             )
             // QA Medium: waitFor() used to wait forever — a hung gh hung
             // refresh indefinitely. 120s is far above any API/auth call

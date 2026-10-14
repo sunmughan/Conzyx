@@ -34,8 +34,8 @@ class AntigravityAuthController(
     private val prefs = context.getSharedPreferences("antigravity_auth_store", Context.MODE_PRIVATE)
 
     private fun accountsDir() = File(
-        context.filesDir,
-        "runtime/ubuntu/root/.gemini/antigravity-cli/accounts",
+        installer.antigravityCredentialHostDir(),
+        "accounts",
     ).apply { mkdirs() }
 
     private fun accountCredentialFile(email: String) = File(
@@ -242,6 +242,7 @@ class AntigravityAuthController(
     }
 
     init {
+        installer.ensureGuestCredentialsMigrated()
         // Remove output left by an app/process crash before starting a new OAuth flow.
         authOutput.delete()
         logoutOutput.delete()
@@ -265,8 +266,8 @@ class AntigravityAuthController(
     }
 
     private fun officialCredentialFile() = File(
-        context.filesDir,
-        "runtime/ubuntu/root/.gemini/antigravity-cli/antigravity-oauth-token",
+        installer.antigravityCredentialHostDir(),
+        "antigravity-oauth-token",
     )
 
     fun hasOfficialCredential(): Boolean = officialCredentialFile().isFile
@@ -303,6 +304,7 @@ class AntigravityAuthController(
             pseudoTerminal = true,
             ptyRows = 40,
             ptyColumns = 120,
+            extraBinds = installer.antigravityCredentialBinds(),
         )
         process = running
         val native = running as? NativeSpawnProcess ?: error("Unsupported Antigravity authentication process")

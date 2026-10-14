@@ -125,6 +125,31 @@ class RuntimeInstaller(private val context: Context) {
         )
     }
 
+    fun secureCredentialRoot(): File = File(context.filesDir, "secure-credentials").apply { mkdirs() }
+
+    fun githubCredentialHostDir(): File = File(secureCredentialRoot(), "github").apply { mkdirs() }
+
+    fun antigravityCredentialHostDir(): File = File(secureCredentialRoot(), "antigravity").apply { mkdirs() }
+
+    fun githubCredentialBinds(): List<Pair<String, String>> =
+        listOf(githubCredentialHostDir().absolutePath to GUEST_GITHUB_CONFIG_DIR)
+
+    fun antigravityCredentialBinds(): List<Pair<String, String>> =
+        listOf(antigravityCredentialHostDir().absolutePath to GUEST_ANTIGRAVITY_CONFIG_DIR)
+
+    private val credentialMigrationLock = Any()
+    @Volatile private var credentialMigrationDone = false
+
+    fun ensureGuestCredentialsMigrated() {
+        if (credentialMigrationDone) return
+        synchronized(credentialMigrationLock) {
+            if (credentialMigrationDone) return
+            relocateCredentialFiles(File(rootfs, "root/.config/gh"), githubCredentialHostDir())
+            relocateCredentialFiles(File(rootfs, "root/.gemini/antigravity-cli"), antigravityCredentialHostDir())
+            credentialMigrationDone = true
+        }
+    }
+
     /** Removes only scaffolding written automatically by earlier PocketDev alpha builds. */
     fun cleanupLegacyWorkspaceScaffolding() {
         val workspaces = File(context.filesDir, "workspaces")
@@ -2385,8 +2410,10 @@ class RuntimeInstaller(private val context: Context) {
         pseudoTerminal: Boolean = false,
         ptyRows: Int = 40,
         ptyColumns: Int = 120,
+        extraBinds: List<Pair<String, String>> = emptyList(),
     ): Process {
         check(ensureRootfsCompatibilityLinks()) { "Core runtime has an invalid Linux filesystem layout" }
+        ensureGuestCredentialsMigrated()
         require(
             guestWorkspacePath == "/workspace" ||
                 Regex("^/workspace/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$").matches(guestWorkspacePath),
@@ -2423,6 +2450,12 @@ class RuntimeInstaller(private val context: Context) {
             add("${workspace.absolutePath}:$guestWorkspacePath")
             add("-b")
             add("${bridge.absolutePath}:/pocket-bridge")
+            extraBinds.forEach { (hostPath, guestPath) ->
+                File(hostPath).mkdirs()
+                File(rootfs, guestPath.removePrefix("/")).mkdirs()
+                add("-b")
+                add("$hostPath:$guestPath")
+            }
             add("-w")
             add(guestWorkspacePath)
             addAll(guestCommand)
@@ -3156,6 +3189,8 @@ main().catch((err) => {
         /** Codex CLI binary, symlinked from npm's global bin dir after install. */
         const val CODEX_GUEST_PATH = "/usr/local/bin/codex"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
+        const val GUEST_GITHUB_CONFIG_DIR = "/root/.config/gh"
+        const val GUEST_ANTIGRAVITY_CONFIG_DIR = "/root/.gemini/antigravity-cli"
         private const val AGY_VERSION = "1.1.27"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
         private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
@@ -3252,4 +3287,25 @@ internal fun activateStagingDir(staging: File, target: File, backup: File) {
         throw e
     }
     backup.deleteRecursively()
+}
+
+internal fun relocateCredentialFiles(legacyDir: File, secureDir: File) {
+    if (!legacyDir.exists()) return
+    secureDir.mkdirs()
+    val files = legacyDir.walkTopDown().filter { it.isFile }.toList()
+    for (source in files) {
+        val dest = File(secureDir, source.relativeTo(legacyDir).path)
+        if (dest.exists() && dest.lastModified() >= source.lastModified()) {
+            runCatching { source.delete() }
+            continue
+        }
+        dest.parentFile?.mkdirs()
+        if (!source.renameTo(dest)) {
+            runCatching {
+                source.copyTo(dest, overwrite = true)
+                source.delete()
+            }
+        }
+    }
+    runCatching { legacyDir.deleteRecursively() }
 }
