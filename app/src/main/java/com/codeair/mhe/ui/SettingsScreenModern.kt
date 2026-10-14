@@ -744,7 +744,11 @@ fun SettingsScreen(
                                     val intent = BackgroundProtectionHelper.getBatteryOptimizationIntent(context)
                                     runCatching { context.startActivity(intent.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
                                         .onFailure {
-                                             context.startActivity(BackgroundProtectionHelper.getAppDetailsSettingsIntent(context).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                                            runCatching {
+                                                context.startActivity(BackgroundProtectionHelper.getAppDetailsSettingsIntent(context).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                                            }.onFailure {
+                                                Toast.makeText(context, "Could not open battery settings", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
