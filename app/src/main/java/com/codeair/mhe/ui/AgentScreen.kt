@@ -1408,6 +1408,7 @@ private fun AgentAntigravityCard(
                                             fontWeight = if (account.isActive) FontWeight.SemiBold else FontWeight.Normal,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.clickable { clipboard.setText(AnnotatedString(account.email)) },
                                         )
                                         if (account.isQuotaExhausted) {
                                             Surface(
@@ -1507,6 +1508,7 @@ private fun AgentAntigravityCard(
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = email?.let { Modifier.clickable { clipboard.setText(AnnotatedString(it)) } } ?: Modifier,
                         )
                         Text(
                             if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected with Google" else "Required for Antigravity",
