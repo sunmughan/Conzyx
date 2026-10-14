@@ -243,11 +243,21 @@ class McpCredentialStore(
     baseDir: File,
     credentialBackend: McpCredentialBackend? = null
 ) {
+    companion object {
+        /**
+         * Test hook: when set, the default backend uses this key provider
+         * instead of Android Keystore (which does not exist on the JVM).
+         * Production never sets this — the Keystore path is strict.
+         */
+        @Volatile
+        internal var defaultKeyProviderForTests: McpDataKeyProvider? = null
+    }
+
     private val storeDir: File = baseDir.apply { mkdirs() }
     private val backend: McpCredentialBackend =
         credentialBackend ?: AesGcmFileCredentialBackend(
             File(storeDir, "mcp_credentials.json"),
-            AndroidKeyStoreKeyProvider(
+            defaultKeyProviderForTests ?: AndroidKeyStoreKeyProvider(
                 alias = "mcp_credential_key",
                 legacyKeyFile = File(storeDir, "mcp_cred.key"),
                 storageFile = File(storeDir, "mcp_credentials.json"),

@@ -103,12 +103,19 @@ class McpCredentialStoreTest {
     @Test
     fun `default backend is the encrypted file backend`() {
         val backendDir = File(baseDir, "default")
-        val store = McpCredentialStore(backendDir)
-        store.setCredential("srv9", "TOKEN", "hidden-value-123")
-        assertEquals("hidden-value-123", store.getCredential("srv9", "TOKEN"))
-        val storageFile = File(backendDir, "mcp_credentials.json")
-        assertTrue(storageFile.exists())
-        assertFalse(storageFile.readText().contains("hidden-value-123"))
+        // Android Keystore does not exist on the JVM; the test hook stands in.
+        McpCredentialStore.defaultKeyProviderForTests =
+            SidecarFileKeyProvider(File(backendDir, "mcp_cred.key"))
+        try {
+            val store = McpCredentialStore(backendDir)
+            store.setCredential("srv9", "TOKEN", "hidden-value-123")
+            assertEquals("hidden-value-123", store.getCredential("srv9", "TOKEN"))
+            val storageFile = File(backendDir, "mcp_credentials.json")
+            assertTrue(storageFile.exists())
+            assertFalse(storageFile.readText().contains("hidden-value-123"))
+        } finally {
+            McpCredentialStore.defaultKeyProviderForTests = null
+        }
     }
 
     @Test
@@ -120,14 +127,20 @@ class McpCredentialStoreTest {
     @Test
     fun `clear deletes the key file as well as the store`() {
         val backendDir = File(baseDir, "clear_test")
-        val store = McpCredentialStore(backendDir)
-        store.setCredential("srv1", "TOKEN", "hidden-value-123")
-        val keyFile = File(backendDir, "mcp_cred.key")
-        assertTrue(keyFile.exists())
+        McpCredentialStore.defaultKeyProviderForTests =
+            SidecarFileKeyProvider(File(backendDir, "mcp_cred.key"))
+        try {
+            val store = McpCredentialStore(backendDir)
+            store.setCredential("srv1", "TOKEN", "hidden-value-123")
+            val keyFile = File(backendDir, "mcp_cred.key")
+            assertTrue(keyFile.exists())
 
-        store.clear()
+            store.clear()
 
-        assertFalse(File(backendDir, "mcp_credentials.json").exists())
-        assertFalse("key file must not linger after clear", keyFile.exists())
+            assertFalse(File(backendDir, "mcp_credentials.json").exists())
+            assertFalse("key file must not linger after clear", keyFile.exists())
+        } finally {
+            McpCredentialStore.defaultKeyProviderForTests = null
+        }
     }
 }
