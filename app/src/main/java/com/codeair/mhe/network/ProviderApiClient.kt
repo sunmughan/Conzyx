@@ -167,7 +167,7 @@ class ProviderApiClient {
     private fun attemptRequest(
         endpoint: String,
         method: String,
-apiKey: <redacted>
+        apiKey: String,
         body: String?,
         protocol: ProviderProtocol,
         connectTimeoutMs: Int,
