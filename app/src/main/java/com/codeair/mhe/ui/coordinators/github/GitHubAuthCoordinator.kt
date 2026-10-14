@@ -449,7 +449,7 @@ class GitHubAuthCoordinator(
                 "--paginate",
                 endpoint,
                 "--jq",
-                ".[] | [.full_name, .clone_url, (.private | tostring), .default_branch, .description, .updated_at] | @tsv",
+                ".[] | [.full_name, .clone_url, (.private | tostring), .default_branch, .description, .updated_at, .owner.login, .owner.type] | @tsv",
             ),
         )
         check(exit == 0) {
@@ -461,7 +461,7 @@ class GitHubAuthCoordinator(
         output.lineSequence()
             .filter { it.isNotBlank() }
             .forEach { line ->
-                val fields = line.split("\t", limit = 6)
+                val fields = line.split("\t", limit = 8)
                 if (fields.size < 6) return@forEach
                 val fullName = fields[0].trim().takeIf(String::isNotBlank) ?: return@forEach
                 repositories[fullName] = GitHubRepository(
@@ -471,6 +471,8 @@ class GitHubAuthCoordinator(
                     defaultBranch = fields[3].trim().ifBlank { "main" },
                     description = fields[4],
                     updatedAt = fields[5].trim(),
+                    ownerLogin = fields.getOrElse(6) { "" }.trim(),
+                    ownerType = fields.getOrElse(7) { "" }.trim(),
                 )
             }
         return repositories.values.toList()

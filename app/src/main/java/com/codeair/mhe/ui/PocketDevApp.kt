@@ -165,6 +165,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -3786,6 +3787,7 @@ private fun ProjectsScreen(
     var importExpanded by rememberSaveable { mutableStateOf(false) }
     var gitUrl by rememberSaveable { mutableStateOf("") }
     var repositorySearch by rememberSaveable { mutableStateOf("") }
+    var repositoryOwnerFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable { mutableStateOf("") }
     var selectedFolderUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var selectedFolderName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -4238,8 +4240,20 @@ private fun ProjectsScreen(
     )
     if (showGitHubDialog) {
         val clipboard = LocalClipboardManager.current
+        val myLogin = state.githubLogin.orEmpty()
+        val repositoryOwners = state.githubRepositories
+            .map { it.ownerLogin }
+            .filter { it.isNotBlank() && !it.equals(myLogin, ignoreCase = true) }
+            .distinct()
+            .sorted()
         val filteredRepositories = state.githubRepositories.filter { repository ->
-            repositorySearch.isBlank() || repository.fullName.contains(repositorySearch, ignoreCase = true)
+            val matchesSearch = repositorySearch.isBlank() || repository.fullName.contains(repositorySearch, ignoreCase = true)
+            val matchesOwner = when (repositoryOwnerFilter) {
+                null -> true
+                "personal" -> repository.ownerLogin.isBlank() || repository.ownerLogin.equals(myLogin, ignoreCase = true)
+                else -> repository.ownerLogin.equals(repositoryOwnerFilter, ignoreCase = true)
+            }
+            matchesSearch && matchesOwner
         }
         AlertDialog(
             // Dismiss is always allowed (see the clone dialog above): the
@@ -4294,6 +4308,28 @@ private fun ProjectsScreen(
                             Text(state.githubMessage ?: "Select a repository", modifier = Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             IconButton(onClick = onRefreshGitHub, enabled = !state.githubRepositoriesLoading) {
                                 Icon(Icons.Default.Refresh, "Refresh repositories")
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilterChip(
+                                selected = repositoryOwnerFilter == null,
+                                onClick = { repositoryOwnerFilter = null },
+                                label = { Text("All", fontSize = 12.sp) },
+                            )
+                            FilterChip(
+                                selected = repositoryOwnerFilter == "personal",
+                                onClick = { repositoryOwnerFilter = "personal" },
+                                label = { Text("Personal", fontSize = 12.sp) },
+                            )
+                            repositoryOwners.forEach { owner ->
+                                FilterChip(
+                                    selected = repositoryOwnerFilter == owner,
+                                    onClick = { repositoryOwnerFilter = owner },
+                                    label = { Text(owner, fontSize = 12.sp, maxLines = 1) },
+                                )
                             }
                         }
                         OutlinedTextField(

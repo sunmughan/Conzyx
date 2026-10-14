@@ -23,6 +23,8 @@ data class GitHubRepository(
     val defaultBranch: String,
     val description: String,
     val updatedAt: String,
+    val ownerLogin: String = "",
+    val ownerType: String = "",
 )
 
 data class GitHubIssue(
@@ -102,6 +104,7 @@ open class GitHubClient {
             ) as JSONArray
             for (index in 0 until array.length()) {
                 val item = array.getJSONObject(index)
+                val owner = item.optJSONObject("owner")
                 val repo = GitHubRepository(
                     fullName = item.getString("full_name"),
                     cloneUrl = item.getString("clone_url"),
@@ -109,6 +112,8 @@ open class GitHubClient {
                     defaultBranch = item.optString("default_branch", "main"),
                     description = item.optString("description"),
                     updatedAt = item.optString("updated_at"),
+                    ownerLogin = owner?.optString("login").orEmpty(),
+                    ownerType = owner?.optString("type").orEmpty(),
                 )
                 result[repo.fullName] = repo
             }
