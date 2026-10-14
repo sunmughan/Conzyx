@@ -250,7 +250,12 @@ fun AgentScreen(
     var viewedAgent by rememberSaveable { mutableStateOf(state.agentKind) }
 
     val orderedAgents = remember(state.primaryAgentKind) {
-        listOf(state.primaryAgentKind) + AgentKind.entries.filterNot { it == state.primaryAgentKind }
+        val primary = state.primaryAgentKind
+        buildList {
+            add(AgentKind.CUSTOM)
+            if (primary != AgentKind.CUSTOM) add(primary)
+            AgentKind.entries.forEach { if (it != AgentKind.CUSTOM && it != primary) add(it) }
+        }
     }
     val viewedAgentInstalled = viewedAgent == AgentKind.CUSTOM ||
         viewedAgent == state.agentKind ||
@@ -897,6 +902,7 @@ fun AgentScreen(
                                 val isInstalled = agent == AgentKind.CUSTOM ||
                                     agent == state.agentKind || state.installedAgentVersions.containsKey(agent)
                                 val updateAvailable = state.agentUpdates.containsKey(agent)
+                                val isHeroTab = agent == AgentKind.CUSTOM
                                 val tabIconRes = when (agent) {
                                     AgentKind.ANTIGRAVITY -> R.drawable.ic_agent_antigravity
                                     AgentKind.CLAUDE_CODE -> R.drawable.ic_agent_claude
@@ -907,6 +913,7 @@ fun AgentScreen(
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isSelected) Color.White else Color.Transparent,
+                                    border = if (isHeroTab && !isSelected) BorderStroke(1.dp, PocketOrange.copy(alpha = 0.6f)) else null,
                                     modifier = Modifier
                                         .size(56.dp)
                                         .alpha(if (state.agentInstalling == null) 1f else 0.4f)
@@ -926,14 +933,15 @@ fun AgentScreen(
                                                 modifier = Modifier.size(32.dp),
                                             )
                                         } else {
-                                            // Custom keeps its word, last in tab order.
-                                            // The selected tile is white, so the word
-                                            // is dark on it in either theme.
+                                            // Custom keeps its word, first in tab order.
+                                            // The hero word is orange; on the white
+                                            // selected tile it stays readable in
+                                            // either theme.
                                             Text(
-                                                "Custom",
+                                                "Your API",
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                 fontSize = 11.sp,
-                                                color = if (isSelected) Color(0xFF111111) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (isHeroTab) PocketOrange else if (isSelected) Color(0xFF111111) else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                             )
                                         }
@@ -2577,9 +2585,9 @@ private fun AgentCustomCard(
         Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Custom API", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text("Your API", fontWeight = FontWeight.Bold, fontSize = 15.sp)
         Text(
-            "Bring your own key — OpenAI-compatible or Claude-compatible endpoint. No download needed.",
+            "Plug in any API key and use the full agent power of the app with any provider. No download needed.",
             fontSize = 12.sp,
             lineHeight = 17.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

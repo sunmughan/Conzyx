@@ -81,7 +81,7 @@ enum class AgentKind(
     ),
     CUSTOM(
         "custom",
-        "Custom",
+        "Your API",
         "Your own API key · OpenAI / Claude-compatible",
         "",
     ),
