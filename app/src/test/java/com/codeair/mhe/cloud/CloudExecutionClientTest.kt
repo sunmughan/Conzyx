@@ -19,9 +19,10 @@ import java.security.MessageDigest
 
 /** Fake transport: routes (method + path) to scripted responses; records the last request. */
 class FakeCloudTransport(
-    private val handler: (CloudTransportRequest) -> CloudTransportResponse = { CloudTransportResponse(404, "{}") },
     private val downloadHandler: (CloudTransportRequest, File) -> StreamedDownload =
         { _, dest -> dest.writeBytes(ByteArray(0)); StreamedDownload(200, null, 0) },
+    // NOTE: handler is last so existing trailing-lambda call sites keep binding here.
+    private val handler: (CloudTransportRequest) -> CloudTransportResponse = { CloudTransportResponse(404, "{}") },
 ) : CloudHttpTransport {
     val seen = mutableListOf<CloudTransportRequest>()
     override fun send(baseUrl: String, request: CloudTransportRequest): CloudTransportResponse {
