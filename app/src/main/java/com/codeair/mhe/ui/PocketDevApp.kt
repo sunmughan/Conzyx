@@ -89,6 +89,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -6064,6 +6065,7 @@ private fun ChatTab(
         onDispose { view.keepScreenOn = false }
     }
     var prompt by rememberSaveable { mutableStateOf("") }
+    var inputFocused by remember { mutableStateOf(false) }
     var showWorkspaceControls by rememberSaveable { mutableStateOf(false) }
     var toolsOpen by rememberSaveable { mutableStateOf(false) }
     val plusRotation by animateFloatAsState(
@@ -6573,7 +6575,9 @@ private fun ChatTab(
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(horizontal = 4.dp)
-                                .heightIn(min = 24.dp, max = 150.dp),
+                                .heightIn(min = 24.dp, max = 150.dp)
+                                .onFocusChanged { inputFocused = it.isFocused },
+                            maxLines = if (inputFocused) Int.MAX_VALUE else 1,
                             textStyle = TextStyle(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 15.sp,
