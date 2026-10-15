@@ -6549,7 +6549,7 @@ private fun ChatTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 4.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Bottom,
                     ) {
                         IconButton(
                             onClick = { toolsOpen = !toolsOpen },
