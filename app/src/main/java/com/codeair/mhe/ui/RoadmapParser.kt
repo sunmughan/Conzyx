@@ -21,11 +21,15 @@ object RoadmapParser {
         """`([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)`"""
     )
 
+    private const val MAX_PARSE_INPUT_CHARS = 30_000
+    private const val MAX_ITEM_LINE_CHARS = 300
+
     fun parseFromText(
         markdown: String,
         mode: ExecutionMode = ExecutionMode.UNIFIED,
     ): ActiveRoadmap? {
         if (markdown.isBlank()) return null
+        if (markdown.length > MAX_PARSE_INPUT_CHARS) return null
 
         val lines = markdown.lines()
         var roadmapTitle = "Implementation Roadmap"
@@ -181,6 +185,7 @@ object RoadmapParser {
     }
 
     private fun isLikelyRoadmapItem(line: String): Boolean {
+        if (line.length > MAX_ITEM_LINE_CHARS) return false
         val lower = line.lowercase()
         return lower.contains("step") ||
             lower.contains("phase") ||
