@@ -534,6 +534,7 @@ fun PreviewTab(
 
     // The workspace Scaffold already applies system-bar insets to this tab's content.
     // Applying statusBarsPadding() again adds a large blank strip above the browser toolbar.
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -661,20 +662,6 @@ fun PreviewTab(
                         }
                     }
 
-                }
-
-                if (toolbarCollapsed) {
-                    IconButton(
-                        onClick = { toolbarCollapsed = false },
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ExpandMore,
-                            contentDescription = "Show toolbar",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
                 }
 
                 // Second row: browser action buttons (refresh, tabs, viewport, AI, desktop, inspector, devtools)
@@ -1961,6 +1948,31 @@ fun PreviewTab(
                 }
             },
         )
+    }
+
+        if (toolbarCollapsed) {
+            Surface(
+                onClick = { toolbarCollapsed = false },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = 6.dp,
+                shadowElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 64.dp, end = 12.dp)
+                    .size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = "Show toolbar",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
