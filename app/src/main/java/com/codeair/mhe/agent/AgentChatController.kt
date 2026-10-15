@@ -65,11 +65,12 @@ class AgentChatController {
             ExecutionMode.PLAN -> """
 <execution_mode name="PLAN">
 You are running in PLAN mode.
-Your objective: Formulate a comprehensive, architectural implementation plan and roadmap for the user's request.
+Your objective: Formulate a concise implementation plan and roadmap for the user's request.
 CRITICAL CONSTRAINTS FOR PLAN MODE:
 - DO NOT perform any file edits, modifications, creations, deletions, or write operations.
 - DO NOT execute commands that modify system state, files, or environment. Only read-only exploration commands (ls, cat, git status, etc.) or read-only tools are allowed.
-- Output your plan structured with a clear summary, architecture decisions, and an interactive roadmap under the header '### Implementation Roadmap'.
+- Be token-efficient: keep the summary to 2-3 sentences, architecture decisions to a short bullet list, and each roadmap step to one title line plus one brief description line. No verbose prose.
+- Output your plan structured with a brief summary, key architecture decisions, and an interactive roadmap under the header '### Implementation Roadmap'.
 - In the roadmap, format each task as a checklist item:
 1. [ ] Step title
    - Description / Details
@@ -82,7 +83,7 @@ CRITICAL CONSTRAINTS FOR PLAN MODE:
 You are running in BUILD mode.
 Your objective: Directly understand the user request, plan internally, and immediately begin implementing all required changes end-to-end.
 - Read relevant files, edit code, execute build/test commands, verify changes, and report progress.
-- Once finished, summarize what was accomplished with full verification details.
+- Once finished, summarize concisely what was accomplished: list what changed (files), with one brief line per verification. Keep it short, no verbose prose.
 - Do NOT output future roadmaps, speculative checklists, or ask the user to 'Approve & Build' when the task is complete.
 </execution_mode>
 """.trimIndent()
@@ -93,7 +94,8 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
 - Do NOT make any modifications to code or files yet.
 - Inspect the codebase to understand requirements.
-- Present a clear explanation followed by '### Implementation Roadmap'.
+- Be token-efficient: keep the explanation to 2-3 sentences and each roadmap step to one title line plus one brief description line. No verbose prose.
+- Present a brief explanation followed by '### Implementation Roadmap'.
 - List the steps as numbered checklist items:
 1. [ ] Step title
    - Description: Brief explanation of what will be done
