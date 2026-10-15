@@ -6521,7 +6521,7 @@ private fun ChatTab(
                                 IconButton(
                                     onClick = onAttach,
                                     enabled = pendingAttachments.size < 5,
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(34.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.AttachFile,
@@ -6533,7 +6533,7 @@ private fun ChatTab(
 
                                 IconButton(
                                     onClick = { showWorkspaceControls = !showWorkspaceControls },
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(34.dp),
                                 ) {
                                     val rotation by animateFloatAsState(
                                         targetValue = if (showWorkspaceControls) 180f else 0f,
@@ -6561,7 +6561,7 @@ private fun ChatTab(
 
                                 IconButton(
                                     onClick = onStartVoiceInput,
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(34.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Mic,
@@ -6573,7 +6573,7 @@ private fun ChatTab(
 
                                 IconButton(
                                     onClick = { showYouTubeDialog = true },
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(34.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.SmartDisplay,
