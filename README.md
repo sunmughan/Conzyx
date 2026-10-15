@@ -8,6 +8,8 @@
 
 Run a real Linux development environment, command multi-agent AI engineering teams, automate GitHub workflows, build Android APKs, and collaborate in real time - all from your phone. No root required.
 
+<img src="docs/conzyx-cover.png" alt="Conzyx cover"/>
+
 <br/>
 
 [![Release v3.2.10](https://img.shields.io/badge/Release-v3.2.10-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Conzyx/releases/tag/v3.2.10)
