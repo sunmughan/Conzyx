@@ -48,7 +48,7 @@ class SkillManagerTest {
             File(stubDir, "SKILL.md").writeText("---\nname: academic-paper-architect\n---\n")
             val registry = File(tempDir, "registry.json")
             registry.writeText(
-                """[{"name":"academic-paper-architect","description":"stub","source":"https://github.com/jarves/academic-paper-architect","installedAtMillis":1,"path":"${stubDir.absolutePath}","enabled":true}]"
+                """[{"name":"academic-paper-architect","description":"stub","source":"https://github.com/jarves/academic-paper-architect","installedAtMillis":1,"path":"${stubDir.absolutePath}","enabled":true}]"""
             )
             manager.ensureDefaultSkills()
             val skills = manager.installed()
