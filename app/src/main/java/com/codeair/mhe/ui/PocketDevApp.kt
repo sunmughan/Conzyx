@@ -205,6 +205,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -6348,15 +6350,10 @@ private fun ChatTab(
                     }
                 }
             }
-        } else Box(
+        } else Surface(
+            color = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.background,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onGloballyPositioned { inputSectionHeight = with(density) { it.size.height.toDp() } },
-            ) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -6432,6 +6429,110 @@ private fun ChatTab(
                                 }
                             }
                         }
+                    }
+                }
+
+                if (toolsOpen) {
+                    Popup(
+                        alignment = Alignment.TopStart,
+                        offset = IntOffset(
+                            with(density) { 14.dp.roundToPx() },
+                            with(density) { (-8).dp.roundToPx() },
+                        ),
+                        onDismissRequest = { toolsOpen = false },
+                    ) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shadowElevation = 8.dp,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .width(IntrinsicSize.Max)
+                                .padding(vertical = 4.dp),
+                        ) {
+                            val attachEnabled = pendingAttachments.size < 5
+                            Row(
+                                modifier = Modifier
+                                    .clickable {
+                                        if (attachEnabled) {
+                                            toolsOpen = false
+                                            onAttach()
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Attach files",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (attachEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .clickable {
+                                        toolsOpen = false
+                                        showWorkspaceControls = !showWorkspaceControls
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .align(Alignment.TopEnd)
+                                                .background(PocketOrange, CircleShape),
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Customize",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .clickable {
+                                        toolsOpen = false
+                                        showYouTubeDialog = true
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SmartDisplay,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = YouTubeBrandRed,
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "YouTube",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
                     }
                 }
 
@@ -6575,115 +6676,7 @@ private fun ChatTab(
                 }
             }
         }
-                AnimatedVisibility(
-                    visible = toolsOpen,
-                    enter = expandVertically(
-                        expandFrom = Alignment.Top,
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                    ) + fadeIn(animationSpec = tween(150)),
-                    exit = shrinkVertically(
-                        shrinkTowards = Alignment.Top,
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                    ) + fadeOut(animationSpec = tween(150)),
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 14.dp, bottom = inputSectionHeight + 8.dp),
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        shadowElevation = 8.dp,
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .width(IntrinsicSize.Max)
-                                .padding(vertical = 4.dp),
-                        ) {
-                            val attachEnabled = pendingAttachments.size < 5
-                            Row(
-                                modifier = Modifier
-                                    .clickable {
-                                        if (attachEnabled) {
-                                            toolsOpen = false
-                                            onAttach()
-                                        }
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AttachFile,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = "Attach files",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = if (attachEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .clickable {
-                                        toolsOpen = false
-                                        showWorkspaceControls = !showWorkspaceControls
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .align(Alignment.TopEnd)
-                                                .background(PocketOrange, CircleShape),
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = "Customize",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .clickable {
-                                        toolsOpen = false
-                                        showYouTubeDialog = true
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SmartDisplay,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = YouTubeBrandRed,
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = "YouTube",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        }
-                    }
-                }
     }
-}
 }
 
 @Composable
