@@ -6453,7 +6453,6 @@ private fun ChatTab(
                             val attachEnabled = pendingAttachments.size < 5
                             Row(
                                 modifier = Modifier
-                                    .fillMaxWidth()
                                     .clickable {
                                         if (attachEnabled) {
                                             toolsOpen = false
@@ -6478,7 +6477,6 @@ private fun ChatTab(
                             }
                             Row(
                                 modifier = Modifier
-                                    .fillMaxWidth()
                                     .clickable {
                                         toolsOpen = false
                                         showWorkspaceControls = !showWorkspaceControls
@@ -6511,7 +6509,6 @@ private fun ChatTab(
                             }
                             Row(
                                 modifier = Modifier
-                                    .fillMaxWidth()
                                     .clickable {
                                         toolsOpen = false
                                         showYouTubeDialog = true
