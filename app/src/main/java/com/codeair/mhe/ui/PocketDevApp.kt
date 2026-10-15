@@ -6167,12 +6167,6 @@ private fun ChatTab(
             }
         }
     }
-    // True while the newest item (message, live panel, or approval card) is on screen.
-    val readerAtBottom by remember {
-        derivedStateOf {
-            !listState.canScrollForward
-        }
-    }
     Column(Modifier.fillMaxSize().imePadding()) {
         AnimatedVisibility(
             visible = showWorkspaceControls && scratchpadItems.isNotEmpty(),
@@ -6319,42 +6313,6 @@ private fun ChatTab(
                     }
                 }
                 approval?.let { request -> item { ApprovalCard(request, onApproval, onApprovalWithLevel) } }
-            }
-            if (!readerAtBottom) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 10.dp)
-                        .clickable {
-                            chatScope.launch {
-                                listState.animateScrollToItem(
-                                    (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0),
-                                )
-                            }
-                        },
-                    shape = CircleShape,
-                    shadowElevation = 4.dp,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Row(
-                        Modifier.padding(start = 13.dp, end = 15.dp, top = 7.dp, bottom = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "Latest",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
             }
         }
         if (readOnly) {
