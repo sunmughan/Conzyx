@@ -32,9 +32,13 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -50,6 +54,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -71,6 +76,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -5034,98 +5040,96 @@ private fun WorkspaceScreen(
     Scaffold(
         topBar = {
             if (selectedTab != WorkspaceTab.PREVIEW && selectedTab != WorkspaceTab.TERMINAL) {
-                TopAppBar(
-                    title = {
-                        Column(Modifier.fillMaxWidth().padding(end = 4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.combinedClickable(
-                                        // Tap shows the project name, same as
-                                        // long-press: a tap must do something
-                                        // real instead of silently no-op.
-                                        onClick = {
-                                            Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
-                                        },
-                                        onLongClick = {
-                                            Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
-                                        },
-                                    ),
-                                ) {
-                                    Icon(
-                                        Icons.Default.PhoneAndroid,
-                                        contentDescription = "IDE",
-                                        modifier = Modifier.size(19.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        "IDE",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 17.sp,
-                                        maxLines = 1,
-                                    )
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    if (isAndroidProject) {
-                                        IconButton(
-                                            onClick = {
-                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                                                    !context.packageManager.canRequestPackageInstalls()) {
-                                                    unknownAppsLauncher.launch(
-                                                        Intent(
-                                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                                            Uri.parse("package:${context.packageName}"),
-                                                        ),
-                                                    )
-                                                } else {
-                                                    onBuildAndRunAndroid()
-                                                }
-                                            },
-                                            enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
-                                            modifier = Modifier.size(48.dp),
-                                        ) {
-                                            if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                            else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.background,
+                    modifier = Modifier.statusBarsPadding(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.combinedClickable(
+                                onClick = {
+                                    Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
+                                },
+                                onLongClick = {
+                                    Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
+                                },
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Default.PhoneAndroid,
+                                contentDescription = "IDE",
+                                modifier = Modifier.size(19.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "IDE",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                maxLines = 1,
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            if (isAndroidProject) {
+                                IconButton(
+                                    onClick = {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                            !context.packageManager.canRequestPackageInstalls()) {
+                                            unknownAppsLauncher.launch(
+                                                Intent(
+                                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                                    Uri.parse("package:${context.packageName}"),
+                                                ),
+                                            )
+                                        } else {
+                                            onBuildAndRunAndroid()
                                         }
-                                    }
-                                    IconButton(
-                                        onClick = { showChats = true },
-                                        modifier = Modifier.size(48.dp),
-                                    ) {
-                                        Icon(Icons.Default.History, "Project chats", modifier = Modifier.size(20.dp))
-                                    }
-                                    IconButton(
-                                        onClick = { showCommandPalette = true },
-                                        modifier = Modifier.size(48.dp),
-                                    ) {
-                                        Icon(Icons.Default.MoreVert, "Command palette", modifier = Modifier.size(20.dp))
-                                    }
-                                    IconButton(
-                                        onClick = onBack,
-                                        modifier = Modifier.size(48.dp),
-                                    ) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects", modifier = Modifier.size(20.dp))
-                                    }
-                                    if (state.isRunning) {
-                                        CircularProgressIndicator(
-                                            Modifier.padding(start = 2.dp, end = 4.dp).size(18.dp),
-                                            strokeWidth = 2.dp,
-                                        )
-                                    }
+                                    },
+                                    enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
                                 }
                             }
+                            IconButton(
+                                onClick = { showChats = true },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(Icons.Default.History, "Project chats", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(
+                                onClick = { showCommandPalette = true },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(Icons.Default.MoreVert, "Command palette", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(
+                                onClick = onBack,
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects", modifier = Modifier.size(20.dp))
+                            }
+                            if (state.isRunning) {
+                                CircularProgressIndicator(
+                                    Modifier.padding(start = 2.dp, end = 4.dp).size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                )
+                    }
+                }
             }
         },
         bottomBar = {
@@ -6062,6 +6066,12 @@ private fun ChatTab(
     }
     var prompt by rememberSaveable { mutableStateOf("") }
     var showWorkspaceControls by rememberSaveable { mutableStateOf(false) }
+    var toolsOpen by rememberSaveable { mutableStateOf(false) }
+    val plusRotation by animateFloatAsState(
+        targetValue = if (toolsOpen) 45f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "tools_toggle_rotation",
+    )
     var showYouTubeDialog by rememberSaveable { mutableStateOf(false) }
     var mentionQuery by remember { mutableStateOf<String?>(null) }
     var activeCommentTarget by remember { mutableStateOf<Triple<String, String?, String>?>(null) }
@@ -6458,22 +6468,100 @@ private fun ChatTab(
                     }
                 }
 
-                val isExpandedInput = prompt.contains('\n') || prompt.length > 50
-
                 Surface(
-                    shape = RoundedCornerShape(if (isExpandedInput) 20.dp else 26.dp),
+                    shape = RoundedCornerShape(26.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(
                         width = 1.dp,
                         color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
                     ),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
                 ) {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        IconButton(
+                            onClick = { toolsOpen = !toolsOpen },
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = if (toolsOpen) "Hide tools" else "Show tools",
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .graphicsLayer { rotationZ = plusRotation },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = toolsOpen,
+                            enter = expandHorizontally(
+                                expandFrom = Alignment.Start,
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            ) + fadeIn(animationSpec = tween(150)),
+                            exit = shrinkHorizontally(
+                                shrinkTowards = Alignment.Start,
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            ) + fadeOut(animationSpec = tween(150)),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = onAttach,
+                                    enabled = pendingAttachments.size < 5,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AttachFile,
+                                        contentDescription = "Attach files",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { showWorkspaceControls = !showWorkspaceControls },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    val rotation by animateFloatAsState(
+                                        targetValue = if (showWorkspaceControls) 180f else 0f,
+                                        label = "workspace_controls_rotation",
+                                    )
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Tune,
+                                            contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .graphicsLayer { rotationZ = rotation },
+                                            tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .align(Alignment.TopEnd)
+                                                    .background(PocketOrange, CircleShape),
+                                            )
+                                        }
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { showYouTubeDialog = true },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SmartDisplay,
+                                        contentDescription = "Analyze YouTube video with Gemini",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = YouTubeBrandRed,
+                                    )
+                                }
+                            }
+                        }
                         BasicTextField(
                             value = prompt,
                             onValueChange = {
@@ -6481,9 +6569,9 @@ private fun ChatTab(
                                 updateMentionQuery(it)
                             },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 6.dp, vertical = if (isExpandedInput) 4.dp else 6.dp)
-                                .heightIn(min = 28.dp, max = 150.dp),
+                                .weight(1f)
+                                .padding(horizontal = 4.dp)
+                                .heightIn(min = 24.dp, max = 150.dp),
                             textStyle = TextStyle(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 15.sp,
@@ -6506,140 +6594,73 @@ private fun ChatTab(
                                 }
                             },
                         )
-
-                        Spacer(Modifier.height(2.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                        IconButton(
+                            onClick = onStartVoiceInput,
+                            modifier = Modifier.size(40.dp),
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice input",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        if (isRunning) {
+                            Box(
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clickable(onClick = onStop),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                IconButton(
-                                    onClick = onAttach,
-                                    enabled = pendingAttachments.size < 5,
-                                    modifier = Modifier.size(34.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AttachFile,
-                                        contentDescription = "Attach files",
-                                        modifier = Modifier.size(19.dp),
-                                        tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { showWorkspaceControls = !showWorkspaceControls },
-                                    modifier = Modifier.size(34.dp),
-                                ) {
-                                    val rotation by animateFloatAsState(
-                                        targetValue = if (showWorkspaceControls) 180f else 0f,
-                                        label = "workspace_controls_rotation",
-                                    )
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Tune,
-                                            contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
-                                            modifier = Modifier
-                                                .size(19.dp)
-                                                .graphicsLayer { rotationZ = rotation },
-                                            tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .align(Alignment.TopEnd)
-                                                    .background(PocketOrange, CircleShape),
-                                            )
-                                        }
-                                    }
-                                }
-
-                                IconButton(
-                                    onClick = onStartVoiceInput,
-                                    modifier = Modifier.size(34.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Mic,
-                                        contentDescription = "Voice input",
-                                        modifier = Modifier.size(19.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { showYouTubeDialog = true },
-                                    modifier = Modifier.size(34.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SmartDisplay,
-                                        contentDescription = "Analyze YouTube video with Gemini",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = YouTubeBrandRed,
-                                    )
-                                }
-                            }
-
-                            if (isRunning) {
                                 Box(
                                     modifier = Modifier
-                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                        .clickable(onClick = onStop),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .background(
-                                                color = MaterialTheme.colorScheme.error,
-                                                shape = CircleShape,
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Stop,
-                                            contentDescription = "Stop AI task",
-                                            tint = MaterialTheme.colorScheme.onError,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    }
-                                }
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                        .clickable(
-                                            enabled = canSend,
-                                            onClick = {
-                                                if (canSend) {
-                                                    onSend(prompt)
-                                                    prompt = ""
-                                                    mentionQuery = null
-                                                }
-                                            },
+                                        .size(36.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.error,
+                                            shape = CircleShape,
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .background(
-                                                color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                shape = CircleShape,
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ArrowUpward,
-                                            contentDescription = "Send",
-                                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                            modifier = Modifier.size(19.dp),
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Stop,
+                                        contentDescription = "Stop AI task",
+                                        tint = MaterialTheme.colorScheme.onError,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clickable(
+                                        enabled = canSend,
+                                        onClick = {
+                                            if (canSend) {
+                                                onSend(prompt)
+                                                prompt = ""
+                                                mentionQuery = null
+                                            }
+                                        },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(
+                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = "Send",
+                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(19.dp),
+                                    )
                                 }
                             }
                         }
