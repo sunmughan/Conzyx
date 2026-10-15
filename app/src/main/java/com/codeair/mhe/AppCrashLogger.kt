@@ -16,7 +16,8 @@ import java.util.Locale
  * Last-resort, synchronous crash/startup logger.
  *
  * The canonical log is kept in the app's private internal files directory as
- * crash.log. It is never mirrored to external storage.
+ * crash.log. A mirror copy is also written to the app-specific external files
+ * directory as crash.log so the user can inspect it with any file manager.
  *
  * The logger deliberately does not depend on coroutines, Compose, preferences,
  * databases, networking, or the runtime installer: it must remain usable when
@@ -34,6 +35,9 @@ object AppCrashLogger {
     @Volatile
     private var internalFile: File? = null
 
+    @Volatile
+    private var externalFile: File? = null
+
     private val lock = Any()
     private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z", Locale.US)
 
@@ -44,6 +48,9 @@ object AppCrashLogger {
 
             val app = context.applicationContext
             internalFile = File(app.filesDir, FILE_NAME)
+            externalFile = runCatching {
+                app.getExternalFilesDir(null)?.let { dir -> File(dir, FILE_NAME) }
+            }.getOrNull()
 
             val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -87,6 +94,7 @@ object AppCrashLogger {
                     appendLine("device=${Build.MANUFACTURER} ${Build.MODEL}")
                     appendLine("abis=${Build.SUPPORTED_ABIS.joinToString()}")
                     appendLine("internalLog=${internalFile?.absolutePath}")
+                    appendLine("externalLog=${externalFile?.absolutePath}")
                     appendLine("============================================================")
                 },
             )
@@ -155,6 +163,17 @@ object AppCrashLogger {
                 trimIfNeeded(target)
             }.onFailure { error ->
                 Log.e(TAG, "Unable to persist crash log at ${target.absolutePath}", error)
+            }
+            runCatching {
+                val mirror = externalFile ?: return@runCatching
+                mirror.parentFile?.mkdirs()
+                FileOutputStream(mirror, true).use { output ->
+                    output.write(text.toByteArray(StandardCharsets.UTF_8))
+                    output.fd.sync()
+                }
+                trimIfNeeded(mirror)
+            }.onFailure { error ->
+                Log.e(TAG, "Unable to mirror crash log at ${externalFile?.absolutePath}", error)
             }
         }
     }
