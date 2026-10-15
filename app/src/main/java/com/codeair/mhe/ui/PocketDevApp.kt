@@ -6441,7 +6441,7 @@ private fun ChatTab(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         shadowElevation = 8.dp,
                     ) {
@@ -6548,11 +6548,11 @@ private fun ChatTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 4.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.Bottom,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(
                             onClick = { toolsOpen = !toolsOpen },
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(40.dp).align(Alignment.Bottom),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
@@ -6599,7 +6599,7 @@ private fun ChatTab(
                         )
                         IconButton(
                             onClick = onStartVoiceInput,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(40.dp).align(Alignment.Bottom),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
@@ -6613,7 +6613,8 @@ private fun ChatTab(
                             Box(
                                 modifier = Modifier
                                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clickable(onClick = onStop),
+                                    .clickable(onClick = onStop)
+                                    .align(Alignment.Bottom),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Box(
@@ -6646,7 +6647,8 @@ private fun ChatTab(
                                                 mentionQuery = null
                                             }
                                         },
-                                    ),
+                                    )
+                                    .align(Alignment.Bottom),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Box(
