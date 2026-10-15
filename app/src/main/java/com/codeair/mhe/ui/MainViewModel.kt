@@ -2972,7 +2972,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (current.isRunning || current.activeChatId == chatId) return
         val chat = current.projectChats.firstOrNull { it.id == chatId } ?: return
         persistMessages()
-        val saved = preferences.loadMessages(project.id, chat.id)
+        val saved = dropActiveSessionInterruptedRow(preferences.loadMessages(project.id, chat.id))
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
         val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
@@ -3013,7 +3013,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val remainingChats = preferences.loadProjectChats(project.id)
         if (_state.value.activeChatId == chatId) {
             val nextChat = remainingChats.firstOrNull() ?: return
-            val saved = preferences.loadMessages(project.id, nextChat.id)
+            val saved = dropActiveSessionInterruptedRow(preferences.loadMessages(project.id, nextChat.id))
             val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
             val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
             val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
@@ -3751,13 +3751,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             taskStartedAtMillis = current.taskStartedAtMillis,
             finishedAt = finishedAt,
         )
+        val finishedInterruptedId = "interrupted-${current.activeSessionId ?: current.activeChatId}"
         return current.copy(
-            messages = updatedMessages,
+            messages = updatedMessages.filterNot { it.id == finishedInterruptedId },
             liveProcess = emptyList(),
             liveThinking = false,
             activeThinkingBlockId = null,
             workSegmentStartedAtMillis = null,
         )
+    }
+
+    private fun dropActiveSessionInterruptedRow(messages: List<ChatMessage>): List<ChatMessage> {
+        val sessionId = _state.value.activeSessionId ?: return messages
+        if (!_state.value.isRunning) return messages
+        return messages.filterNot { it.id == "interrupted-$sessionId" }
     }
 
     /** Adds the complete request duration to the response produced after the latest user message. */
