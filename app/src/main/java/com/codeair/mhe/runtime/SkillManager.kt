@@ -2,6 +2,7 @@ package com.codeair.mhe.runtime
 
 import android.content.Context
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import com.codeair.mhe.model.AgentKind
 import org.json.JSONArray
 import org.json.JSONObject
@@ -150,6 +151,87 @@ class SkillManager(
             return installZip(temp, uri.toString())
         } finally {
             temp.delete()
+        }
+    }
+
+    fun installFromFolder(treeUri: Uri): List<SkillInfo> {
+        val resolver = context?.contentResolver ?: error("Skill folder import needs an app context.")
+        val tree = DocumentFile.fromTreeUri(context, treeUri) ?: error("Could not open the selected folder.")
+        require(tree.isDirectory) { "The selected location is not a folder." }
+        val manifests = mutableListOf<DocumentFile>()
+        val queue = ArrayDeque<DocumentFile>()
+        queue.add(tree)
+        var visited = 0
+        while (queue.isNotEmpty()) {
+            val dir = queue.removeFirst()
+            if (!dir.isDirectory) continue
+            val children = runCatching { dir.listFiles().toList() }.getOrDefault(emptyList())
+            for (child in children) {
+                visited++
+                require(visited <= 10_000) { "Skill folder contains too many files." }
+                val name = child.name ?: continue
+                if (child.isDirectory) {
+                    queue.add(child)
+                } else if (name.equals("SKILL.md", ignoreCase = true)) {
+                    manifests.add(child)
+                    if (manifests.size >= 100) break
+                }
+            }
+            if (manifests.size >= 100) break
+        }
+        require(manifests.isNotEmpty()) { "No SKILL.md was found in the selected folder." }
+        val current = installed().toMutableList()
+        val installedNow = mutableListOf<SkillInfo>()
+        val sourceLabel = treeUri.toString()
+        manifests.forEach { manifest ->
+            val content = resolver.openInputStream(manifest.uri)?.use { it.bufferedReader().readText() }
+                ?: error("Could not read ${manifest.name}.")
+            val metadata = parseManifest(content)
+            val safeName = sanitizeSkillName(metadata.first)
+            val skillRoot = manifest.parentFile ?: error("Invalid SKILL.md location.")
+            val destination = File(root, safeName)
+            destination.deleteRecursively()
+            destination.mkdirs()
+            copyDocumentTree(skillRoot, destination)
+            ensurePortableSkillLayout(destination)
+            val info = SkillInfo(
+                name = safeName,
+                description = metadata.second,
+                source = sourceLabel,
+                installedAtMillis = System.currentTimeMillis(),
+                path = destination.absolutePath,
+                enabled = current.firstOrNull { it.name == safeName }?.enabled ?: true,
+            )
+            current.removeAll { it.name == safeName }
+            current += info
+            installedNow += info
+        }
+        writeRegistry(current)
+        return installedNow
+    }
+
+    private fun copyDocumentTree(source: DocumentFile, target: File) {
+        var copied = 0
+        val queue = ArrayDeque<Pair<DocumentFile, File>>()
+        queue.add(source to target)
+        while (queue.isNotEmpty()) {
+            val (doc, destDir) = queue.removeFirst()
+            val items = runCatching { doc.listFiles().toList() }.getOrDefault(emptyList())
+            for (item in items) {
+                val name = item.name ?: continue
+                require(name != ".." && !name.contains('/')) { "Skill folder contains an unsafe name." }
+                copied++
+                require(copied <= 10_000) { "Skill folder contains too many files." }
+                val dest = File(destDir, name)
+                if (item.isDirectory) {
+                    dest.mkdirs()
+                    queue.add(item to dest)
+                } else {
+                    context?.contentResolver?.openInputStream(item.uri)?.use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("Could not read $name.")
+                }
+            }
         }
     }
 
@@ -383,6 +465,13 @@ class SkillManager(
     )
 
     fun ensureDefaultSkills() {
+        val retiredSkillNames = setOf(
+            "geo-sleuth", "stickman-video-director", "api-anything", "logo-design-skill",
+            "anyps5-director", "youtube-video-intel", "fridge-vision-chef",
+            "receipt-expense-sleuth", "contract-legal-buster", "smarthome-iot-commander",
+            "academic-paper-architect", "document-transmuter", "marp-presentation-deck",
+            "creative-image-director", "viral-growth-creator", "fullstack-dev-accelerator",
+        )
         val defaultSpecs = listOf(
             DefaultSkillSpec(
                 name = "browser-automation",
@@ -426,432 +515,6 @@ For work the user does not need to watch:
 - `pocket-browser screenshot [path]`: Capture a screenshot of the active page.
 - `pocket-browser get-text [selector]`: Extract inner text from elements for AI analysis.
 - `pocket-browser eval "<code>"`: Evaluate JavaScript expression in the page context.
-""",
-            ),
-            DefaultSkillSpec(
-                name = "geo-sleuth",
-                description = "Geolocate photographs by analyzing OpenStreetMap geometry, elevation skylines, satellite imagery, and street evidence.",
-                source = "https://github.com/Oldcircle/geo-sleuth",
-                content = """---
-name: geo-sleuth
-description: Geolocate photographs by analyzing OpenStreetMap geometry, elevation skylines, satellite imagery, and street evidence.
----
-
-# Geo-Sleuth Agent Skill
-
-Autonomous photograph geolocation skill that combines spatial geometry, elevation silhouettes, satellite imagery, and street-level evidence.
-
-## Capabilities
-
-- **OpenStreetMap Analysis**: Uses Overpass queries to correlate road layouts, intersections, bridges, and infrastructure geometry.
-- **Elevation Skyline Matching**: Compares horizon silhouettes against Digital Elevation Models (DEM) to narrow geographical candidate regions.
-- **Satellite & Street View Verification**: Validates candidate locations against aerial tile imagery and street-level photographic evidence.
-- **Structured Evidence Output**: Produces coordinates (latitude, longitude), estimated error radius, camera azimuth heading, and confidence ranking.
-
-## Usage
-
-Provide an image to the agent and prompt:
-- "Where was this photo taken? Investigate the location using geo-sleuth."
-- "Determine the latitude, longitude, and heading for this landmark view."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "stickman-video-director",
-                description = "Director for 60-second stickman explainer animations; generates 6-scene storyboards and consistent video prompts for Gemini Omni Flash.",
-                source = "https://github.com/kaomei/stickman-video-director",
-                content = """---
-name: stickman-video-director
-description: Director for 60-second stickman explainer animations; generates 6-scene storyboards and consistent video prompts for Gemini Omni Flash.
----
-
-# Stickman Video Director Skill
-
-AI director workflow for creating viral, high-retention 60-second stick-figure explainer videos for YouTube Shorts, TikTok, and Instagram Reels.
-
-## Capabilities
-
-- **6-Scene Storyboard Generation**: Transforms articles, transcripts, scripts, or concepts into a structured 6-scene visual sequence (10 seconds per scene).
-- **Prompt Synchronization**: Generates standalone, copy-ready visual prompts tailored for Google Gemini Omni Flash / Veo video generation models.
-- **Visual Consistency Engine**: Enforces character permanence, camera angle progression, and high-contrast minimalist styling across scenes to eliminate AI video style drift.
-- **Custom Styling**: Supports monochrome blackboard/whiteboard presets, selective accent colors, and vertical (9:16) format framing.
-
-## Workflow
-
-1. Provide raw copy, notes, or topic to the director.
-2. Review and approve the structured 6-scene proposal.
-3. Export the 6 optimized prompt blocks directly for video generation.
-""",
-            ),
-            DefaultSkillSpec(
-                name = "api-anything",
-                description = "Turn any website into a self-healing API for AI agents with reverse-engineered endpoints, action flows, and MCP server.",
-                source = "https://github.com/goodnight000/api-anything",
-                content = """---
-name: api-anything
-description: Turn any website into a self-healing API for AI agents with reverse-engineered endpoints, action flows, and MCP server.
----
-
-# API Anything Skill
-
-Converts web interfaces and dynamic frontends into typed, callable APIs for autonomous AI agents using network reverse-engineering and self-healing selectors.
-
-## Capabilities
-
-- **Dynamic API Generation**: Observes frontend network traffic and DOM interaction patterns to synthesize programmatic API endpoints.
-- **Self-Healing Selectors**: Adapts automatically when target websites update layout classes, DOM hierarchies, or client-side hydrates.
-- **Read & Action Flows**: Handles complex form submissions, authenticated sessions, multi-step search queries, and dynamic filters.
-- **Model Context Protocol (MCP)**: Directly callable by AI agents via MCP tools, CLI commands, or TypeScript clients without scraping brittle DOMs.
-
-## Usage
-
-- Analyze and reverse-engineer a target website: `api-anything learn <url>`
-- Execute an action flow: Call generated endpoints via MCP or CLI with typed JSON payloads.
-""",
-            ),
-            DefaultSkillSpec(
-                name = "logo-design-skill",
-                description = "Disciplined brand identity design workflow for AI agents to craft, refine, and stress-test scalable SVG logos.",
-                source = "https://github.com/kaankiziltug/logo-design-skill",
-                content = """---
-name: logo-design-skill
-description: Disciplined brand identity design workflow for AI agents to craft, refine, and stress-test scalable SVG logos.
----
-
-# Logo Design Skill
-
-A disciplined, professional identity design workflow for AI agents to craft, refine, and audit production-ready SVG brand logos.
-
-## Capabilities
-
-- **Structured Design Brief**: Analyzes brand identity, industry category, target audience, and aesthetic constraints before generating geometry.
-- **Concept Generation**: Generates 8–12 distinct vector concept variations exploring geometric, typographic, monogram, and abstract marks.
-- **Scalable SVG Crafting**: Emits clean, production-grade vector code using standard SVG paths with proper viewbox scaling and semantic structure.
-- **Quality & Stress Testing**:
-  - 16-pixel favicon legibility check.
-  - Monochrome / inverted contrast validation.
-  - Optical balance and stroke weight consistency verification.
-- **Identity Asset Export**: Generates full asset kits including primary logo, monochrome mark, favicon (`favicon.ico`/SVG), and dark/light mode variants.
-
-## Usage
-
-Prompt the agent with:
-- "Design a modern geometric logo for [Brand/Product]."
-- "Audit and stress-test our SVG logo for 16px favicon legibility and monochrome contrast."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "anyps5-director",
-                description = "Translate, relink, and run PS5 executables natively on PC/Linux; manages Vulkan SPIR-V shader recompilation and binary verification.",
-                source = "https://github.com/boykopovar/AnyPS5",
-                content = """---
-name: anyps5-director
-description: Translate, relink, and run PS5 executables natively on PC/Linux; manages Vulkan SPIR-V shader recompilation and binary verification.
----
-
-# AnyPS5 Binary Director Skill
-
-Automate reverse-engineering, dynamic relinking, and native execution of PlayStation 5 binary executables on Windows and Linux without full console emulation overhead.
-
-## Capabilities
-
-- **ELF Relinking & PE Conversion**: Converts compiled PS5 ELF binaries into native Linux ELFs or Windows PE (.exe) formats by patching dynamic symbols.
-- **Shader Recompilation**: Translates PS5 GPU shader bytecode into standard Vulkan SPIR-V shader representations.
-- **System Library Shimming**: Maps Sony runtime APIs to native POSIX, Vulkan, and SDL equivalents.
-- **Compatibility & Diagnostics**: Analyzes missing syscalls, unimplemented dynamic libraries, and memory mappings.
-
-## Usage
-
-- "Inspect PS5 executable headers and diagnose missing dynamic libraries: `anyps5 inspect <binary.elf>`"
-- "Recompile shaders and package for native Vulkan execution."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "youtube-video-intel",
-                description = "Deep multimodal YouTube video understanding; extracts timestamped transcripts, visual slide concepts, code snippets, and executive digests for Gemini.",
-                source = "https://github.com/jarves/youtube-video-intel",
-                content = """---
-name: youtube-video-intel
-description: Deep multimodal YouTube video understanding; extracts timestamped transcripts, visual slide concepts, code snippets, and executive digests for Gemini.
----
-
-# YouTube Video Intelligence Skill
-
-Ingests, analyzes, and synthesizes long-form and short-form YouTube videos using Google Gemini's multimodal video understanding architecture.
-
-## Capabilities
-
-- **Strict URL Parsing**: Extracts clean 11-character video IDs from watch, shorts, youtu.be, and live links.
-- **Multimodal Video Understanding**: Analyzes speech, presentation slides, camera demonstrations, and audio cues.
-- **Chronological Breakdown**: Generates accurate timestamped chapters and section highlights.
-- **Technical & Code Extraction**: Identifies algorithms, code blocks, terminal commands, and equations displayed in video frames.
-- **Deep Executive Briefing**: Delivers actionable takeaways, author thesis, and counter-arguments.
-
-## Usage
-
-- "Analyze this YouTube video: `https://www.youtube.com/watch?v=...`"
-- "Summarize this lecture with full timestamps and extract all code snippets shown."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "fridge-vision-chef",
-                description = "Computer vision meal planner; analyzes fridge and pantry photos, estimates ingredient freshness and calories, and generates gourmet step-by-step recipes.",
-                source = "https://github.com/jarves/fridge-vision-chef",
-                content = """---
-name: fridge-vision-chef
-description: Computer vision meal planner; analyzes fridge and pantry photos, estimates ingredient freshness and calories, and generates gourmet step-by-step recipes.
----
-
-# Fridge Vision Chef Skill
-
-Smart culinary AI assistant that transforms pictures of your refrigerator, pantry shelves, or grocery bags into nutritious gourmet meals.
-
-## Capabilities
-
-- **Visual Ingredient Recognition**: Detects produce, dairy, sauces, proteins, and pantry staples from single or multiple photos.
-- **Freshness & Spoilage Estimation**: Identifies expiring ingredients to minimize food waste.
-- **Macro & Calorie Calculation**: Computes protein, carbohydrate, fat, and micronutrient estimates per serving.
-- **Personalized Culinary Recipes**: Generates 3–5 tailored recipes matched to prep time, cookware, and dietary preferences (keto, vegan, gluten-free).
-- **Step-by-Step Cooking Timers**: Structures cooking instructions with parallel preparation timelines.
-
-## Usage
-
-- Provide a photo of your fridge and prompt: "What can I cook for dinner in under 25 minutes?"
-- "Calculate the nutritional breakdown and suggest a high-protein recipe from these ingredients."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "receipt-expense-sleuth",
-                description = "Personal finance and invoice auditor; scans receipt photos/PDFs, flags hidden subscriptions and duplicate charges, and exports accounting ledgers.",
-                source = "https://github.com/jarves/receipt-expense-sleuth",
-                content = """---
-name: receipt-expense-sleuth
-description: Personal finance and invoice auditor; scans receipt photos/PDFs, flags hidden subscriptions and duplicate charges, and exports accounting ledgers.
----
-
-# Receipt & Expense Sleuth Skill
-
-Autonomous financial auditor that parses receipts, invoices, utility bills, and bank statements into categorized expense ledgers.
-
-## Capabilities
-
-- **OCR & Field Extraction**: Extracts merchant name, transaction date, line items, sales taxes, tips, and payment method.
-- **Anomaly & Price Hike Detection**: Flags unexpected subscription price increases, hidden convenience fees, and potential double-billings.
-- **Tax Category Tagging**: Automatically tags business expenses, medical deductions, and mileage according to tax codes.
-- **Ledger Export**: Emits clean CSV, JSON, and double-entry Plain Text Accounting (Ledger/Hledger/Beancount) formats.
-
-## Usage
-
-- "Audit this batch of receipts and produce an itemized monthly expense CSV."
-- "Check this utility invoice for billing anomalies compared to standard rates."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "contract-legal-buster",
-                description = "Rental lease and legal contract auditor; exposes predatory clauses, penalty forfeitures, and cancellation rules with plain-language risk scoring.",
-                source = "https://github.com/jarves/contract-legal-buster",
-                content = """---
-name: contract-legal-buster
-description: Rental lease and legal contract auditor; exposes predatory clauses, penalty forfeitures, and cancellation rules with plain-language risk scoring.
----
-
-# Contract & Legal Buster Skill
-
-High-precision legal agreement analyzer that dissects rental leases, freelance contracts, employment offers, and terms of service into plain English.
-
-## Capabilities
-
-- **Predatory Clause Identification**: Flags aggressive auto-renewal traps, forfeiture of security deposits, unilateral modification clauses, and non-compete overreaches.
-- **Plain-Language Summary**: Translates dense legalese into unambiguous bullet points explaining rights, obligations, and deadlines.
-- **Risk Scorecard**: Generates a 1–10 risk rating with green/yellow/red risk flags for every major section.
-- **Negotiation Counter-Drafting**: Suggests protective counter-clauses and redlines for safer terms.
-
-## Usage
-
-- "Review this rental lease agreement and highlight any predatory or unusual conditions."
-- "Audit this freelance master services agreement for liability limits and intellectual property ownership."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "smarthome-iot-commander",
-                description = "Home automation orchestrator; controls Home Assistant, ESPHome, and Zigbee/Matter devices with automated daily routines and energy tracking.",
-                source = "https://github.com/jarves/smarthome-iot-commander",
-                content = """---
-name: smarthome-iot-commander
-description: Home automation orchestrator; controls Home Assistant, ESPHome, and Zigbee/Matter devices with automated daily routines and energy tracking.
----
-
-# Smart Home IoT Commander Skill
-
-Autonomous agent skill for orchestrating smart home ecosystems via Home Assistant REST/WebSocket APIs, ESPHome, and MQTT.
-
-## Capabilities
-
-- **Device State Monitoring**: Queries thermostats, smart plugs, motion sensors, ambient light meters, and locks.
-- **Automation Blueprinting**: Synthesizes reliable YAML automation rules for Home Assistant with condition gates and edge-case fallbacks.
-- **Adaptive Daily Routines**: Creates intelligent morning, night, focus, and away scenes that adapt to sunlight and occupancy.
-- **Energy Optimization**: Identifies power-hungry appliances and schedules high-load tasks during off-peak electricity hours.
-
-## Usage
-
-- "Create a Home Assistant automation to turn off heaters when windows are opened for more than 3 minutes."
-- "Generate a smooth sunrise wake-up lighting routine for my bedroom bulbs."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "academic-paper-architect",
-                description = "PhD research paper and journal writing assistant; generates LaTeX/BibTeX templates, literature reviews, methodology sections, and peer-review rebuttals.",
-                source = "https://github.com/jarves/academic-paper-architect",
-                content = """---
-name: academic-paper-architect
-description: PhD research paper and journal writing assistant; generates LaTeX/BibTeX templates, literature reviews, methodology sections, and peer-review rebuttals.
----
-
-# Academic Paper Architect Skill
-
-End-to-end academic research assistant tailored for PhD scholars, researchers, and scientists writing journal publications for IEEE, ACM, Springer, Nature, and NeurIPS.
-
-## Capabilities
-
-- **Literature Review Synthesis**: Organizes related works into conceptual matrices, highlighting research gaps and scientific novelties.
-- **Methodology & Mathematical Formulation**: Formulates rigorous algorithm descriptions, definitions, theorems, and LaTeX math notation.
-- **LaTeX & BibTeX Engineering**: Generates publication-ready `.tex` documents with standard journal templates, clean cross-references, and validated BibTeX citations.
-- **Peer-Review Rebuttal Engine**: Drafts structured, polite, and persuasive point-by-point responses to referee critiques with concrete experimental citations.
-
-## Usage
-
-- "Synthesize these 5 research abstracts into a related-works subsection for an IEEE transaction paper."
-- "Draft a point-by-point rebuttal letter addressing Reviewer #2's concerns regarding baseline comparisons."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "document-transmuter",
-                description = "Universal document transformation engine; converts Markdown, PDF, DOCX, and LaTeX with table extraction, formatting preservation, and OCR cleanup.",
-                source = "https://github.com/jarves/document-transmuter",
-                content = """---
-name: document-transmuter
-description: Universal document transformation engine; converts Markdown, PDF, DOCX, and LaTeX with table extraction, formatting preservation, and OCR cleanup.
----
-
-# Document Transmuter Skill
-
-Universal multi-format document conversion and restructuring pipeline for autonomous AI agents.
-
-## Capabilities
-
-- **Multi-Format Conversion**: Seamlessly converts between Markdown, PDF, DOCX, HTML, EPUB, and LaTeX.
-- **Table & Hierarchy Preservation**: Preserves nested lists, multi-column tables, headers, and footnotes without layout breakage.
-- **OCR Post-Processing**: Cleans up scanning artifacts, hyphenation splits, and typographical errors from OCR outputs.
-- **Template Theming**: Applies professional styling palettes, typography scales, and headers/footers to generated documents.
-
-## Usage
-
-- "Convert this project documentation folder into a formatted, paginated PDF report."
-- "Extract the financial comparison table from this PDF into a clean Markdown table."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "marp-presentation-deck",
-                description = "Interactive slide deck generator using Marp/RevealJS; designs beautiful slide layouts, diagrams, speaker notes, and PDF/HTML presentations.",
-                source = "https://github.com/jarves/marp-presentation-deck",
-                content = """---
-name: marp-presentation-deck
-description: Interactive slide deck generator using Marp/RevealJS; designs beautiful slide layouts, diagrams, speaker notes, and PDF/HTML presentations.
----
-
-# Marp Presentation Deck Skill
-
-Creates professional, visually compelling presentation slide decks directly from text briefs or documentation using Marp and Reveal.js markdown.
-
-## Capabilities
-
-- **Slide Architecture**: Structures presentations with clear narrative arcs: Problem, Solution, Architecture, Metrics, Roadmap, and Call to Action.
-- **Marp Theming & Directives**: Injects custom CSS styling, split-screen layouts, hero headings, and background gradients.
-- **Diagram Integration**: Embeds clean Mermaid flowcharts, architecture diagrams, and high-impact stat callouts.
-- **Speaker Notes & Timing**: Includes private presenter notes with recommended talking duration per slide.
-- **Export Ready**: Compiles cleanly to standalone HTML slides or paginated PDF decks.
-
-## Usage
-
-- "Turn this product specification into a 10-slide executive pitch deck using Marp."
-- "Design a technical architecture presentation with code samples and split columns."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "creative-image-director",
-                description = "Visual prompt engineering and AI image generator; crafts production-ready Midjourney/Imagen prompts, camera angles, color palettes, and SVG assets.",
-                source = "https://github.com/jarves/creative-image-director",
-                content = """---
-name: creative-image-director
-description: Visual prompt engineering and AI image generator; crafts production-ready Midjourney/Imagen prompts, camera angles, color palettes, and SVG assets.
----
-
-# Creative Image Director Skill
-
-Professional art director skill for generating production-quality visual prompts and vector assets across Google Imagen, Midjourney, DALL-E, and Stable Diffusion.
-
-## Capabilities
-
-- **Cinematographic Prompt Engineering**: Specifies precise lens focal lengths (35mm, 85mm), lighting setups (Rembrandt, volumetric, golden hour), and camera angles.
-- **Visual Style Consistency**: Enforces coherent aesthetic parameters across character designs, product shots, and UI mockups.
-- **Vector & Icon Synthesis**: Directly outputs clean SVG code for custom iconography, hero illustrations, and user interface badges.
-- **Negative Prompt Tuning**: Automatically prunes visual artifacts, anatomical defects, and unwanted background clutter.
-
-## Usage
-
-- "Direct a cohesive set of 4 3D isometric app feature illustrations with a cyberpunk teal/amber palette."
-- "Generate an ultra-detailed cinematic prompt for Google Imagen featuring a futuristic laboratory."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "viral-growth-creator",
-                description = "Social media and account growth engine; crafts high-retention YouTube hooks, viral X/Twitter threads, LinkedIn carousels, and algorithmic SEO tags.",
-                source = "https://github.com/jarves/viral-growth-creator",
-                content = """---
-name: viral-growth-creator
-description: Social media and account growth engine; crafts high-retention YouTube hooks, viral X/Twitter threads, LinkedIn carousels, and algorithmic SEO tags.
----
-
-# Viral Growth Creator Skill
-
-Audience growth and viral content strategy engine designed for creators, founders, and developers to scale their social reach and brand engagement.
-
-## Capabilities
-
-- **High-Retention YouTube Hooks**: Engineers first-15-second script hooks that minimize audience drop-off using curiosity loops and stakes.
-- **Viral X / Twitter Threads**: Transforms complex engineering or business achievements into high-engagement thread hooks, value points, and re-share prompts.
-- **LinkedIn Thought-Leadership Carousels**: Structures multi-slide PDF carousels with punchy 1-sentence lines and high-contrast typography.
-- **Algorithmic SEO & Packaging**: Generates high-CTR title variations, thumbnail concept briefs, and keyword-rich descriptions.
-
-## Usage
-
-- "Draft 5 high-converting YouTube video titles and first-30-second script hooks for our latest AI release."
-- "Repurpose this engineering blog post into an 8-tweet viral thread with actionable takeaways."
-""",
-            ),
-            DefaultSkillSpec(
-                name = "fullstack-dev-accelerator",
-                description = "Fullstack engineering co-pilot; designs system architectures, AST refactors, automated test suites, CI/CD pipelines, and API contract validations.",
-                source = "https://github.com/jarves/fullstack-dev-accelerator",
-                content = """---
-name: fullstack-dev-accelerator
-description: Fullstack engineering co-pilot; designs system architectures, AST refactors, automated test suites, CI/CD pipelines, and API contract validations.
----
-
-# Fullstack Dev Accelerator Skill
-
-Senior software engineering co-pilot for rapid architecture design, clean code refactoring, end-to-end testing, and DevOps deployment.
-
-## Capabilities
-
-- **System Architecture Blueprinting**: Produces typed OpenAPI contracts, database ER schemas, and distributed system interaction models.
-- **Clean Code & AST Refactoring**: Diagnoses code smells, eliminates technical debt, and applies SOLID design patterns.
-- **Comprehensive Test Suite Generation**: Generates unit, integration, and mock tests with boundary value edge cases.
-- **CI/CD & Container Orchestration**: Writes multi-stage Dockerfiles, GitHub Actions workflows, and Kubernetes manifests.
-
-## Usage
-
-- "Design an event-driven microservice architecture for real-time notifications with Redis and WebSockets."
-- "Write an end-to-end test suite and GitHub Actions workflow for this Kotlin/Android repository."
 """,
             ),
             DefaultSkillSpec(
@@ -1094,6 +757,20 @@ User experience architecture, touch ergonomic design, accessibility, and modern 
                 (0 until array.length()).map { array.getJSONObject(it) }.toMutableList()
             }.getOrDefault(mutableListOf())
         } else mutableListOf()
+
+        val retiredRemoved = currentRegistry.filter { json ->
+            val name = json.optString("name")
+            val source = json.optString("source")
+            name in retiredSkillNames && (source.startsWith("https://github.com/jarves/") || source.startsWith("https://github.com/Oldcircle/") || source.startsWith("https://github.com/kaomei/") || source.startsWith("https://github.com/goodnight000/") || source.startsWith("https://github.com/kaankiziltug/") || source.startsWith("https://github.com/boykopovar/"))
+        }
+        retiredRemoved.forEach { json ->
+            val name = json.optString("name")
+            val path = json.optString("path")
+            if (path.isNotBlank()) runCatching { File(path).deleteRecursively() }
+            runCatching { File(root, name).deleteRecursively() }
+            currentRegistry.remove(json)
+            registryModified = true
+        }
 
         defaultSpecs.forEach { spec ->
             val dir = File(root, spec.name)

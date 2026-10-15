@@ -286,6 +286,7 @@ data class AppUiState(
     val previewReady: Boolean = false,
     val previewUrl: String? = null,
     val isRunning: Boolean = false,
+    val streamingMessageId: String? = null,
     val activeSessionId: String? = null,
     val interruptedSession: com.codeair.mhe.session.PersistedAgentSession? = null,
     val runtimeRecoveryStatus: String? = null,
@@ -2128,6 +2129,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 openEditorTabs = emptyList(),
                 fileContentLoading = false,
                 isRunning = false,
+                streamingMessageId = null,
                 activeSessionId = null,
                 pendingApproval = null,
                 projectTerminalLines = emptyList(),
@@ -3536,6 +3538,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 messages = it.messages + ChatMessage(fromUser = true, text = prompt.trim(), attachments = attachments),
                 pendingAttachments = emptyList(),
                 isRunning = true,
+                streamingMessageId = null,
                 activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + it.activity,
                 liveProcess = listOf(thinkItem),
                 scratchpadItems = initialScratchpad,
@@ -3671,7 +3674,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ignoredSessionIds += it
             if (ignoredSessionIds.size > 100) ignoredSessionIds.remove(ignoredSessionIds.first())
         }
-        _state.update { it.copy(isRunning = false, activeSessionId = null, pendingApproval = null, runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
+        _state.update { it.copy(isRunning = false, streamingMessageId = null, activeSessionId = null, pendingApproval = null, runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
         MobileHarnessApplication.appScope.launch { activeRuntime().stopActiveSession() }
     }
 
@@ -3848,7 +3851,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         current
                     }
-                    timeline.copy(messages = agentChatController.appendAssistantDelta(timeline.messages, event.text))
+                    val updatedMessages = agentChatController.appendAssistantDelta(timeline.messages, event.text)
+                    val streamId = updatedMessages.lastOrNull()?.takeIf { !it.fromUser }?.id
+                    timeline.copy(messages = updatedMessages, streamingMessageId = streamId)
                 }
                 is RuntimeEvent.ReasoningProgress -> {
                     val existingIndex = current.liveProcess.indexOfLast { it.title == "Think" }
@@ -4024,6 +4029,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     agentOrchestrator.transition(com.codeair.mhe.session.EngineeringState.COMPLETED, "Task completed successfully")
                     attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
                         isRunning = false,
+                        streamingMessageId = null,
                         activeSessionId = null,
                         activeRoadmap = latestRoadmap,
                         scratchpadItems = scratchpad,
@@ -4079,6 +4085,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
                         attachTaskDuration(segmentFinishedState.copy(messages = messagesWithRoadmap), finishedAt).copy(
                             isRunning = false,
+                            streamingMessageId = null,
                             activeSessionId = null,
                             activeRoadmap = latestRoadmap,
                             scratchpadItems = scratchpad,
@@ -4102,6 +4109,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             finishedAt,
                         ).copy(
                             isRunning = false,
+                            streamingMessageId = null,
                             activeSessionId = null,
                             pendingApproval = null,
                             scratchpadItems = scratchpad,
@@ -4172,6 +4180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     finishedAt,
                 ).copy(
                     isRunning = false,
+                    streamingMessageId = null,
                     activeSessionId = null,
                     runtimeRecoveryStatus = "Connection lost (3m timeout)",
                     runtimeRecoveryCanResume = true,
@@ -4314,6 +4323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.copy(
                 messages = cleanedMessages,
                 isRunning = true,
+                streamingMessageId = null,
                 liveThinking = true,
                 activeSessionId = null,
                 runtimeRecoveryStatus = null,
@@ -4657,6 +4667,9 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun importSkillFromUri(uri: Uri) =
         skillsCoordinator.importSkillFromUri(uri)
+
+    fun importSkillFromFolder(uri: Uri) =
+        skillsCoordinator.importSkillFromFolder(uri)
 
     fun removeSkill(name: String) =
         skillsCoordinator.removeSkill(name)

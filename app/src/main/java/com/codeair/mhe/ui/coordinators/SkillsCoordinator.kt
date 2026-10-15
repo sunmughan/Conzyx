@@ -103,6 +103,16 @@ class SkillsCoordinator(
         }
     }
 
+    fun importSkillFromFolder(uri: Uri) {
+        if (host.state().skillsBusy) return
+        host.updateState { it.copy(skillsBusy = true, skillsMessage = "Importing skill folder…") }
+        host.scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromFolder(uri) } }
+            result.onSuccess { installed -> host.updateState { it.copy(skills = skillManager.installed(), skillsBusy = false, skillUpdates = it.skillUpdates - installed.map { skill -> skill.name }.toSet(), skillsMessage = "Imported " + installed.size + " skill(s) from folder.") } }
+                .onFailure { error -> host.updateState { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill folder import failed.") } }
+        }
+    }
+
     fun removeSkill(name: String) {
         host.scope.launch(Dispatchers.IO) {
             val removed = skillManager.remove(name)

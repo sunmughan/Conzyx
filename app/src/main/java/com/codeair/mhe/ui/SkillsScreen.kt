@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.CloudDownload
@@ -101,6 +102,7 @@ fun SkillsScreen(
     onSearch: (String) -> Unit,
     onImportGitHub: (String) -> Unit,
     onImportZip: (Uri) -> Unit,
+    onImportFolder: (Uri) -> Unit = {},
     onRemove: (String) -> Unit,
     onToggleSkill: (String, Boolean) -> Unit = { _, _ -> },
     onCheckUpdates: () -> Unit = {},
@@ -136,6 +138,9 @@ fun SkillsScreen(
 
     val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onImportZip)
+    }
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(onImportFolder)
     }
 
     Scaffold(
@@ -248,7 +253,7 @@ fun SkillsScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text("Direct Import", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     Text(
-                                        "Import from GitHub repo URL or local ZIP package",
+                                        "Import from GitHub repo URL, local ZIP package, or a folder on this device",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -285,6 +290,17 @@ fun SkillsScreen(
                                     Icon(Icons.Default.FileUpload, null, Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
                                     Text("Upload ZIP", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                }
+                                OutlinedButton(
+                                    onClick = { folderLauncher.launch(null) },
+                                    enabled = !busy,
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, null, Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Pick Folder", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                 }
                             }
                         }

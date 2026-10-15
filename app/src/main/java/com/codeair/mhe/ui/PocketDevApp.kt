@@ -2512,6 +2512,7 @@ private fun RootScreenHost(
                     onSearch = viewModel::searchSkills,
                     onImportGitHub = viewModel::importSkillFromGitHub,
                     onImportZip = viewModel::importSkillFromUri,
+                    onImportFolder = viewModel::importSkillFromFolder,
                     onRemove = viewModel::removeSkill,
                     onToggleSkill = viewModel::toggleSkill,
                     onCheckUpdates = viewModel::checkSkillUpdates,
@@ -4697,6 +4698,7 @@ private fun ReadOnlyProjectScreen(
                 approval = null,
                 liveProcess = emptyList(),
                 isRunning = false,
+                streamingMessageId = null,
                 onSend = {},
                 onStop = {},
                 onApproval = {},
@@ -5262,6 +5264,7 @@ private fun WorkspaceScreen(
                     approval = state.pendingApproval,
                     liveProcess = state.liveProcess,
                     isRunning = state.isRunning,
+                    streamingMessageId = state.streamingMessageId,
                     onSend = onSend,
                     onStop = onStop,
                     onApproval = onApproval,
@@ -6019,6 +6022,7 @@ private fun ChatTab(
     approval: ToolRequest?,
     liveProcess: List<ActivityItem>,
     isRunning: Boolean,
+    streamingMessageId: String?,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onApproval: (Boolean) -> Unit,
@@ -6277,8 +6281,7 @@ private fun ChatTab(
                     } else {
                         MessageBubble(
                             message = message,
-                            isStreaming = isRunning && !rawMessage.fromUser &&
-                                rawMessage.id == messages.lastOrNull { !it.fromUser && it.text.isNotBlank() }?.id,
+                            isStreaming = rawMessage.id == streamingMessageId,
                             onRunInTerminal = onRunInTerminal,
                             onOpenAttachment = onOpenAttachment,
                             onAddRoadmapComment = { stepId ->
