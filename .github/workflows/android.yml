@@ -383,34 +383,18 @@ jobs:
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
           AAB_SIZE=$(stat -c '%s' "$AAB")
           export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
+          # Generate release notes from actual commits in this version only.
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20)
+          fi
           cat > release-notes.md <<EOF
           ## Conzyx $TAG
 
-          ### Highlights in this build
-          - **Multimodal YouTube Video Understanding via Gemini**:
-            - Dedicated YouTube action button positioned next to the Mic icon in the chat prompt bar (\`ChatTab\`).
-            - Strict URL validation engine (\`YouTubeUrlValidator\`) enforcing valid YouTube URLs (\`watch?v=\`, \`youtu.be/\`, \`shorts/\`, \`live/\`) with clean video ID extraction and strict non-YouTube domain rejection.
-            - Interactive \`YouTubeVideoDialog\` with one-tap clipboard paste, live validation badges, focus presets (*Full Deep Summary*, *Key Takeaways & Timestamps*, *Action Items & Tutorial*, *Code & Technical Walkthrough*), and custom query input.
-            - Multi-modal prompt orchestrator sending deep video comprehension requests directly to Google Gemini models.
-          - **Expanded High-Impact & Daily-Life Skills Suite (17 Skills)**:
-            - Added \`anyps5-director\` (native PS5 ELF relinker & Vulkan SPIR-V shader recompiler without emulation).
-            - Added \`youtube-video-intel\` (deep multimodal video understanding and chaptering).
-            - Added \`fridge-vision-chef\` (computer vision meal planning and macro calculator from fridge/pantry photos).
-            - Added \`receipt-expense-sleuth\` (OCR invoice & receipt auditor with hidden subscription spike detection).
-            - Added \`contract-legal-buster\` (rental lease & contract auditor with plain-language risk scoring).
-            - Added \`smarthome-iot-commander\` (Home Assistant / ESPHome smart home orchestrator).
-            - Added \`academic-paper-architect\` (PhD research paper and journal writing assistant with LaTeX/BibTeX templates and peer-review rebuttals).
-            - Added \`document-transmuter\` (universal Markdown, PDF, DOCX, LaTeX conversion engine).
-            - Added \`marp-presentation-deck\` (Marp/RevealJS interactive presentation slide generator).
-            - Added \`creative-image-director\` (cinematographic prompt engineering and SVG vector synthesis).
-            - Added \`viral-growth-creator\` (social media and account growth engine for YouTube, X threads, and LinkedIn carousels).
-            - Added \`fullstack-dev-accelerator\` (fullstack architecture design, AST refactoring, unit tests, CI/CD pipelines).
-            - All skills configured with canonical GitHub upstream sources for one-tap in-app updates in the Skills screen.
-          - **Standalone Systems In-App Browser Shortcuts**:
-            - Direct quick-launch cards in Chromium preview homescreen for Hermes 3D, OpenGym, TikTok 5.6B Videos, GitFrames, Auto-Social, and Munder Difflin.
-          - **Clean Architecture & Repository Cleanup**:
-            - Completely purged deprecated experimental e-commerce code.
-            - Removed committed release notes \`.md\` files from git history and enforced \`.gitignore\` exclusion; release notes are now published directly to GitHub Releases.
+          ### Changes in this version
+          $CHANGELOG
 
           ### Release files
           - **Online Release:** app-online-release.apk
