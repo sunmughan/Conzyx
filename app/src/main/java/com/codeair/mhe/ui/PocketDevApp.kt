@@ -6281,11 +6281,13 @@ private fun ChatTab(
                     }
                 }
                 itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { _, rawMessage ->
-                    val message = if (!isRunning && rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
-                        val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
-                        if (parsed != null) rawMessage.copy(roadmap = parsed) else rawMessage
-                    } else {
-                        rawMessage
+                    val message = remember(rawMessage.id, rawMessage.text) {
+                        if (!isRunning && rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.length <= 30000 && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
+                            val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
+                            if (parsed != null) rawMessage.copy(roadmap = parsed) else rawMessage
+                        } else {
+                            rawMessage
+                        }
                     }
                     if (message.workItems.isNotEmpty()) {
                         WorkBlockCard(message)

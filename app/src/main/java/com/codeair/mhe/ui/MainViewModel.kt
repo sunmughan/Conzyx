@@ -4014,11 +4014,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             rm
                         }
                     }
-                    val messagesWithRoadmap = stateWithResponse.messages.map { msg ->
+                    val messagesWithRoadmap = stateWithResponse.messages.mapIndexed { index, msg ->
+                        val isRecent = index >= stateWithResponse.messages.size - 20
                         if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                             msg.copy(roadmap = completedActiveRoadmap)
-                        } else if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
-                            current.executionMode != ExecutionMode.BUILD) {
+                        } else if (isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
+                            msg.text.length <= 30000 && current.executionMode != ExecutionMode.BUILD) {
                             val parsed = RoadmapParser.parseFromText(msg.text, stateWithResponse.executionMode)
                             if (parsed != null) msg.copy(roadmap = parsed) else msg
                         } else {
@@ -4072,11 +4073,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 rm
                             }
                         }
-                        val messagesWithRoadmap = segmentFinishedState.messages.map { msg ->
+                        val messagesWithRoadmap = segmentFinishedState.messages.mapIndexed { index, msg ->
+                            val isRecent = index >= segmentFinishedState.messages.size - 20
                             if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                                 msg.copy(roadmap = completedActiveRoadmap)
-                            } else if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
-                                current.executionMode != ExecutionMode.BUILD) {
+                            } else if (isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
+                                msg.text.length <= 30000 && current.executionMode != ExecutionMode.BUILD) {
                                 val parsed = RoadmapParser.parseFromText(msg.text, segmentFinishedState.executionMode)
                                 if (parsed != null) msg.copy(roadmap = parsed) else msg
                             } else {
