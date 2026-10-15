@@ -7011,7 +7011,15 @@ private fun MessageBubble(
             modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
         ) {
             Column(Modifier.padding(top = 12.dp)) {
-                SelectionContainer {
+                val hugeText = message.text.length > 100000
+                val displayText = if (hugeText) message.text.take(100000) + "\n\n… (message truncated for display)" else message.text
+                if (hugeText) {
+                    MarkdownText(
+                        markdown = displayText,
+                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
+                        color = if (message.fromUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    )
+                } else SelectionContainer {
                     if (message.fromUser) {
                         MarkdownText(
                             markdown = message.text,
