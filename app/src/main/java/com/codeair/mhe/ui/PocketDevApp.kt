@@ -205,8 +205,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.window.Popup
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -6350,10 +6348,15 @@ private fun ChatTab(
                     }
                 }
             }
-        } else Surface(
-            color = MaterialTheme.colorScheme.background,
+        } else Box(
             modifier = Modifier.fillMaxWidth(),
         ) {
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { inputSectionHeight = with(density) { it.size.height.toDp() } },
+            ) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -6432,15 +6435,160 @@ private fun ChatTab(
                     }
                 }
 
-                if (toolsOpen) {
-                    Popup(
-                        alignment = Alignment.TopStart,
-                        offset = IntOffset(
-                            with(density) { 14.dp.roundToPx() },
-                            with(density) { (-8).dp.roundToPx() },
-                        ),
-                        onDismissRequest = { toolsOpen = false },
+                Surface(
+                    shape = RoundedCornerShape(26.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        IconButton(
+                            onClick = { toolsOpen = !toolsOpen },
+                            modifier = Modifier.size(40.dp).align(if (inputFocused) Alignment.Bottom else Alignment.CenterVertically),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = if (toolsOpen) "Hide tools" else "Show tools",
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .graphicsLayer { rotationZ = plusRotation },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        BasicTextField(
+                            value = prompt,
+                            onValueChange = {
+                                prompt = it
+                                updateMentionQuery(it)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 4.dp)
+                                .heightIn(min = 24.dp, max = 150.dp)
+                                .onFocusChanged { inputFocused = it.isFocused },
+                            maxLines = if (inputFocused) Int.MAX_VALUE else 1,
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp,
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (prompt.isEmpty()) {
+                                        Text(
+                                            text = "${executionMode.title} with ${agentKind.title}…",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 15.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                        )
+                        IconButton(
+                            onClick = onStartVoiceInput,
+                            modifier = Modifier.size(40.dp).align(if (inputFocused) Alignment.Bottom else Alignment.CenterVertically),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice input",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        if (isRunning) {
+                            Box(
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clickable(onClick = onStop)
+                                    .align(Alignment.Bottom),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.error,
+                                            shape = CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Stop,
+                                        contentDescription = "Stop AI task",
+                                        tint = MaterialTheme.colorScheme.onError,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clickable(
+                                        enabled = canSend,
+                                        onClick = {
+                                            if (canSend) {
+                                                onSend(prompt)
+                                                prompt = ""
+                                                mentionQuery = null
+                                            }
+                                        },
+                                    )
+                                    .align(Alignment.Bottom),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(
+                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = "Send",
+                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(19.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+                AnimatedVisibility(
+                    visible = toolsOpen,
+                    enter = expandVertically(
+                        expandFrom = Alignment.Top,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    ) + fadeIn(animationSpec = tween(150)),
+                    exit = shrinkVertically(
+                        shrinkTowards = Alignment.Top,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    ) + fadeOut(animationSpec = tween(150)),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 14.dp, bottom = inputSectionHeight + 8.dp),
+                ) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -6533,150 +6681,9 @@ private fun ChatTab(
                             }
                         }
                     }
-                    }
                 }
-
-                Surface(
-                    shape = RoundedCornerShape(26.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(
-                            onClick = { toolsOpen = !toolsOpen },
-                            modifier = Modifier.size(40.dp).align(Alignment.Bottom),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = if (toolsOpen) "Hide tools" else "Show tools",
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .graphicsLayer { rotationZ = plusRotation },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        BasicTextField(
-                            value = prompt,
-                            onValueChange = {
-                                prompt = it
-                                updateMentionQuery(it)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp)
-                                .heightIn(min = 24.dp, max = 150.dp)
-                                .onFocusChanged { inputFocused = it.isFocused },
-                            maxLines = if (inputFocused) Int.MAX_VALUE else 1,
-                            textStyle = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                            decorationBox = { innerTextField ->
-                                Box(contentAlignment = Alignment.CenterStart) {
-                                    if (prompt.isEmpty()) {
-                                        Text(
-                                            text = "${executionMode.title} with ${agentKind.title}…",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 15.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            },
-                        )
-                        IconButton(
-                            onClick = onStartVoiceInput,
-                            modifier = Modifier.size(40.dp).align(Alignment.Bottom),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice input",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        if (isRunning) {
-                            Box(
-                                modifier = Modifier
-                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clickable(onClick = onStop)
-                                    .align(Alignment.Bottom),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.error,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Stop,
-                                        contentDescription = "Stop AI task",
-                                        tint = MaterialTheme.colorScheme.onError,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clickable(
-                                        enabled = canSend,
-                                        onClick = {
-                                            if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
-                                                mentionQuery = null
-                                            }
-                                        },
-                                    )
-                                    .align(Alignment.Bottom),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(
-                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowUpward,
-                                        contentDescription = "Send",
-                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(19.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
+}
 }
 
 @Composable
