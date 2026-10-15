@@ -66,6 +66,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.ime
@@ -6483,9 +6484,12 @@ private fun ChatTab(
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         shadowElevation = 8.dp,
-                        modifier = Modifier.width(250.dp),
                     ) {
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .width(IntrinsicSize.Max)
+                                .padding(vertical = 4.dp),
+                        ) {
                             val attachEnabled = pendingAttachments.size < 5
                             Row(
                                 modifier = Modifier
