@@ -5202,9 +5202,9 @@ private fun WorkspaceScreen(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Interrupted session", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 "Task: \"${if (interruptedExpanded) state.interruptedSession.initialPrompt else state.interruptedSession.initialPrompt.take(60)}\" in ${state.interruptedSession.projectTitle}",
                                 fontSize = 11.sp,
@@ -5216,18 +5216,14 @@ private fun WorkspaceScreen(
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = onResumeInterruptedSession,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            // Medium: this used to read "Resume", identical
-                            // to the runtime-recovery banner above it.
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(20.dp),
                         ) {
-                            Text("Resume session", fontSize = 12.sp, maxLines = 1)
+                            Text("Resume", fontSize = 12.sp, maxLines = 1)
                         }
-                        Spacer(Modifier.width(4.dp))
                         IconButton(
                             onClick = onDismissInterruptedSession,
-                            modifier = Modifier.size(48.dp),
+                            modifier = Modifier.size(32.dp),
                         ) {
                             Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
                         }
