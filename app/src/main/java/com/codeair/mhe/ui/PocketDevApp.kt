@@ -34,11 +34,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -6468,6 +6466,112 @@ private fun ChatTab(
                     }
                 }
 
+                AnimatedVisibility(
+                    visible = toolsOpen,
+                    enter = expandVertically(
+                        expandFrom = Alignment.Top,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    ) + fadeIn(animationSpec = tween(150)),
+                    exit = shrinkVertically(
+                        shrinkTowards = Alignment.Top,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    ) + fadeOut(animationSpec = tween(150)),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.width(250.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            val attachEnabled = pendingAttachments.size < 5
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (attachEnabled) {
+                                            toolsOpen = false
+                                            onAttach()
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Attach files",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (attachEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        toolsOpen = false
+                                        showWorkspaceControls = !showWorkspaceControls
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .align(Alignment.TopEnd)
+                                                .background(PocketOrange, CircleShape),
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Customize",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        toolsOpen = false
+                                        showYouTubeDialog = true
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SmartDisplay,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = YouTubeBrandRed,
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "YouTube",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(26.dp),
                     color = MaterialTheme.colorScheme.surface,
@@ -6497,70 +6601,6 @@ private fun ChatTab(
                                     .graphicsLayer { rotationZ = plusRotation },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        }
-                        AnimatedVisibility(
-                            visible = toolsOpen,
-                            enter = expandHorizontally(
-                                expandFrom = Alignment.Start,
-                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                            ) + fadeIn(animationSpec = tween(150)),
-                            exit = shrinkHorizontally(
-                                shrinkTowards = Alignment.Start,
-                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                            ) + fadeOut(animationSpec = tween(150)),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = onAttach,
-                                    enabled = pendingAttachments.size < 5,
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AttachFile,
-                                        contentDescription = "Attach files",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { showWorkspaceControls = !showWorkspaceControls },
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    val rotation by animateFloatAsState(
-                                        targetValue = if (showWorkspaceControls) 180f else 0f,
-                                        label = "workspace_controls_rotation",
-                                    )
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Tune,
-                                            contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
-                                            modifier = Modifier
-                                                .size(20.dp)
-                                                .graphicsLayer { rotationZ = rotation },
-                                            tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .align(Alignment.TopEnd)
-                                                    .background(PocketOrange, CircleShape),
-                                            )
-                                        }
-                                    }
-                                }
-                                IconButton(
-                                    onClick = { showYouTubeDialog = true },
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SmartDisplay,
-                                        contentDescription = "Analyze YouTube video with Gemini",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = YouTubeBrandRed,
-                                    )
-                                }
-                            }
                         }
                         BasicTextField(
                             value = prompt,
