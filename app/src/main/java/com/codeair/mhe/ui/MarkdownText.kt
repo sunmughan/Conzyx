@@ -76,6 +76,11 @@ sealed interface MarkdownBlock {
     data class Table(val headers: List<String>, val rows: List<List<String>>) : MarkdownBlock
 }
 
+private const val MAX_RENDER_BLOCKS = 400
+private const val MAX_TABLE_COLUMNS = 12
+private const val MAX_TABLE_ROWS = 200
+private const val MAX_CODE_DISPLAY_CHARS = 40_000
+
 @Composable
 fun MarkdownText(
     markdown: String,
@@ -122,7 +127,9 @@ fun MarkdownText(
             color = color,
         )
     } else Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEach { block ->
+        val hiddenBlocks = (blocks.size - MAX_RENDER_BLOCKS).coerceAtLeast(0)
+        val visibleBlocks = if (hiddenBlocks > 0) blocks.take(MAX_RENDER_BLOCKS) else blocks
+        visibleBlocks.forEach { block ->
             when (block) {
                 is MarkdownBlock.Header -> HeaderBlock(block, effectiveOpenUri)
                 is MarkdownBlock.CodeBlock -> CodeSnippetBlock(block, onRunCode)
@@ -142,6 +149,13 @@ fun MarkdownText(
                 }
                 is MarkdownBlock.Table -> TableBlock(block, color, effectiveOpenUri)
             }
+        }
+        if (hiddenBlocks > 0) {
+            Text(
+                text = "… ($hiddenBlocks more sections hidden to keep the app responsive; use Copy for the full text)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -238,6 +252,10 @@ private fun TableBlock(
     onOpenUri: ((String) -> Unit)?,
 ) {
     val scrollState = rememberScrollState()
+    val visibleHeaders = table.headers.take(MAX_TABLE_COLUMNS)
+    val hiddenColumns = (table.headers.size - MAX_TABLE_COLUMNS).coerceAtLeast(0)
+    val visibleRows = table.rows.take(MAX_TABLE_ROWS)
+    val hiddenRows = (table.rows.size - MAX_TABLE_ROWS).coerceAtLeast(0)
     Surface(
         shape = RoundedCornerShape(10.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
@@ -251,7 +269,6 @@ private fun TableBlock(
                 .horizontalScroll(scrollState)
                 .padding(8.dp),
         ) {
-            // Header Row
             Row(
                 modifier = Modifier
                     .background(
@@ -261,7 +278,7 @@ private fun TableBlock(
                     .padding(vertical = 8.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                table.headers.forEach { header ->
+                visibleHeaders.forEach { header ->
                     Box(
                         modifier = Modifier
                             .widthIn(min = 90.dp, max = 220.dp)
@@ -274,19 +291,26 @@ private fun TableBlock(
                         )
                     }
                 }
+                if (hiddenColumns > 0) {
+                    Text(
+                        text = "… +$hiddenColumns cols",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
             }
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 modifier = Modifier.padding(vertical = 4.dp),
             )
-            // Data Rows
-            table.rows.forEachIndexed { rowIndex, row ->
+            visibleRows.forEachIndexed { rowIndex, row ->
                 Row(
                     modifier = Modifier
                         .padding(vertical = 6.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    table.headers.indices.forEach { colIndex ->
+                    visibleHeaders.indices.forEach { colIndex ->
                         val cellText = row.getOrNull(colIndex) ?: ""
                         Box(
                             modifier = Modifier
@@ -301,12 +325,20 @@ private fun TableBlock(
                         }
                     }
                 }
-                if (rowIndex < table.rows.size - 1) {
+                if (rowIndex < visibleRows.size - 1) {
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
                         modifier = Modifier.padding(vertical = 2.dp),
                     )
                 }
+            }
+            if (hiddenRows > 0) {
+                Text(
+                    text = "… $hiddenRows more rows hidden",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
             }
         }
     }
@@ -317,6 +349,11 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val displayCode = if (block.code.length > MAX_CODE_DISPLAY_CHARS) {
+        block.code.take(MAX_CODE_DISPLAY_CHARS) + "\n… (truncated for display; Copy gives the full code)"
+    } else {
+        block.code
+    }
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -383,7 +420,7 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                     .padding(12.dp),
             ) {
                 Text(
-                    text = block.code,
+                    text = displayCode,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,

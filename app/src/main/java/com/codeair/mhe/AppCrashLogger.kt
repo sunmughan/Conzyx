@@ -47,7 +47,26 @@ object AppCrashLogger {
 
             val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-                logThrowable("UNCAUGHT EXCEPTION on thread ${thread.name}", throwable)
+                runCatching {
+                    val runtime = Runtime.getRuntime()
+                    val preamble = buildString {
+                        append("[${timestamp()}] ${thread.name}: UNCAUGHT ")
+                        append(throwable::class.java.name)
+                        append(": ")
+                        append(throwable.message?.take(300) ?: "<null>")
+                        append(" | mem free=")
+                        append(runtime.freeMemory() / 1024)
+                        append("KB total=")
+                        append(runtime.totalMemory() / 1024)
+                        append("KB max=")
+                        append(runtime.maxMemory() / 1024)
+                        append("KB\n")
+                    }
+                    write(preamble)
+                }
+                runCatching {
+                    logThrowable("UNCAUGHT EXCEPTION on thread ${thread.name}", throwable)
+                }
                 runCatching {
                     previousHandler?.uncaughtException(thread, throwable)
                 }.onFailure { handlerFailure ->

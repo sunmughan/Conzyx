@@ -6986,6 +6986,8 @@ private fun formatDuration(totalSeconds: Long): String = when {
     else -> "${totalSeconds}s"
 }
 
+private const val MAX_STREAMING_DISPLAY_CHARS = 30_000
+
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
@@ -7014,10 +7016,13 @@ private fun MessageBubble(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else if (isStreaming) {
-                        // Avoid reparsing the entire growing response as Markdown for every token.
-                        // Plain text keeps the chat responsive; rich formatting is applied once complete.
+                        val streamDisplayText = if (message.text.length > MAX_STREAMING_DISPLAY_CHARS) {
+                            message.text.take(MAX_STREAMING_DISPLAY_CHARS) + "\n… (output continues; full text renders on completion)"
+                        } else {
+                            message.text
+                        }
                         Text(
-                            text = message.text,
+                            text = streamDisplayText,
                             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                             color = MaterialTheme.colorScheme.onSurface,
