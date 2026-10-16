@@ -2,6 +2,7 @@ package com.codeair.mhe.runtime
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.StatFs
 import android.system.Os
 import com.codeair.mhe.BuildConfig
 import java.io.BufferedInputStream
@@ -62,6 +63,38 @@ private data class RuntimeBundle(
 ) {
     val version: String
         get() = fileName.substringAfterLast("-").removeSuffix(".tar.zst")
+}
+
+internal const val MAX_RUNTIME_ARCHIVE_BYTES = 2_147_483_648L
+internal const val MAX_RUNTIME_EXTRACTED_BYTES = 4_294_967_296L
+internal const val MAX_RUNTIME_ARCHIVE_ENTRIES = 1_000_000
+internal const val MAX_RUNTIME_ARCHIVE_FILE_BYTES = 1_073_741_824L
+internal const val EXTRACTION_TIMEOUT_MS = 1_800_000L
+
+internal class RuntimeExtractionBudget {
+    var entries = 0
+        private set
+    var totalBytes = 0L
+        private set
+
+    fun checkEntry() {
+        entries += 1
+        require(entries <= MAX_RUNTIME_ARCHIVE_ENTRIES) { "Runtime archive contains too many entries" }
+    }
+
+    fun copyBounded(input: java.io.InputStream, output: java.io.OutputStream) {
+        val buffer = ByteArray(128 * 1024)
+        var fileBytes = 0L
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            fileBytes += count
+            require(fileBytes <= MAX_RUNTIME_ARCHIVE_FILE_BYTES) { "Runtime archive entry exceeds the per-file size limit" }
+            totalBytes += count
+            require(totalBytes <= MAX_RUNTIME_EXTRACTED_BYTES) { "Runtime archive exceeds the maximum extracted size" }
+            output.write(buffer, 0, count)
+        }
+    }
 }
 
 class RuntimeInstaller(private val context: Context) {
@@ -206,7 +239,7 @@ class RuntimeInstaller(private val context: Context) {
             val staging = File(runtimeDir, "ubuntu.installing")
             staging.deleteRecursively()
             staging.mkdirs()
-            extractZstdTar(archive, staging)
+            withTimeout(EXTRACTION_TIMEOUT_MS) { extractZstdTar(archive, staging) }
             stripMacosMetadataArtifacts(staging)
             require(File(staging, "usr/bin/bash").isFile) { "Core bundle is missing Bash" }
             // The old code deleted the live rootfs before the rename: a
@@ -1773,7 +1806,7 @@ class RuntimeInstaller(private val context: Context) {
         // online APK fetches each one from the release URL on demand.
         val archive = obtainRuntimeBundle(bundle, preferEmbedded = forceEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES, from, to * 0.8f + from * 0.2f, onProgress)
         onProgress(RuntimeInstallProgress(message, to * 0.8f + from * 0.2f, indeterminate = true))
-        extractZstdTar(archive, rootfs)
+        withTimeout(EXTRACTION_TIMEOUT_MS) { extractZstdTar(archive, rootfs) }
         stripMacosMetadataArtifacts(rootfs)
         if (archive.parentFile == downloads) archive.delete()
         onProgress(RuntimeInstallProgress("${bundle.label} tools installed", to))
@@ -1839,6 +1872,7 @@ class RuntimeInstaller(private val context: Context) {
                         if (count < 0) break
                         output.write(buffer, 0, count)
                         copied += count
+                        check(copied <= MAX_RUNTIME_ARCHIVE_BYTES) { "Embedded bundle exceeds the maximum archive size" }
                         val ratio = (copied.toFloat() / bundle.compressedBytes).coerceIn(0f, 1f)
                         onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from + ratio * (to - from), copied, bundle.compressedBytes))
                     }
@@ -1880,16 +1914,20 @@ class RuntimeInstaller(private val context: Context) {
         val staging = File(destination.parentFile, "${destination.name}.installing")
         staging.deleteRecursively()
         staging.mkdirs()
-        extractZipArchive(archive, staging)
+        withTimeout(EXTRACTION_TIMEOUT_MS) { extractZipArchive(archive, staging) }
         destination.deleteRecursively()
         check(staging.renameTo(destination)) { "Could not activate ${destination.name}" }
         archive.delete()
     }
 
     private fun extractZipArchive(archive: File, destination: File) {
+        checkArchiveSize(archive)
+        checkDiskSpaceForExtraction(destination, archive)
+        val budget = RuntimeExtractionBudget()
         ZipInputStream(BufferedInputStream(archive.inputStream())).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
+                budget.checkEntry()
                 val name = entry.name.removePrefix("./").trimStart('/')
                 if (name.isNotBlank()) {
                     val target = safeChild(destination, name)
@@ -1897,7 +1935,7 @@ class RuntimeInstaller(private val context: Context) {
                         target.mkdirs()
                     } else {
                         target.parentFile?.mkdirs()
-                        FileOutputStream(target).use { output -> zip.copyTo(output) }
+                        FileOutputStream(target).use { output -> budget.copyBounded(zip, output) }
                     }
                 }
                 zip.closeEntry()
@@ -2139,7 +2177,7 @@ class RuntimeInstaller(private val context: Context) {
         val nodeStaging = File(runtimeDir, "node.installing")
         nodeStaging.deleteRecursively()
         nodeStaging.mkdirs()
-        extractNodeArchive(nodeArchive, nodeStaging)
+        withTimeout(EXTRACTION_TIMEOUT_MS) { extractNodeArchive(nodeArchive, nodeStaging) }
         val nodeHome = File(rootfs, "usr/local/lib/nodejs")
         nodeHome.deleteRecursively()
         nodeHome.parentFile?.mkdirs()
@@ -2661,11 +2699,25 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         File(rootfs, "etc/resolv.conf").writeText(servers.joinToString("\n") { "nameserver $it" } + "\n")
     }
 
+    private fun checkArchiveSize(archive: File) {
+        require(archive.length() <= MAX_RUNTIME_ARCHIVE_BYTES) { "Runtime archive exceeds the 2 GB size limit" }
+    }
+
+    private fun checkDiskSpaceForExtraction(destination: File, archive: File) {
+        val available = StatFs(destination.absolutePath).availableBytes
+        val required = maxOf(archive.length() * 3, 256L * 1024L * 1024L)
+        check(available >= required) { "Not enough free space to extract the runtime archive" }
+    }
+
     private fun extractRootfs(archive: File, destination: File) {
+        checkArchiveSize(archive)
+        checkDiskSpaceForExtraction(destination, archive)
+        val budget = RuntimeExtractionBudget()
         val deferredLinks = mutableListOf<Pair<File, File>>()
         TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
             var entry: TarArchiveEntry? = tar.nextEntry
             while (entry != null) {
+                budget.checkEntry()
                 val cleanName = entry.name.removePrefix("./")
                 val target = safeChild(destination, cleanName)
                 when {
@@ -2679,14 +2731,14 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
                         target.parentFile?.mkdirs()
                         val linkTarget = safeChild(destination, entry.linkName.removePrefix("./"))
                         if (linkTarget.exists()) {
-                            linkTarget.inputStream().use { input -> FileOutputStream(target).use { input.copyTo(it) } }
+                            linkTarget.inputStream().use { input -> FileOutputStream(target).use { budget.copyBounded(input, it) } }
                         } else {
                             deferredLinks += target to linkTarget
                         }
                     }
                     entry.isFile -> {
                         target.parentFile?.mkdirs()
-                        FileOutputStream(target).use { output -> tar.copyTo(output) }
+                        FileOutputStream(target).use { output -> budget.copyBounded(tar, output) }
                         runCatching { Os.chmod(target.absolutePath, entry.mode and 0b111111111) }
                     }
                 }
@@ -2696,18 +2748,22 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         deferredLinks.forEach { (target, linkTarget) ->
             require(linkTarget.isFile) { "Archive hard-link target is missing" }
             target.parentFile?.mkdirs()
-            linkTarget.inputStream().use { input -> FileOutputStream(target).use { input.copyTo(it) } }
+            linkTarget.inputStream().use { input -> FileOutputStream(target).use { budget.copyBounded(input, it) } }
             runCatching { Os.chmod(target.absolutePath, android.system.Os.stat(linkTarget.absolutePath).st_mode) }
         }
     }
 
     private fun extractZstdTar(archive: File, destination: File) {
+        checkArchiveSize(archive)
+        checkDiskSpaceForExtraction(destination, archive)
+        val budget = RuntimeExtractionBudget()
         val deferredLinks = mutableListOf<Pair<File, File>>()
         TarArchiveInputStream(
             ZstdCompressorInputStream(BufferedInputStream(archive.inputStream())),
         ).use { tar ->
             var entry: TarArchiveEntry? = tar.nextEntry
             while (entry != null) {
+                budget.checkEntry()
                 val cleanName = entry.name.removePrefix("./")
                 if (cleanName.isNotBlank()) {
                     val target = safeChild(destination, cleanName)
@@ -2723,14 +2779,14 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
                             target.parentFile?.mkdirs()
                             val linkTarget = safeChild(destination, entry.linkName.removePrefix("./"))
                             if (linkTarget.exists()) {
-                                linkTarget.inputStream().use { input -> FileOutputStream(target).use { input.copyTo(it) } }
+                                linkTarget.inputStream().use { input -> FileOutputStream(target).use { budget.copyBounded(input, it) } }
                             } else {
                                 deferredLinks += target to linkTarget
                             }
                         }
                         entry.isFile -> {
                             target.parentFile?.mkdirs()
-                            FileOutputStream(target).use { output -> tar.copyTo(output) }
+                            FileOutputStream(target).use { output -> budget.copyBounded(tar, output) }
                             runCatching { Os.chmod(target.absolutePath, entry.mode and 0b111111111) }
                         }
                     }
@@ -2741,16 +2797,20 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         deferredLinks.forEach { (target, linkTarget) ->
             require(linkTarget.isFile) { "Archive hard-link target is missing" }
             target.parentFile?.mkdirs()
-            linkTarget.inputStream().use { input -> FileOutputStream(target).use { input.copyTo(it) } }
+            linkTarget.inputStream().use { input -> FileOutputStream(target).use { budget.copyBounded(input, it) } }
             runCatching { Os.chmod(target.absolutePath, android.system.Os.stat(linkTarget.absolutePath).st_mode) }
         }
     }
 
     private fun extractNodeArchive(archive: File, destination: File) {
+        checkArchiveSize(archive)
+        checkDiskSpaceForExtraction(destination, archive)
+        val budget = RuntimeExtractionBudget()
         val deferredLinks = mutableListOf<Pair<File, File>>()
         TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
             var entry: TarArchiveEntry? = tar.nextEntry
             while (entry != null) {
+                budget.checkEntry()
                 val relative = entry.name.removePrefix("./").substringAfter('/', "")
                 if (relative.isNotBlank()) {
                     val target = safeChild(destination, relative)
@@ -2766,14 +2826,14 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
                             val linkTarget = safeChild(destination, relativeLink)
                             target.parentFile?.mkdirs()
                             if (linkTarget.exists()) {
-                                linkTarget.inputStream().use { input -> FileOutputStream(target).use { input.copyTo(it) } }
+                                linkTarget.inputStream().use { input -> FileOutputStream(target).use { budget.copyBounded(input, it) } }
                             } else {
                                 deferredLinks += target to linkTarget
                             }
                         }
                         entry.isFile -> {
                             target.parentFile?.mkdirs()
-                            FileOutputStream(target).use { output -> tar.copyTo(output) }
+                            FileOutputStream(target).use { output -> budget.copyBounded(tar, output) }
                             runCatching { Os.chmod(target.absolutePath, entry.mode and 0b111111111) }
                         }
                     }
@@ -2784,7 +2844,7 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         deferredLinks.forEach { (target, linkTarget) ->
             require(linkTarget.isFile) { "Node.js archive hard-link target is missing" }
             target.parentFile?.mkdirs()
-            linkTarget.inputStream().use { input -> FileOutputStream(target).use { input.copyTo(it) } }
+            linkTarget.inputStream().use { input -> FileOutputStream(target).use { budget.copyBounded(input, it) } }
             runCatching { Os.chmod(target.absolutePath, android.system.Os.stat(linkTarget.absolutePath).st_mode) }
         }
     }
@@ -2803,6 +2863,7 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         destination: File,
         expectedChecksum: String,
         algorithm: String = "SHA-256",
+        maxBytes: Long = MAX_RUNTIME_ARCHIVE_BYTES,
         onBytes: suspend (downloaded: Long, total: Long) -> Unit,
     ) {
         destination.parentFile?.mkdirs()
@@ -2836,6 +2897,7 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
                         if (count < 0) break
                         output.write(buffer, 0, count)
                         downloaded += count
+                        check(downloaded <= maxBytes) { "Download exceeds the maximum archive size" }
                         onBytes(downloaded, total)
                     }
                 }
