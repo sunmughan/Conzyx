@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +37,9 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Visibility
@@ -83,6 +87,7 @@ import com.codeair.mhe.mcp.McpServerInfo
 import com.codeair.mhe.runtime.McpToolCallResult
 import com.codeair.mhe.runtime.McpToolDefinition
 import com.codeair.mhe.runtime.SkillInfo
+import com.codeair.mhe.runtime.SkillScanReport
 import com.codeair.mhe.runtime.SkillSearchResult
 import com.codeair.mhe.ui.coordinators.McpToolApproval
 import org.json.JSONObject
@@ -101,6 +106,11 @@ fun SkillsScreen(
     skillUpdates: Set<String> = emptySet(),
     onSearch: (String) -> Unit,
     onImportGitHub: (String) -> Unit,
+    onScanGitHub: (String) -> Unit = {},
+    scanReport: SkillScanReport? = null,
+    scanBusy: Boolean = false,
+    onInstallScanned: (Boolean) -> Unit = {},
+    onDismissScan: () -> Unit = {},
     onImportZip: (Uri) -> Unit,
     onImportFolder: (Uri) -> Unit = {},
     onRemove: (String) -> Unit,
@@ -253,7 +263,7 @@ fun SkillsScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text("Direct Import", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     Text(
-                                        "Import from GitHub repo URL, local ZIP package, or a folder on this device",
+                                        "Scan a GitHub repo before installing, or import a local ZIP package or folder",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -270,15 +280,19 @@ fun SkillsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
                                     onClick = {
-                                        onImportGitHub(githubUrl)
+                                        onScanGitHub(githubUrl)
                                         githubUrl = ""
                                     },
-                                    enabled = githubUrl.startsWith("https://github.com/") && !busy,
+                                    enabled = githubUrl.startsWith("https://github.com/") && !busy && !scanBusy,
                                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 ) {
-                                    Text("Import URL", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    if (scanBusy) {
+                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                    } else {
+                                        Text("Scan URL", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    }
                                 }
                                 OutlinedButton(
                                     onClick = { zipLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
@@ -304,6 +318,19 @@ fun SkillsScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                // 2b. Skill scan report (shown after scanning a GitHub repo, before install)
+                if (scanReport != null) {
+                    item {
+                        SkillScanReportCard(
+                            report = scanReport,
+                            busy = busy,
+                            onInstall = { onInstallScanned(false) },
+                            onInstallRelease = { onInstallScanned(true) },
+                            onDismiss = onDismissScan,
+                        )
                     }
                 }
 
@@ -373,7 +400,7 @@ fun SkillsScreen(
                                     Text(result.description, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                     Text(result.repositoryUrl, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Button(onClick = { onImportGitHub(result.repositoryUrl) }, enabled = !busy) { Text("Import") }
+                                Button(onClick = { onScanGitHub(result.repositoryUrl) }, enabled = !busy && !scanBusy) { Text("Scan") }
                             }
                         }
                     }
@@ -1063,6 +1090,130 @@ private fun SkillCard(
                 }
                 IconButton(onClick = onRemove, enabled = !busy, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Remove skill", modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkillScanReportCard(
+    report: SkillScanReport,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onInstallRelease: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val verdictColor = if (report.isSkill) successGreen() else MaterialTheme.colorScheme.error
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, verdictColor.copy(alpha = 0.4f)),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (report.isSkill) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    null,
+                    tint = verdictColor,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Scan report", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        if (report.isSkill) "Real skill: ${report.skills.size} skill(s) found" else "Not a skill repository",
+                        fontSize = 11.sp,
+                        color = verdictColor,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Dismiss scan", modifier = Modifier.size(16.dp))
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(report.repoName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                if (report.repoDescription.isNotBlank()) {
+                    Text(report.repoDescription, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+                Text(
+                    "Branch ${report.defaultBranch} · ${report.stars} stars",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (report.skills.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Skills found", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    report.skills.forEach { skill ->
+                        Column(Modifier.padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text("• ${skill.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(skill.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+            report.release?.let { release ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Latest release", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Text(
+                        "${release.tag} (${release.name})" + if (release.newerThanBranch) " · newer than ${report.defaultBranch}" else " · same as ${report.defaultBranch}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (report.suggestions.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Suggested improvements", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    report.suggestions.forEach { suggestion ->
+                        Text("• $suggestion", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (report.warnings.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    report.warnings.forEach { warning ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(warning, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                if (report.isSkill) {
+                    Button(
+                        onClick = onInstall,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text("Install", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                    val release = report.release
+                    if (release != null && release.newerThanBranch) {
+                        OutlinedButton(
+                            onClick = onInstallRelease,
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text("Install ${release.tag}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onInstall,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text("Install anyway", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
                 }
             }
         }

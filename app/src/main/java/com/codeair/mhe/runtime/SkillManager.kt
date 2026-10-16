@@ -33,6 +33,33 @@ data class SkillUpdateInfo(
     val source: String,
 )
 
+data class ScannedSkillDetail(
+    val name: String,
+    val description: String,
+    val hasFrontmatter: Boolean,
+    val structure: SkillManager.PortableSkillStructure,
+)
+
+data class SkillReleaseScan(
+    val tag: String,
+    val name: String,
+    val publishedAt: String,
+    val newerThanBranch: Boolean,
+)
+
+data class SkillScanReport(
+    val repositoryUrl: String,
+    val repoName: String,
+    val repoDescription: String,
+    val defaultBranch: String,
+    val stars: Int,
+    val isSkill: Boolean,
+    val skills: List<ScannedSkillDetail>,
+    val release: SkillReleaseScan?,
+    val suggestions: List<String>,
+    val warnings: List<String>,
+)
+
 class SkillDownloadException(val httpStatus: Int, message: String) : java.io.IOException(message)
 
 class SkillManager(
@@ -165,6 +192,130 @@ class SkillManager(
             if (connection.responseCode !in 200..299) return null
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             JSONObject(body).optString("default_branch").ifBlank { null }
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun installGitHubRelease(repositoryUrl: String, tag: String): List<SkillInfo> {
+        val normalized = normalizeGitHubRepositoryUrl(repositoryUrl)
+        val ownerRepo = URI(normalized).path.trim('/').removeSuffix(".git")
+        require(tag.matches(Regex("[A-Za-z0-9._\\-+]+"))) { "Invalid release tag." }
+        return installZipDownload("https://codeload.github.com/$ownerRepo/zip/refs/tags/$tag", normalized)
+    }
+
+    fun scanGitHubSkill(repositoryUrl: String): SkillScanReport {
+        val normalized = normalizeGitHubRepositoryUrl(repositoryUrl)
+        val ownerRepo = URI(normalized).path.trim('/').removeSuffix(".git")
+        val repo = githubApiObject("repos/$ownerRepo")
+            ?: error("Could not read repository metadata from GitHub.")
+        val defaultBranch = repo.optString("default_branch").ifBlank { "main" }
+        val stars = repo.optInt("stargazers_count")
+        val warnings = mutableListOf<String>()
+        if (stars == 0) warnings.add("Repository has no stars yet; review its content before installing.")
+        val release = queryLatestRelease(ownerRepo, defaultBranch)
+        val scanned = mutableListOf<ScannedSkillDetail>()
+        val zip = File(cache, "skill-scan-" + UUID.randomUUID() + ".zip")
+        val extraction = File(cache, "skill-scan-extract-" + UUID.randomUUID()).apply { mkdirs() }
+        try {
+            runCatching { downloadSkillArchive("https://codeload.github.com/$ownerRepo/zip/refs/heads/$defaultBranch", zip) }
+                .getOrElse { downloadSkillArchive("https://codeload.github.com/$ownerRepo/zip/refs/heads/main", zip) }
+            extractZipArchive(zip, extraction)
+            extraction.walkTopDown()
+                .filter { it.isFile && it.name.equals("SKILL.md", ignoreCase = true) }
+                .take(100)
+                .forEach { manifest ->
+                    val dir = manifest.parentFile ?: return@forEach
+                    val text = runCatching { manifest.readText() }.getOrNull() ?: return@forEach
+                    val frontmatter = text.removePrefix("﻿").trimStart().startsWith("---")
+                    runCatching {
+                        val metadata = parseManifest(text, dir.name)
+                        scanned.add(
+                            ScannedSkillDetail(
+                                name = sanitizeSkillName(metadata.first),
+                                description = metadata.second,
+                                hasFrontmatter = frontmatter,
+                                structure = validatePortableStructure(dir),
+                            )
+                        )
+                    }
+                }
+        } finally {
+            zip.delete()
+            extraction.deleteRecursively()
+        }
+        if (scanned.isEmpty()) {
+            warnings.add("No SKILL.md found: this repository does not look like an installable skill.")
+        }
+        return SkillScanReport(
+            repositoryUrl = normalized,
+            repoName = repo.optString("full_name").ifBlank { ownerRepo },
+            repoDescription = repo.optString("description"),
+            defaultBranch = defaultBranch,
+            stars = stars,
+            isSkill = scanned.isNotEmpty(),
+            skills = scanned,
+            release = release,
+            suggestions = buildScanSuggestions(scanned, release),
+            warnings = warnings,
+        )
+    }
+
+    internal fun buildScanSuggestions(scanned: List<ScannedSkillDetail>, release: SkillReleaseScan?): List<String> {
+        val suggestions = mutableListOf<String>()
+        if (scanned.isEmpty()) {
+            suggestions.add("Not a skill repository: no SKILL.md was found, so installing would add nothing usable.")
+            return suggestions
+        }
+        scanned.forEach { skill ->
+            if (!skill.hasFrontmatter) {
+                suggestions.add(skill.name + ": SKILL.md has no YAML frontmatter; adding a name and description block helps the agent pick it up.")
+            }
+            if (skill.description.length < 20 || skill.description == "Imported skill without a description.") {
+                suggestions.add(skill.name + ": the description is too short or missing; describe what the skill does and when to use it.")
+            }
+            if (!skill.structure.hasInstructions) suggestions.add(skill.name + ": no instructions/ folder; step-by-step guidance makes the skill far more useful.")
+            if (!skill.structure.hasTools) suggestions.add(skill.name + ": no tools/ folder; bundled scripts turn the skill into something the agent can execute.")
+            if (!skill.structure.hasExamples) suggestions.add(skill.name + ": no examples/ folder; examples show the agent the expected input and output shape.")
+            if (!skill.structure.hasResources) suggestions.add(skill.name + ": no resources/ folder for reference material.")
+        }
+        if (release != null && release.newerThanBranch) {
+            suggestions.add("Release " + release.tag + " is newer than the default branch; install the release instead of the branch snapshot.")
+        } else if (release == null) {
+            suggestions.add("No releases published; installs will track the default branch.")
+        }
+        return suggestions
+    }
+
+    private fun queryLatestRelease(ownerRepo: String, defaultBranch: String): SkillReleaseScan? {
+        val release = githubApiObject("repos/$ownerRepo/releases/latest") ?: return null
+        val tag = release.optString("tag_name")
+        if (tag.isBlank()) return null
+        val publishedAt = release.optString("published_at")
+        val head = githubApiObject("repos/$ownerRepo/branches/$defaultBranch")
+        val headDate = head?.optJSONObject("commit")?.optJSONObject("commit")?.optJSONObject("committer")?.optString("date").orEmpty()
+        val newer = publishedAt.isNotBlank() && headDate.isNotBlank() && publishedAt > headDate
+        return SkillReleaseScan(
+            tag = tag,
+            name = release.optString("name").ifBlank { tag },
+            publishedAt = publishedAt,
+            newerThanBranch = newer,
+        )
+    }
+
+    private fun githubApiObject(path: String): JSONObject? {
+        val connection = (URL("https://api.github.com/$path").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "Conzyx")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) return null
+            JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
         } catch (_: Exception) {
             null
         } finally {

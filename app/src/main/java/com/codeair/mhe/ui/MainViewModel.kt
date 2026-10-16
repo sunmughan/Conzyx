@@ -73,6 +73,7 @@ import com.codeair.mhe.runtime.ProjectIndex
 import com.codeair.mhe.runtime.ContextEngine
 import com.codeair.mhe.runtime.RuntimeRetryPolicy
 import com.codeair.mhe.runtime.SkillInfo
+import com.codeair.mhe.runtime.SkillScanReport
 import com.codeair.mhe.runtime.SkillManager
 import com.codeair.mhe.runtime.SkillSearchResult
 import com.codeair.mhe.runtime.AndroidAppInstaller
@@ -298,6 +299,8 @@ data class AppUiState(
     val skillsBusy: Boolean = false,
     val skillsMessage: String? = null,
     val skillUpdates: Set<String> = emptySet(),
+    val skillScanReport: SkillScanReport? = null,
+    val skillScanBusy: Boolean = false,
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
     val projectTerminalLiveOutput: String = "",
@@ -4672,6 +4675,15 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun importSkillFromGitHub(url: String) =
         skillsCoordinator.importSkillFromGitHub(url)
+
+    fun scanGitHubSkill(url: String) =
+        skillsCoordinator.scanGitHubSkill(url)
+
+    fun installScannedSkill(useRelease: Boolean) =
+        skillsCoordinator.installScannedSkill(useRelease)
+
+    fun dismissSkillScan() =
+        skillsCoordinator.dismissSkillScan()
 
     fun importSkillFromUri(uri: Uri) =
         skillsCoordinator.importSkillFromUri(uri)

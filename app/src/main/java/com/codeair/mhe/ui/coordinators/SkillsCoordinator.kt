@@ -93,6 +93,55 @@ class SkillsCoordinator(
         }
     }
 
+    fun scanGitHubSkill(url: String) {
+        if (host.state().skillsBusy || host.state().skillScanBusy) return
+        host.updateState { it.copy(skillScanBusy = true, skillScanReport = null, skillsMessage = "Scanning skill repository…") }
+        host.scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.scanGitHubSkill(url) } }
+            result.onSuccess { report ->
+                host.updateState {
+                    it.copy(
+                        skillScanBusy = false,
+                        skillScanReport = report,
+                        skillsMessage = if (report.isSkill) "Scan complete: " + report.skills.size + " skill(s) found." else "Scan complete: this does not look like a skill.",
+                    )
+                }
+            }.onFailure { error ->
+                host.updateState { it.copy(skillScanBusy = false, skillsMessage = error.message ?: "Skill scan failed.") }
+            }
+        }
+    }
+
+    fun installScannedSkill(useRelease: Boolean) {
+        val report = host.state().skillScanReport ?: return
+        if (host.state().skillsBusy) return
+        host.updateState { it.copy(skillsBusy = true, skillsMessage = "Importing skill…") }
+        host.scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (useRelease && report.release != null) skillManager.installGitHubRelease(report.repositoryUrl, report.release.tag)
+                    else skillManager.installFromGitHub(report.repositoryUrl)
+                }
+            }
+            result.onSuccess { installed ->
+                host.updateState {
+                    it.copy(
+                        skills = skillManager.installed(),
+                        skillsBusy = false,
+                        skillScanReport = null,
+                        skillsMessage = "Imported " + installed.size + " skill bundle(s).",
+                    )
+                }
+            }.onFailure { error ->
+                host.updateState { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") }
+            }
+        }
+    }
+
+    fun dismissSkillScan() {
+        host.updateState { it.copy(skillScanReport = null) }
+    }
+
     fun importSkillFromUri(uri: Uri) {
         if (host.state().skillsBusy) return
         host.updateState { it.copy(skillsBusy = true, skillsMessage = "Importing local skill bundle…") }

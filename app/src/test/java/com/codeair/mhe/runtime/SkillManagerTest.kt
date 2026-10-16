@@ -304,4 +304,96 @@ class SkillManagerTest {
             }
         }
     }
+
+    private fun scannedDetail(
+        name: String = "demo-skill",
+        description: String = "A sufficiently long description of what this skill does for the agent.",
+        hasFrontmatter: Boolean = true,
+        structure: SkillManager.PortableSkillStructure = SkillManager.PortableSkillStructure(
+            hasManifest = true,
+            hasInstructions = true,
+            hasTools = true,
+            hasExamples = true,
+            hasResources = true,
+            isComplete = true,
+        ),
+    ) = ScannedSkillDetail(name, description, hasFrontmatter, structure)
+
+    @Test
+    fun buildScanSuggestionsFlagsNonSkillRepo() {
+        val tempDir = Files.createTempDirectory("skill-scan-suggest-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val suggestions = manager.buildScanSuggestions(emptyList(), null)
+            assertEquals(1, suggestions.size)
+            assertTrue(suggestions[0].contains("no SKILL.md", ignoreCase = true))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun buildScanSuggestionsFlagsMissingFrontmatterAndStructure() {
+        val tempDir = Files.createTempDirectory("skill-scan-suggest-test2").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val incomplete = SkillManager.PortableSkillStructure(
+                hasManifest = true,
+                hasInstructions = false,
+                hasTools = false,
+                hasExamples = true,
+                hasResources = false,
+                isComplete = false,
+            )
+            val suggestions = manager.buildScanSuggestions(
+                listOf(scannedDetail(hasFrontmatter = false, description = "short", structure = incomplete)),
+                null,
+            )
+            assertTrue(suggestions.any { it.contains("frontmatter", ignoreCase = true) })
+            assertTrue(suggestions.any { it.contains("description", ignoreCase = true) })
+            assertTrue(suggestions.any { it.contains("instructions", ignoreCase = true) })
+            assertTrue(suggestions.any { it.contains("tools", ignoreCase = true) })
+            assertTrue(suggestions.any { it.contains("No releases published", ignoreCase = true) })
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun buildScanSuggestionsRecommendsNewerRelease() {
+        val tempDir = Files.createTempDirectory("skill-scan-suggest-test3").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val release = SkillReleaseScan(tag = "v2.0.0", name = "v2", publishedAt = "2026-10-01T00:00:00Z", newerThanBranch = true)
+            val suggestions = manager.buildScanSuggestions(listOf(scannedDetail()), release)
+            assertTrue(suggestions.any { it.contains("v2.0.0") && it.contains("newer", ignoreCase = true) })
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun buildScanSuggestionsCleanForCompleteSkill() {
+        val tempDir = Files.createTempDirectory("skill-scan-suggest-test4").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val release = SkillReleaseScan(tag = "v1.0.0", name = "v1", publishedAt = "2026-01-01T00:00:00Z", newerThanBranch = false)
+            val suggestions = manager.buildScanSuggestions(listOf(scannedDetail()), release)
+            assertTrue(suggestions.isEmpty())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun installGitHubReleaseRejectsInvalidTag() {
+        val tempDir = Files.createTempDirectory("skill-release-tag-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val result = runCatching { manager.installGitHubRelease("https://github.com/owner/repo", "../evil") }
+            assertTrue(result.isFailure)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }
