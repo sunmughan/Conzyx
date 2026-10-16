@@ -67,11 +67,15 @@ class GitHubActionsDispatchCoordinator(
     }
 
     fun dispatchBuild(
-        token: String,
-        repoFullName: String,
+        token: String = "",
+        repoFullName: String = "sunmughan/Conzyx",
         workflowId: String = "android.yml",
         ref: String = "v3",
     ) {
+        if (token.isBlank()) {
+            _state.value = _state.value.copy(dispatchResult = "GitHub token not available. Connect GitHub first.")
+            return
+        }
         val decision = safetyGateway.authorize(
             SafetyOperation.NetworkRequest("https://api.github.com/repos/$repoFullName/actions/workflows/$workflowId/dispatches")
         )
