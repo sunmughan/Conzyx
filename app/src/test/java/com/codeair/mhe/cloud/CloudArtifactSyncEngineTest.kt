@@ -58,6 +58,44 @@ class CloudArtifactSyncEngineTest {
     }
 
     @Test
+    fun testManifestHashReflectsFileContents() {
+        val dirA = File(tempDir, "a").apply { mkdirs() }
+        val dirB = File(tempDir, "b").apply { mkdirs() }
+        File(dirA, "data.bin").writeBytes("content-version-one!".toByteArray())
+        File(dirB, "data.bin").writeBytes("content-version-two!".toByteArray())
+
+        val payloadA = syncEngine.createWorkspacePayload(dirA)
+        val payloadB = syncEngine.createWorkspacePayload(dirB)
+
+        assertEquals(payloadA.relativePaths, payloadB.relativePaths)
+        assertEquals(payloadA.totalBytes, payloadB.totalBytes)
+        assertFalse(
+            "identical paths and sizes with different contents must hash differently",
+            payloadA.manifestHash == payloadB.manifestHash
+        )
+    }
+
+    @Test
+    fun testManifestHashIsDeterministicForIdenticalTrees() {
+        val dirA = File(tempDir, "a").apply { mkdirs() }
+        val dirB = File(tempDir, "b").apply { mkdirs() }
+        for (dir in listOf(dirA, dirB)) {
+            File(dir, "z.txt").writeText("same")
+            File(dir, "a.txt").writeText("same")
+            File(File(dir, "sub").apply { mkdirs() }, "m.txt").writeText("same")
+        }
+
+        val payloadA = syncEngine.createWorkspacePayload(dirA)
+        val payloadB = syncEngine.createWorkspacePayload(dirB)
+
+        assertEquals(payloadA.manifestHash, payloadB.manifestHash)
+        assertEquals(
+            listOf("a.txt", "sub/m.txt", "z.txt"),
+            payloadA.relativePaths
+        )
+    }
+
+    @Test
     fun testCalculateChecksumSha256() {
         val content = "hello world".toByteArray()
         val checksum = syncEngine.calculateChecksum(content)

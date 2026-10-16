@@ -35,22 +35,29 @@ class CloudArtifactSyncEngine {
             return SyncPayload(manifestHash = emptyHash, fileCount = 0, totalBytes = 0L, relativePaths = emptyList())
         }
 
-        val relativePaths = mutableListOf<String>()
+        val entries = mutableListOf<Pair<String, String>>()
         var totalBytes = 0L
-        val digest = MessageDigest.getInstance("SHA-256")
 
         workspaceDir.walkTopDown()
             .onEnter { dir -> !excludedDirs.contains(dir.name) }
             .filter { it.isFile }
             .forEach { file ->
                 val rel = file.relativeTo(workspaceDir).path
-                relativePaths.add(rel)
                 totalBytes += file.length()
-                digest.update(rel.toByteArray())
-                digest.update(file.length().toString().toByteArray())
+                entries.add(rel to sha256OfFile(file))
             }
 
+        val sortedEntries = entries.sortedBy { it.first }
+        val digest = MessageDigest.getInstance("SHA-256")
+        for ((rel, contentHash) in sortedEntries) {
+            digest.update(rel.toByteArray(Charsets.UTF_8))
+            digest.update(0.toByte())
+            digest.update(contentHash.toByteArray(Charsets.UTF_8))
+            digest.update(0.toByte())
+        }
+
         val manifestHash = digest.digest().joinToString("") { "%02x".format(it) }
+        val relativePaths = sortedEntries.map { it.first }
         val payload = SyncPayload(
             manifestHash = manifestHash,
             fileCount = relativePaths.size,
@@ -121,6 +128,19 @@ class CloudArtifactSyncEngine {
     fun calculateChecksum(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(bytes).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun sha256OfFile(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     fun clearCache() {
