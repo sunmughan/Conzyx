@@ -121,6 +121,11 @@ class GitHubWorkflowEngineTest {
             buildAndTestValidator = { OperationResult.success(logs = listOf("All tests pass")) }
         )
 
+        if (!result.isSuccess) {
+            System.err.println("WORKFLOW_DIAG result.error=${result.error}")
+            System.err.println("WORKFLOW_DIAG state.error=${workflowEngine.state.value.errorMessage}")
+            System.err.println("WORKFLOW_DIAG commands=$executedCommands")
+        }
         assertTrue(
             "expected workflow success but got error: ${result.error} " +
                 "(state error: ${workflowEngine.state.value.errorMessage})",
