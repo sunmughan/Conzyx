@@ -21,7 +21,7 @@ Projects, conversations, attachments, imported repositories, editor content, ter
 
 Provider credentials are protected using Android Keystore-backed encryption before they are persisted.
 
-Mobile Harness Extended does not currently include advertising or analytics SDKs and does not operate a first-party user account system.
+Mobile Harness Extended does not include advertising SDKs and does not operate a first-party user account system. It does include Firebase Crashlytics for crash reporting, described below.
 
 ## Code, projects, and AI requests
 
@@ -44,6 +44,18 @@ The app may connect to external services to:
 Those services may receive standard network information such as your IP address, request time, requested resource, and user-agent information. The third-party service's own privacy policy and terms govern information it receives.
 
 Mobile Harness Extended does not sell personal information.
+
+## Crash reporting
+
+The app uses Firebase Crashlytics to collect crash and diagnostic reports so stability issues can be diagnosed and fixed.
+
+- **What is collected:** When the app crashes or records a non-fatal error, the report includes the exception type, the exception message, and the stack trace, plus app and device metadata needed to reproduce the issue (app version and variant, Android version and API level, device manufacturer and model, processor architectures, and memory statistics).
+- **Secret redaction:** Before a report leaves the device, the app redacts API keys, bearer tokens, passwords, and private key material from exception messages and stack traces. Redaction is pattern-based and best-effort; avoid pasting secrets into fields or inputs that could surface in an error message.
+- **Purpose:** Crash reports are used only to diagnose and fix app stability and reliability issues.
+- **Third-party processing:** Reports are uploaded to Firebase Crashlytics, a Google service. Google receives the report content along with standard network information (such as IP address and request time). Google's privacy policy and terms govern its handling of this information.
+- **Retention:** Crash report retention follows Firebase Crashlytics' data retention policies. Information already uploaded cannot be deleted from the device; contact Google for requests concerning data held by Firebase.
+- **Local crash log:** Separately, the app keeps a `crash.log` file in its private on-device storage (with a user-visible mirror in the app-specific external files directory) so recent startup and crash history can be inspected without any upload. This log stays on the device.
+- **User control:** Crash reporting is enabled by default. It can be disabled programmatically through the crash logger's reporting flag (`AppCrashLogger.setCrashReportingEnabled(false)`), which also stops the Firebase Crashlytics SDK from collecting. Disabling reporting does not delete reports already uploaded and does not affect the on-device `crash.log`.
 
 ## Permissions
 

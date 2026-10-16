@@ -3,6 +3,7 @@ package com.codeair.mhe
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import com.codeair.mhe.security.redactSecrets
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -31,6 +32,14 @@ object AppCrashLogger {
 
     @Volatile
     private var initialized = false
+
+    @Volatile
+    var isCrashReportingEnabled: Boolean = true
+        private set
+
+    fun setCrashReportingEnabled(enabled: Boolean) {
+        isCrashReportingEnabled = enabled
+    }
 
     @Volatile
     private var internalFile: File? = null
@@ -108,9 +117,11 @@ object AppCrashLogger {
 
     fun logThrowable(message: String, throwable: Throwable) {
         if (!initialized) return
-        // Forward to Crashlytics as well so it appears in the Firebase console.
-        runCatching {
-            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(throwable)
+        if (isCrashReportingEnabled) {
+            runCatching {
+                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+                    .recordException(sanitizedForCrashlytics(throwable))
+            }
         }
         val stack = StringWriter()
         PrintWriter(stack).use { throwable.printStackTrace(it) }
@@ -146,6 +157,18 @@ object AppCrashLogger {
     }
 
     fun internalLogFile(context: Context): File = File(context.filesDir, FILE_NAME)
+
+    internal fun sanitizedForCrashlytics(throwable: Throwable, depth: Int = 0): Throwable {
+        if (depth > 8) return RuntimeException("Crash cause chain truncated for privacy")
+        val redactedMessage = redactSecrets(throwable.message ?: "")
+        val copy = RuntimeException("${throwable.javaClass.name}: $redactedMessage")
+        copy.stackTrace = throwable.stackTrace
+        val cause = throwable.cause
+        if (cause != null && cause !== throwable) {
+            copy.initCause(sanitizedForCrashlytics(cause, depth + 1))
+        }
+        return copy
+    }
 
     private fun timestamp(): String = synchronized(timestampFormat) {
         timestampFormat.format(Date())

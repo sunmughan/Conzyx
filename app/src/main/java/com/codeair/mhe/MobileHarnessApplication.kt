@@ -34,7 +34,8 @@ class MobileHarnessApplication : Application() {
         }
         runCatching {
             FirebaseApp.initializeApp(this)
-            FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = true
+            FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled =
+                AppCrashLogger.isCrashReportingEnabled
         }
         // (FCM needs no local token persistence: the PushTokenStore that
         // used to save the registration token here was removed — nothing

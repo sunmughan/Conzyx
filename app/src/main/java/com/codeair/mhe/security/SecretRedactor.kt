@@ -5,7 +5,7 @@ private val PEM_BLOCK_PATTERN =
 private val BEARER_PATTERN = Regex("(?i)\\bbearer\\s+[A-Za-z0-9._~+\\-/]+=*(?![A-Za-z0-9._~+\\-/=])")
 private val KEY_VALUE_SECRET_PATTERN = Regex(
     "(?i)(api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token|access[_-]?token" +
-        "|client[_-]?secret|password|passwd|pwd|token|secret|auth|credential)\\b" +
+        "|client[_-]?secret|password|passwd|pwd|token|secret|auth|credential)\\b[\"']?" +
         "\\s*[:=]\\s*(\"[^\"]*\"|'[^']*'|\\S+)"
 )
 
