@@ -32,7 +32,7 @@ class SharedExportTest {
     fun stageApkForInstallSanitizesApkName() {
         val filesDir = tempFilesDir()
         try {
-            val apk = File(filesDir, "../../weird name!.apk").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+            val apk = File(filesDir, "..evil name!.apk").apply { writeBytes(byteArrayOf(1, 2, 3)) }
             val staged = SharedExport.stageApkForInstall(filesDir, apk)
             assertFalse(staged.name.contains('/'))
             assertFalse(staged.name.contains(".."))

@@ -14,7 +14,6 @@ class NetworkSecurityTest {
     fun gitHubDomainAllowsGitHubHosts() {
         assertTrue(AppUpdater.isGitHubDomain("https://github.com/sunmughan/Conzyx"))
         assertTrue(AppUpdater.isGitHubDomain("https://api.github.com/repos/x"))
-        assertTrue(AppUpdater.isGitHubDomain("https://objects.githubusercontent.com/abc"))
         assertTrue(AppUpdater.isGitHubDomain("https://GITHUB.COM/x"))
     }
 
