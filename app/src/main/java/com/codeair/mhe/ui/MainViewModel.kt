@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
+import com.codeair.mhe.files.SharedExport
 import com.codeair.mhe.BuildConfig
 import com.codeair.mhe.AppCrashLogger
 import com.codeair.mhe.data.ApiKeyVault
@@ -3429,7 +3430,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val file = File(root, attachment.relativePath).canonicalFile
             require(file.isFile && file.toPath().startsWith(root.toPath())) { "Attachment is unavailable" }
             val app = getApplication<Application>()
-            val uri = FileProvider.getUriForFile(app, "${app.packageName}.files", file)
+            val staged = SharedExport.stageFileForOpen(app.filesDir, file, attachment.displayName)
+            val uri = FileProvider.getUriForFile(app, "${app.packageName}.files", staged)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, attachment.mimeType.ifBlank { "application/octet-stream" })
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

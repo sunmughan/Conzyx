@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
 import androidx.core.content.FileProvider
+import com.codeair.mhe.files.SharedExport
 import java.io.File
 
 /** Installs a locally-built APK through Android's package manager, without ADB. */
@@ -29,7 +30,8 @@ object AndroidAppInstaller {
     }
 
     fun launchInstallerIntent(context: Context, apk: File) {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
+        val staged = SharedExport.stageApkForInstall(context.filesDir, apk)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", staged)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
