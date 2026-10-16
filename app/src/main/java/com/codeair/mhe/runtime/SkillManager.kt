@@ -140,12 +140,35 @@ class SkillManager(
     fun installFromGitHub(repositoryUrl: String): List<SkillInfo> {
         val normalized = normalizeGitHubRepositoryUrl(repositoryUrl)
         val ownerRepo = URI(normalized).path.trim('/').removeSuffix(".git")
-        val mainUrl = "https://codeload.github.com/$ownerRepo/zip/refs/heads/main"
+        val branches = listOfNotNull(queryDefaultBranch(ownerRepo), "main", "master").distinct()
+        var lastError: SkillDownloadException? = null
+        for (branch in branches) {
+            try {
+                return installZipDownload("https://codeload.github.com/$ownerRepo/zip/refs/heads/$branch", normalized)
+            } catch (e: SkillDownloadException) {
+                if (e.httpStatus != 404) throw e
+                lastError = e
+            }
+        }
+        throw lastError ?: SkillDownloadException(404, "GitHub skill download failed with HTTP 404")
+    }
+
+    private fun queryDefaultBranch(ownerRepo: String): String? {
+        val connection = (URL("https://api.github.com/repos/$ownerRepo").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "Conzyx")
+        }
         return try {
-            installZipDownload(mainUrl, normalized)
-        } catch (e: SkillDownloadException) {
-            if (e.httpStatus != 404) throw e
-            installZipDownload("https://codeload.github.com/$ownerRepo/zip/refs/heads/master", normalized)
+            if (connection.responseCode !in 200..299) return null
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            JSONObject(body).optString("default_branch").ifBlank { null }
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
         }
     }
 
@@ -192,30 +215,34 @@ class SkillManager(
         require(manifests.isNotEmpty()) { "No SKILL.md was found in the selected folder." }
         val current = installed().toMutableList()
         val installedNow = mutableListOf<SkillInfo>()
+        val failures = mutableListOf<String>()
         val sourceLabel = treeUri.toString()
         manifests.forEach { manifest ->
-            val content = resolver.openInputStream(manifest.uri)?.use { it.bufferedReader().readText() }
-                ?: error("Could not read ${manifest.name}.")
-            val metadata = parseManifest(content)
-            val safeName = sanitizeSkillName(metadata.first)
-            val skillRoot = manifest.parentFile ?: error("Invalid SKILL.md location.")
-            val destination = File(root, safeName)
-            destination.deleteRecursively()
-            destination.mkdirs()
-            copyDocumentTree(skillRoot, destination)
-            ensurePortableSkillLayout(destination)
-            val info = SkillInfo(
-                name = safeName,
-                description = metadata.second,
-                source = sourceLabel,
-                installedAtMillis = System.currentTimeMillis(),
-                path = destination.absolutePath,
-                enabled = current.firstOrNull { it.name == safeName }?.enabled ?: true,
-            )
-            current.removeAll { it.name == safeName }
-            current += info
-            installedNow += info
+            runCatching {
+                val content = resolver.openInputStream(manifest.uri)?.use { it.bufferedReader().readText() }
+                    ?: error("Could not read ${manifest.name}.")
+                val skillRoot = manifest.parentFile ?: error("Invalid SKILL.md location.")
+                val metadata = parseManifest(content, skillRoot.name ?: "skill")
+                val safeName = sanitizeSkillName(metadata.first)
+                val destination = File(root, safeName)
+                destination.deleteRecursively()
+                destination.mkdirs()
+                copyDocumentTree(skillRoot, destination)
+                ensurePortableSkillLayout(destination)
+                val info = SkillInfo(
+                    name = safeName,
+                    description = metadata.second,
+                    source = sourceLabel,
+                    installedAtMillis = System.currentTimeMillis(),
+                    path = destination.absolutePath,
+                    enabled = current.firstOrNull { it.name == safeName }?.enabled ?: true,
+                )
+                current.removeAll { it.name == safeName }
+                current += info
+                installedNow += info
+            }.onFailure { failures.add((manifest.name ?: "SKILL.md") + ": " + (it.message ?: "install failed")) }
         }
+        require(installedNow.isNotEmpty()) { "No skills could be installed. " + failures.joinToString("; ").take(600) }
         writeRegistry(current)
         return installedNow
     }
@@ -285,7 +312,7 @@ class SkillManager(
             }
             extractSkillArchive(archive, extraction)
             val remote = extraction.walkTopDown().filter { it.isFile && it.name.equals("SKILL.md", ignoreCase = true) }
-                .firstOrNull { sanitizeSkillName(parseManifest(it.readText()).first) == skill.name }
+                .firstOrNull { sanitizeSkillName(parseManifest(it.readText(), it.parentFile?.name ?: "skill").first) == skill.name }
                 ?: return false
             val local = getSkillManifest(File(skill.path))
             return local == null || !local.isFile || local.readText() != remote.readText()
@@ -436,26 +463,30 @@ class SkillManager(
 
             val current = installed().toMutableList()
             val installedNow = mutableListOf<SkillInfo>()
+            val failures = mutableListOf<String>()
             manifests.forEach { manifest ->
-                val metadata = parseManifest(manifest.readText())
-                val safeName = sanitizeSkillName(metadata.first)
-                val sourceDirectory = manifest.parentFile ?: error("Invalid SKILL.md location")
-                val destination = File(root, safeName)
-                destination.deleteRecursively()
-                copyDirectory(sourceDirectory, destination)
-                ensurePortableSkillLayout(destination)
-                val info = SkillInfo(
-                    name = safeName,
-                    description = metadata.second,
-                    source = source,
-                    installedAtMillis = System.currentTimeMillis(),
-                    path = destination.absolutePath,
-                    enabled = current.firstOrNull { it.name == safeName }?.enabled ?: true,
-                )
-                current.removeAll { it.name == safeName }
-                current += info
-                installedNow += info
+                runCatching {
+                    val sourceDirectory = manifest.parentFile ?: error("Invalid SKILL.md location")
+                    val metadata = parseManifest(manifest.readText(), sourceDirectory.name)
+                    val safeName = sanitizeSkillName(metadata.first)
+                    val destination = File(root, safeName)
+                    destination.deleteRecursively()
+                    copyDirectory(sourceDirectory, destination)
+                    ensurePortableSkillLayout(destination)
+                    val info = SkillInfo(
+                        name = safeName,
+                        description = metadata.second,
+                        source = source,
+                        installedAtMillis = System.currentTimeMillis(),
+                        path = destination.absolutePath,
+                        enabled = current.firstOrNull { it.name == safeName }?.enabled ?: true,
+                    )
+                    current.removeAll { it.name == safeName }
+                    current += info
+                    installedNow += info
+                }.onFailure { failures.add(manifest.relativeTo(extraction).path + ": " + (it.message ?: "install failed")) }
             }
+            require(installedNow.isNotEmpty()) { "No skills could be installed. " + failures.joinToString("; ").take(600) }
             writeRegistry(current)
             return installedNow
         } finally {
@@ -463,16 +494,24 @@ class SkillManager(
         }
     }
 
-    private fun parseManifest(content: String): Pair<String, String> {
-        require(content.startsWith("---")) { "SKILL.md must start with YAML frontmatter." }
-        val end = content.indexOf("\n---", startIndex = 3)
-        require(end > 0) { "SKILL.md frontmatter is incomplete." }
-        val frontmatter = content.substring(3, end)
-        val name = Regex("(?m)^name\\s*:\\s*(.+?)\\s*$").find(frontmatter)?.groupValues?.get(1)?.trim()?.trim('"', '\'')
-        val description = Regex("(?m)^description\\s*:\\s*(.+?)\\s*$").find(frontmatter)?.groupValues?.get(1)?.trim()?.trim('"', '\'')
-        require(!name.isNullOrBlank()) { "SKILL.md is missing a name field." }
-        require(!description.isNullOrBlank()) { "SKILL.md is missing a description field." }
-        return name to description
+    private fun parseManifest(content: String, fallbackName: String): Pair<String, String> {
+        val text = content.removePrefix("﻿").trimStart()
+        require(text.isNotBlank()) { "SKILL.md is empty." }
+        if (text.startsWith("---")) {
+            val end = text.indexOf("\n---", startIndex = 3)
+            if (end > 0) {
+                val frontmatter = text.substring(3, end)
+                val name = Regex("(?m)^name\\s*:\\s*(.+?)\\s*$").find(frontmatter)?.groupValues?.get(1)?.trim()?.trim('"', '\'')
+                val description = Regex("(?m)^description\\s*:\\s*(.+?)\\s*$").find(frontmatter)?.groupValues?.get(1)?.trim()?.trim('"', '\'')
+                if (!name.isNullOrBlank() && !description.isNullOrBlank()) return name to description
+            }
+        }
+        val heading = Regex("(?m)^#{1,6}\\s+(.+?)\\s*$").find(text)?.groupValues?.get(1).orEmpty().trim()
+        val firstParagraph = text.lines().map { it.trim() }
+            .firstOrNull { it.isNotEmpty() && !it.startsWith("#") && it != "---" }.orEmpty().take(300)
+        val name = heading.ifBlank { fallbackName }
+        require(name.isNotBlank()) { "Could not determine a name for this skill." }
+        return name to firstParagraph.ifBlank { "Imported skill without a description." }
     }
 
     private fun sanitizeSkillName(value: String): String =

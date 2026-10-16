@@ -8,6 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class SkillManagerTest {
 
@@ -216,6 +218,90 @@ class SkillManagerTest {
             assertTrue(reloaded.enabledSkills().none { it.name == "android-development" })
         } finally {
             tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun installZipAcceptsSkillWithoutFrontmatter() {
+        val tempDir = Files.createTempDirectory("skill-nofrontmatter-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val zip = File(tempDir, "bundle.zip")
+            zipArchive(zip, mapOf(
+                "my-tool/SKILL.md" to "# My Tool\n\nDoes useful things for developers.\n",
+                "my-tool/helper.txt" to "helper",
+            ))
+            val installed = manager.installZip(zip, "test")
+            assertEquals(1, installed.size)
+            assertEquals("my-tool", installed[0].name)
+            assertTrue(installed[0].description.contains("Does useful things"))
+            assertTrue(File(tempDir, "my-tool/SKILL.md").isFile)
+            assertTrue(File(tempDir, "my-tool/helper.txt").isFile)
+            assertTrue(manager.installed().any { it.name == "my-tool" })
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun installZipAcceptsBomPrefixedFrontmatter() {
+        val tempDir = Files.createTempDirectory("skill-bom-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val zip = File(tempDir, "bundle.zip")
+            zipArchive(zip, mapOf(
+                "bom-skill/SKILL.md" to "﻿---\nname: bom-skill\ndescription: Skill with a byte-order mark.\n---\n\nBody.\n",
+            ))
+            val installed = manager.installZip(zip, "test")
+            assertEquals(1, installed.size)
+            assertEquals("bom-skill", installed[0].name)
+            assertEquals("Skill with a byte-order mark.", installed[0].description)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun installZipSkipsBadSkillWithoutFailingBatch() {
+        val tempDir = Files.createTempDirectory("skill-batch-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val zip = File(tempDir, "bundle.zip")
+            zipArchive(zip, mapOf(
+                "good-skill/SKILL.md" to "---\nname: good-skill\ndescription: A valid skill.\n---\n\nBody.\n",
+                "empty-skill/SKILL.md" to "",
+            ))
+            val installed = manager.installZip(zip, "test")
+            assertEquals(1, installed.size)
+            assertEquals("good-skill", installed[0].name)
+            assertTrue(manager.installed().any { it.name == "good-skill" })
+            assertTrue(manager.installed().none { it.name == "empty-skill" })
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun installZipThrowsWhenNothingInstallable() {
+        val tempDir = Files.createTempDirectory("skill-empty-batch-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            val zip = File(tempDir, "bundle.zip")
+            zipArchive(zip, mapOf("empty-skill/SKILL.md" to ""))
+            val result = runCatching { manager.installZip(zip, "test") }
+            assertTrue(result.isFailure)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private fun zipArchive(zip: File, entries: Map<String, String>) {
+        ZipOutputStream(zip.outputStream().buffered()).use { out ->
+            entries.forEach { (name, content) ->
+                out.putNextEntry(ZipEntry(name))
+                out.write(content.toByteArray(Charsets.UTF_8))
+                out.closeEntry()
+            }
         }
     }
 }
