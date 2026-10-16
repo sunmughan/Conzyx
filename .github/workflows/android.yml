@@ -14,15 +14,12 @@ on:
       - v3
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: read
-
 jobs:
   verify:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
-    # Full pipeline (tests + offline build + 2 release APKs + emulator
-    # verification) needs headroom beyond 30 minutes.
     timeout-minutes: 60
     steps:
       - name: Free runner disk space
@@ -36,12 +33,12 @@ jobs:
           df -h
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "17"
@@ -54,41 +51,6 @@ jobs:
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" "platform-tools" "platforms;android-36" "ndk;26.1.10909125" "cmake;3.22.1"
 
-      - name: Configure permanent Codeair release signing key
-        shell: bash
-        env:
-          MH_RELEASE_KEYSTORE_BASE64: ${{ secrets.MH_RELEASE_KEYSTORE_BASE64 }}
-          MH_RELEASE_STORE_PASSWORD: ${{ secrets.MH_RELEASE_STORE_PASSWORD }}
-          MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
-          MH_RELEASE_KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${MH_RELEASE_KEYSTORE_BASE64}" || -z "${MH_RELEASE_STORE_PASSWORD}" || -z "${MH_RELEASE_KEY_ALIAS}" || -z "${MH_RELEASE_KEY_PASSWORD}" ]]; then
-            echo "::error::Permanent release signing secrets are required. No temporary signing key will be generated."
-            exit 1
-          fi
-          printf '%s' "${MH_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/mobile-harness-release.jks"
-          chmod 600 "$RUNNER_TEMP/mobile-harness-release.jks"
-          echo "Using the permanent Codeair Software Solutions release signing key."
-          echo "MH_UPLOAD_STORE_FILE=$RUNNER_TEMP/mobile-harness-release.jks" >> "$GITHUB_ENV"
-          echo "MH_UPLOAD_STORE_PASSWORD=${MH_RELEASE_STORE_PASSWORD}" >> "$GITHUB_ENV"
-          echo "MH_UPLOAD_KEY_ALIAS=${MH_RELEASE_KEY_ALIAS}" >> "$GITHUB_ENV"
-          echo "MH_UPLOAD_KEY_PASSWORD=${MH_RELEASE_KEY_PASSWORD}" >> "$GITHUB_ENV"
-
-      - name: Verify permanent release signing certificate
-        shell: bash
-        env:
-          MH_RELEASE_STORE_PASSWORD: ${{ secrets.MH_RELEASE_STORE_PASSWORD }}
-          MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
-        run: |
-          set -euo pipefail
-          EXPECTED_SHA256="86:D4:21:7F:86:E4:0A:B2:58:46:04:C5:6D:C3:6A:FB:54:DF:83:5D:38:2A:A4:FC:65:07:40:C6:00:1D:E0:F5"
-          ACTUAL_SHA256="$(keytool -list -v -keystore "$RUNNER_TEMP/mobile-harness-release.jks" -storepass "$MH_RELEASE_STORE_PASSWORD" -alias "$MH_RELEASE_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')"
-          echo "Release signing SHA-256: $ACTUAL_SHA256"
-          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
-            echo "::error::The configured release keystore is not the permanent Codeair signing key."
-            exit 1
-          fi
       - name: Fetch latest verified runtime bundles
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -190,22 +152,189 @@ jobs:
             exit "$rc"
           fi
 
-
       - name: Verify offline build
         run: ./gradlew --no-daemon --stacktrace assembleOfflineDebug
 
+      - name: Upload emulator launch logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: emulator-launch-logs
+          if-no-files-found: warn
+          path: emulator-logs/
+
+
+  release:
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2' || github.ref == 'refs/heads/v3')
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/boost
+          sudo docker system prune -af --volumes || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "${SDKMANAGER}" --licenses >/dev/null || true
+          "${SDKMANAGER}" "platform-tools" "platforms;android-36" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Configure permanent Codeair release signing key
+        shell: bash
+        env:
+          MH_RELEASE_KEYSTORE_BASE64: ${{ secrets.MH_RELEASE_KEYSTORE_BASE64 }}
+          MH_RELEASE_STORE_PASSWORD: ${{ secrets.MH_RELEASE_STORE_PASSWORD }}
+          MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+          MH_RELEASE_KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MH_RELEASE_KEYSTORE_BASE64}" || -z "${MH_RELEASE_STORE_PASSWORD}" || -z "${MH_RELEASE_KEY_ALIAS}" || -z "${MH_RELEASE_KEY_PASSWORD}" ]]; then
+            echo "::error::Permanent release signing secrets are required. No temporary signing key will be generated."
+            exit 1
+          fi
+          printf '%s' "${MH_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/mobile-harness-release.jks"
+          chmod 600 "$RUNNER_TEMP/mobile-harness-release.jks"
+          echo "Using the permanent Codeair Software Solutions release signing key."
+          echo "MH_UPLOAD_STORE_FILE=$RUNNER_TEMP/mobile-harness-release.jks" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_STORE_PASSWORD=${MH_RELEASE_STORE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_KEY_ALIAS=${MH_RELEASE_KEY_ALIAS}" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_KEY_PASSWORD=${MH_RELEASE_KEY_PASSWORD}" >> "$GITHUB_ENV"
+
+      - name: Verify permanent release signing certificate
+        shell: bash
+        env:
+          MH_RELEASE_STORE_PASSWORD: ${{ secrets.MH_RELEASE_STORE_PASSWORD }}
+          MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          EXPECTED_SHA256="86:D4:21:7F:86:E4:0A:B2:58:46:04:C5:6D:C3:6A:FB:54:DF:83:5D:38:2A:A4:FC:65:07:40:C6:00:1D:E0:F5"
+          ACTUAL_SHA256="$(keytool -list -v -keystore "$RUNNER_TEMP/mobile-harness-release.jks" -storepass "$MH_RELEASE_STORE_PASSWORD" -alias "$MH_RELEASE_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')"
+          echo "Release signing SHA-256: $ACTUAL_SHA256"
+          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
+            echo "::error::The configured release keystore is not the permanent Codeair signing key."
+            exit 1
+          fi
+
+      - name: Fetch latest verified runtime bundles
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist/runtime-bundles
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+          repo = "techjarves/Mobile-Harness"
+          token = os.environ["GITHUB_TOKEN"]
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/releases?per_page=100",
+              headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(req, timeout=60) as response:
+              releases = json.load(response)
+
+          prefixes = {
+              "core": "pocketdev-core-arm64-",
+              "claude": "pocketdev-claude-arm64-",
+              "python": "pocketdev-python-arm64-",
+              "android": "pocketdev-android-arm64-",
+              "dsh": "pocketdev-dsh-arm64-",
+              "agy": "pocketdev-agy-arm64-",
+          }
+
+          def published_name(name):
+              return "conzyx-" + name.removeprefix("pocketdev-")
+
+          def version_key(value):
+              return tuple(int(x) for x in re.findall(r"\d+", value)) or (0,)
+
+          selected = {}
+          for release in releases:
+              if release.get("draft") or release.get("prerelease"):
+                  continue
+              tag = release.get("tag_name", "")
+              if not tag.startswith("runtime-"):
+                  continue
+              for asset in release.get("assets", []):
+                  name = asset.get("name", "")
+                  for component, prefix in prefixes.items():
+                      if name.startswith(prefix) and name.endswith(".tar.zst"):
+                          version = name[len(prefix):-len(".tar.zst")]
+                          if version and re.fullmatch(r"[0-9A-Za-z._+-]+", version):
+                              candidate = (version_key(version), version, asset)
+                              current = selected.get(component)
+                              if current is None or candidate[:2] > current[:2]:
+                                  selected[component] = candidate
+
+          missing = sorted(set(prefixes) - set(selected))
+          if missing:
+              raise SystemExit(f"Missing published runtime bundles: {', '.join(missing)}")
+
+          manifest = {}
+          for component, (_, version, asset) in selected.items():
+              name = asset["name"]
+              out_name = published_name(name)
+              out = os.path.join("dist/runtime-bundles", out_name)
+              download = urllib.request.Request(
+                  asset["url"],
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/octet-stream",
+                  },
+              )
+              with urllib.request.urlopen(download, timeout=300) as response, open(out, "wb") as target:
+                  target.write(response.read())
+              digest = asset.get("digest", "").removeprefix("sha256:")
+              if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+                  raise SystemExit(f"Missing SHA-256 digest for {name}")
+              import hashlib
+              actual = hashlib.sha256(open(out, "rb").read()).hexdigest()
+              if actual.lower() != digest.lower():
+                  raise SystemExit(f"SHA-256 mismatch for {name}: {actual} != {digest}")
+              manifest[component] = {
+                  "version": version,
+                  "file": out_name,
+                  "sha256": digest.lower(),
+                  "sizeBytes": os.path.getsize(out),
+              }
+
+          with open("dist/runtime-bundles/manifest.json", "w") as handle:
+              json.dump(manifest, handle, indent=2)
+          print(json.dumps(manifest, indent=2))
+          PY
+          du -h dist/runtime-bundles/*.tar.zst | sort -h
 
       - name: Compile online release APK
         run: ./gradlew --no-daemon --stacktrace assembleOnlineRelease
 
-
       - name: Compile offline release APK
         run: ./gradlew --no-daemon --stacktrace assembleOfflineRelease
 
-
       - name: Compile online release AAB (Play Store)
         run: ./gradlew --no-daemon --stacktrace bundleOnlineRelease -PplayBuild=true
-
 
       - name: Verify release APK signatures and alignment
         shell: bash
@@ -223,7 +352,6 @@ jobs:
             echo "Verifying $apk"
             "$APKSIGNER" verify --verbose "$apk"
           done
-
 
       - name: Verify in-place update compatibility against previous release
         env:
@@ -254,13 +382,11 @@ jobs:
           echo "$previous_badging" | grep -qE "package: name='(com.codeair.mhe|com.jarves.mh)'"
           echo "PASS: valid package + same signing certificate + strictly increasing versionCode."
 
-
       - name: Inspect release APKs
         shell: bash
         run: |
           set -euxo pipefail
           find app/build/outputs/apk -type f -name '*.apk' -printf '%p %s bytes\n' | sort
-
 
       # TEMP-DISABLED for fast iteration (user 2026-10-13): - name: Prepare emulator verification script
         # shell: bash
@@ -336,19 +462,9 @@ jobs:
           # disable-animations: true
           # script: bash ./run-emulator-verification.sh
 
-
-      - name: Upload emulator launch logs
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: emulator-launch-logs
-          if-no-files-found: warn
-          path: emulator-logs/
-
       - name: Upload release APKs
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mobile-harness-release-apks
           if-no-files-found: warn
