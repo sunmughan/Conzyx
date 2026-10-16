@@ -498,7 +498,7 @@ jobs:
           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
           AAB_SIZE=$(stat -c '%s' "$AAB")
-          export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
+          export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE AAB_SHA AAB_SIZE
           # Generate release notes from actual commits in this version only.
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
@@ -516,6 +516,11 @@ jobs:
           - **Online Release:** app-online-release.apk
           - **Offline Release:** app-offline-release.apk
           - **Play Store Bundle:** app-online-release.aab (signed, upload-ready for Google Play)
+
+          ### SHA-256 checksums
+          - app-online-release.apk: $ONLINE_SHA
+          - app-offline-release.apk: $OFFLINE_SHA
+          - app-online-release.aab: $AAB_SHA
 
           The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
           EOF
