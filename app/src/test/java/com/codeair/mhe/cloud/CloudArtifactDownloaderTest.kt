@@ -147,6 +147,41 @@ class CloudArtifactDownloaderTest {
     }
 
     @Test
+    fun missingChecksumFailsFetchWithoutDownloading() {
+        val transport = transportWith("")
+        val downloader = CloudArtifactDownloader(
+            CloudExecutionClient(transport),
+            CloudArtifactSyncEngine()
+        )
+        val result = downloader.fetchArtifacts(worker, "remote-1", destDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("no usable SHA-256"))
+        assertEquals(0, result.verified)
+        assertTrue(
+            "no download may be attempted without a checksum",
+            transport.seen.none { it.path.endsWith("/artifacts/art-1") && it.method == "GET" }
+        )
+        assertFalse(File(destDir, "app.apk").exists())
+    }
+
+    @Test
+    fun malformedChecksumFailsFetchWithoutDownloading() {
+        val transport = transportWith("not-a-sha256")
+        val downloader = CloudArtifactDownloader(
+            CloudExecutionClient(transport),
+            CloudArtifactSyncEngine()
+        )
+        val result = downloader.fetchArtifacts(worker, "remote-1", destDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("no usable SHA-256"))
+        assertEquals(0, result.verified)
+        assertTrue(
+            "no download may be attempted with a malformed checksum",
+            transport.seen.none { it.path.endsWith("/artifacts/art-1") && it.method == "GET" }
+        )
+    }
+
+    @Test
     fun noRandomTempFilesRemainAfterFetch() {
         val downloader = CloudArtifactDownloader(
             CloudExecutionClient(transportWith(payloadSha256)),

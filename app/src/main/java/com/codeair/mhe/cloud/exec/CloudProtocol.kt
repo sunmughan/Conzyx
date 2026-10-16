@@ -5,6 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+const val MAX_ARTIFACT_DOWNLOAD_BYTES: Long = 512L * 1024L * 1024L
+
 /**
  * Wire protocol for the Conzyx cloud worker API (Milestone 11).
  *
@@ -98,7 +100,12 @@ interface CloudHttpTransport {
      * body byte flows); a failure mid-stream is reported as-is and the
      * partial file is deleted.
      */
-    fun downloadToFile(baseUrl: String, request: CloudTransportRequest, dest: File): StreamedDownload
+    fun downloadToFile(
+        baseUrl: String,
+        request: CloudTransportRequest,
+        dest: File,
+        maxBytes: Long = MAX_ARTIFACT_DOWNLOAD_BYTES
+    ): StreamedDownload
 }
 
 /** Production transport over HttpURLConnection. Pure JVM, no Android dependency. */
@@ -150,7 +157,8 @@ class UrlConnectionCloudTransport(
     override fun downloadToFile(
         baseUrl: String,
         request: CloudTransportRequest,
-        dest: File
+        dest: File,
+        maxBytes: Long
     ): StreamedDownload {
         // QA Medium: artifact downloads used to materialize the whole body
         // (raw bytes + a UTF-8 String copy) — a large artifact OOM'd the app.
@@ -189,6 +197,15 @@ class UrlConnectionCloudTransport(
                         while (true) {
                             val n = input.read(buf)
                             if (n < 0) break
+                            if (written + n > maxBytes) {
+                                runCatching { dest.delete() }
+                                conn.disconnect()
+                                return StreamedDownload(
+                                    -1,
+                                    "Download aborted: artifact exceeds the $maxBytes byte size cap; partial file deleted.",
+                                    written
+                                )
+                            }
                             output.write(buf, 0, n)
                             written += n
                         }

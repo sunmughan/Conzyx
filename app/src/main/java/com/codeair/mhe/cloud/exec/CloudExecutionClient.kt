@@ -12,8 +12,13 @@ import java.util.Base64
 data class ArtifactFileDownloadResult(
     val result: OperationResult,
     val bytesWritten: Long,
-    val sha256: String?
+    val sha256: String?,
+    val digestVerified: Boolean = false
 )
+
+private val SHA256_HEX_PATTERN = Regex("^[0-9a-fA-F]{64}$")
+
+internal fun isUsableSha256(digest: String): Boolean = SHA256_HEX_PATTERN.matches(digest)
 
 /** Result of a payload manifest check: the honest outcome plus path->sha256 of known files. */
 data class RemoteManifestResult(
@@ -244,15 +249,37 @@ class CloudExecutionClient(
         remoteJobId: String,
         artifactId: String,
         dest: File,
-        expectedSha256: String
+        expectedSha256: String,
+        expectedSizeBytes: Long = -1L,
+        maxSizeBytes: Long = MAX_ARTIFACT_DOWNLOAD_BYTES
     ): ArtifactFileDownloadResult {
         requireAuth(worker)?.let { return ArtifactFileDownloadResult(it, 0, null) }
+        if (expectedSha256.isBlank()) {
+            return ArtifactFileDownloadResult(
+                OperationResult.failure(
+                    error = "Artifact '$artifactId' has no expected SHA-256 digest. " +
+                        "Refusing the download: an unverifiable artifact is never reported as verified."
+                ),
+                0, null
+            )
+        }
+        if (!isUsableSha256(expectedSha256)) {
+            return ArtifactFileDownloadResult(
+                OperationResult.failure(
+                    error = "Artifact '$artifactId' has a malformed expected SHA-256 digest. " +
+                        "Refusing the download: an unverifiable artifact is never reported as verified."
+                ),
+                0, null
+            )
+        }
         val dl = transport.downloadToFile(
             worker.endpointUrl,
             CloudTransportRequest("GET", "/api/v1/jobs/$remoteJobId/artifacts/$artifactId", authHeaders(worker)),
-            dest
+            dest,
+            maxSizeBytes
         )
         if (dl.statusCode == -1) {
+            runCatching { dest.delete() }
             return ArtifactFileDownloadResult(
                 OperationResult.failure(
                     error = "Cloud artifact download failed: transport error (${dl.error}).",
@@ -272,8 +299,30 @@ class CloudExecutionClient(
                 0, null
             )
         }
+        if (dest.length() > maxSizeBytes) {
+            val received = dest.length()
+            dest.delete()
+            return ArtifactFileDownloadResult(
+                OperationResult.failure(
+                    error = "Artifact '$artifactId' exceeds the $maxSizeBytes byte size cap " +
+                        "($received bytes received). The file was deleted, not kept."
+                ),
+                0, null
+            )
+        }
+        if (expectedSizeBytes >= 0 && dest.length() != expectedSizeBytes) {
+            val received = dest.length()
+            dest.delete()
+            return ArtifactFileDownloadResult(
+                OperationResult.failure(
+                    error = "Artifact '$artifactId' size mismatch: declared $expectedSizeBytes bytes, " +
+                        "received $received bytes. The file was deleted, not kept."
+                ),
+                0, null
+            )
+        }
         val computed = sha256Hex(dest)
-        if (expectedSha256.isNotBlank() && !computed.equals(expectedSha256, ignoreCase = true)) {
+        if (!computed.equals(expectedSha256, ignoreCase = true)) {
             dest.delete()
             return ArtifactFileDownloadResult(
                 OperationResult.failure(
@@ -287,11 +336,11 @@ class CloudExecutionClient(
         }
         return ArtifactFileDownloadResult(
             OperationResult.success(
-                logs = listOf("Downloaded ${dl.bytesWritten} bytes for artifact $artifactId (sha256 ${computed.take(12)}...)."),
+                logs = listOf("Downloaded ${dl.bytesWritten} bytes for artifact $artifactId (computed sha256 ${computed.take(12)}...)."),
                 artifacts = listOf(artifactId),
-                verificationEvidence = "HTTP 200, ${dl.bytesWritten} bytes streamed to file, SHA-256 verified"
+                verificationEvidence = "HTTP 200, ${dl.bytesWritten} bytes streamed to file, SHA-256 verified against the expected digest"
             ),
-            dl.bytesWritten, computed
+            dl.bytesWritten, computed, digestVerified = true
         )
     }
 

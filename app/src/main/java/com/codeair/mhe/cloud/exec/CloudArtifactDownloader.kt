@@ -70,13 +70,31 @@ class CloudArtifactDownloader(
                 logs.add("Skipping artifact '${descriptor.filename}': unsafe filename rejected.")
                 continue
             }
+            if (!isUsableSha256(descriptor.sha256)) {
+                return ArtifactFetchResult(
+                    OperationResult.failure(
+                        error = "Artifact fetch failed: '${descriptor.filename}' has no usable SHA-256 " +
+                            "checksum. Refusing an unverifiable download instead of recording it as verified.",
+                        startedAt = startedAt,
+                        logs = logs
+                    ),
+                    downloaded, verified, fetched
+                )
+            }
             // QA Medium: artifact bytes used to be held fully in memory
             // (plus a UTF-8 String copy in the transport) — a large
             // artifact OOM'd the app. The body now streams to a temp file
             // and is SHA-256-verified incrementally before it lands.
             val tmp = ArtifactFilenameValidator.newTempFile(destinationDir)
-            val dl = client.downloadArtifactToFile(worker, remoteJobId, descriptor.id, tmp, descriptor.sha256)
-            if (dl.result.status != OperationStatus.SUCCESS || dl.sha256 == null) {
+            val dl = client.downloadArtifactToFile(
+                worker,
+                remoteJobId,
+                descriptor.id,
+                tmp,
+                descriptor.sha256,
+                descriptor.sizeBytes.takeIf { it > 0 } ?: -1L
+            )
+            if (dl.result.status != OperationStatus.SUCCESS || dl.sha256 == null || !dl.digestVerified) {
                 runCatching { tmp.delete() }
                 return ArtifactFetchResult(
                     OperationResult.failure(

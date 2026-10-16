@@ -28,7 +28,12 @@ class FakeCloudTransport(
         seen.add(request)
         return handler(request)
     }
-    override fun downloadToFile(baseUrl: String, request: CloudTransportRequest, dest: File): StreamedDownload {
+    override fun downloadToFile(
+        baseUrl: String,
+        request: CloudTransportRequest,
+        dest: File,
+        maxBytes: Long
+    ): StreamedDownload {
         seen.add(request)
         return downloadHandler(request, dest)
     }
@@ -195,6 +200,10 @@ class CloudExecutionClientTest {
         assertEquals(OperationStatus.SUCCESS, res.result.status)
         assertEquals(bytes.size.toLong(), res.bytesWritten)
         assertEquals(sha, res.sha256)
+        assertTrue("success must mean the digest was verified", res.digestVerified)
+        assertTrue(
+            res.result.verificationEvidence.orEmpty().contains("verified against the expected digest")
+        )
         assertEquals("binary-payload", dest.readText())
     }
 
@@ -224,7 +233,7 @@ class CloudExecutionClientTest {
             )
         )
         val dest = tempDest()
-        val res = client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, "")
+        val res = client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, "00".repeat(32))
         assertEquals(OperationStatus.FAILED, res.result.status)
         assertTrue(res.result.error.orEmpty().contains("500"))
         assertFalse("failed download must leave no file", dest.exists())
@@ -237,5 +246,110 @@ class CloudExecutionClientTest {
         }
         CloudExecutionClient(transport).submitJob(authedWorker(), submitRequest())
         assertEquals("Bearer secret-key", transport.seen.first().headers["Authorization"])
+    }
+
+    @Test
+    fun downloadArtifactRejectsMissingChecksumWithoutDownloading() {
+        val bytes = "binary-payload".toByteArray()
+        val transport = FakeCloudTransport(
+            downloadHandler = { _, dest ->
+                dest.writeBytes(bytes)
+                StreamedDownload(200, null, bytes.size.toLong())
+            }
+        )
+        val client = CloudExecutionClient(transport)
+        val dest = tempDest()
+        val res = client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, "")
+        assertEquals(OperationStatus.FAILED, res.result.status)
+        assertTrue(res.result.error.orEmpty().contains("no expected SHA-256"))
+        assertFalse(res.digestVerified)
+        assertTrue("no download must be attempted without a digest", transport.seen.isEmpty())
+    }
+
+    @Test
+    fun downloadArtifactRejectsMalformedChecksumWithoutDownloading() {
+        val bytes = "binary-payload".toByteArray()
+        val transport = FakeCloudTransport(
+            downloadHandler = { _, dest ->
+                dest.writeBytes(bytes)
+                StreamedDownload(200, null, bytes.size.toLong())
+            }
+        )
+        val client = CloudExecutionClient(transport)
+        for (bad in listOf("xyz", "00".repeat(32) + "zz", "00".repeat(31), "00".repeat(33))) {
+            val dest = tempDest()
+            val res = client.downloadArtifactToFile(authedWorker(), "remote-1", "art-1", dest, bad)
+            assertEquals(OperationStatus.FAILED, res.result.status)
+            assertTrue(res.result.error.orEmpty().contains("malformed"))
+            assertFalse(res.digestVerified)
+        }
+        assertTrue("no download must be attempted with a malformed digest", transport.seen.isEmpty())
+    }
+
+    @Test
+    fun downloadArtifactEnforcesSizeCapAndDeletesFile() {
+        val bytes = "binary-payload".toByteArray()
+        val sha = sha256Hex(bytes)
+        val client = CloudExecutionClient(
+            FakeCloudTransport(
+                downloadHandler = { _, dest ->
+                    dest.writeBytes(bytes)
+                    StreamedDownload(200, null, bytes.size.toLong())
+                }
+            )
+        )
+        val dest = tempDest()
+        val res = client.downloadArtifactToFile(
+            authedWorker(), "remote-1", "art-1", dest, sha,
+            expectedSizeBytes = -1L, maxSizeBytes = 4L
+        )
+        assertEquals(OperationStatus.FAILED, res.result.status)
+        assertTrue(res.result.error.orEmpty().contains("size cap"))
+        assertFalse("oversized download must be deleted", dest.exists())
+        assertFalse(res.digestVerified)
+    }
+
+    @Test
+    fun downloadArtifactEnforcesDeclaredSizeAndDeletesFile() {
+        val bytes = "binary-payload".toByteArray()
+        val sha = sha256Hex(bytes)
+        val client = CloudExecutionClient(
+            FakeCloudTransport(
+                downloadHandler = { _, dest ->
+                    dest.writeBytes(bytes)
+                    StreamedDownload(200, null, bytes.size.toLong())
+                }
+            )
+        )
+        val dest = tempDest()
+        val res = client.downloadArtifactToFile(
+            authedWorker(), "remote-1", "art-1", dest, sha,
+            expectedSizeBytes = bytes.size.toLong() + 100L
+        )
+        assertEquals(OperationStatus.FAILED, res.result.status)
+        assertTrue(res.result.error.orEmpty().contains("size mismatch"))
+        assertFalse("size-mismatched download must be deleted", dest.exists())
+        assertFalse(res.digestVerified)
+    }
+
+    @Test
+    fun downloadArtifactAcceptsMatchingDeclaredSize() {
+        val bytes = "binary-payload".toByteArray()
+        val sha = sha256Hex(bytes)
+        val client = CloudExecutionClient(
+            FakeCloudTransport(
+                downloadHandler = { _, dest ->
+                    dest.writeBytes(bytes)
+                    StreamedDownload(200, null, bytes.size.toLong())
+                }
+            )
+        )
+        val dest = tempDest()
+        val res = client.downloadArtifactToFile(
+            authedWorker(), "remote-1", "art-1", dest, sha,
+            expectedSizeBytes = bytes.size.toLong()
+        )
+        assertEquals(OperationStatus.SUCCESS, res.result.status)
+        assertTrue(res.digestVerified)
     }
 }
