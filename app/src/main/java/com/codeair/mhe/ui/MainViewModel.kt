@@ -605,6 +605,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var pendingAssistantDeltaSessionId: String? = null
     private var assistantDeltaFlushJob: Job? = null
     private var lastAssistantDeltaPersistAtMillis: Long = 0L
+    private val maxInMemoryMessages = 200
     private val initialAgentKind = AgentKind.fromStored(preferences.agentKind)
     private val initialPrimaryAgentKind = preferences.primaryAgentKind
         .takeIf(String::isNotBlank)
@@ -3805,6 +3806,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // A tool/session boundary must never overtake buffered assistant text.
         flushPendingAssistantDelta()
+        if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
+            viewModelScope.launch(Dispatchers.Default) {
+                processRuntimeEvent(event)
+            }
+            return
+        }
         processRuntimeEvent(event)
     }
 
@@ -3824,6 +3831,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingAssistantDeltaSessionId = null
         processRuntimeEvent(RuntimeEvent.AssistantDelta(sessionId, text))
     }
+
+    private fun trimMessages(messages: List<ChatMessage>): List<ChatMessage> =
+        if (messages.size > maxInMemoryMessages) messages.takeLast(maxInMemoryMessages) else messages
 
     private fun processRuntimeEvent(event: RuntimeEvent) {
         val lastUserIdx = _state.value.messages.indexOfLast { it.fromUser }
@@ -3862,7 +3872,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val updatedMessages = agentChatController.appendAssistantDelta(timeline.messages, event.text)
                     val streamId = updatedMessages.lastOrNull()?.takeIf { !it.fromUser }?.id
-                    timeline.copy(messages = updatedMessages, streamingMessageId = streamId)
+                    timeline.copy(messages = trimMessages(updatedMessages), streamingMessageId = streamId)
                 }
                 is RuntimeEvent.ReasoningProgress -> {
                     val existingIndex = current.liveProcess.indexOfLast { it.title == "Think" }
@@ -4037,7 +4047,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
                     agentSessionController.completeSession("Task completed successfully")
                     agentOrchestrator.transition(com.codeair.mhe.session.EngineeringState.COMPLETED, "Task completed successfully")
-                    attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
+                    attachTaskDuration(stateWithResponse.copy(messages = trimMessages(messagesWithRoadmap)), finishedAt).copy(
                         isRunning = false,
                         streamingMessageId = null,
                         activeSessionId = null,
@@ -4094,7 +4104,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             completedActiveRoadmap ?: failedNewlyParsedRoadmap ?: current.activeRoadmap
                         }
                         val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
-                        attachTaskDuration(segmentFinishedState.copy(messages = messagesWithRoadmap), finishedAt).copy(
+                        attachTaskDuration(segmentFinishedState.copy(messages = trimMessages(messagesWithRoadmap)), finishedAt).copy(
                             isRunning = false,
                             streamingMessageId = null,
                             activeSessionId = null,
