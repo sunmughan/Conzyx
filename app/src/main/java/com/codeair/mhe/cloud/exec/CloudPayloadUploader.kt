@@ -5,7 +5,12 @@ import com.codeair.mhe.cloud.sync.CloudArtifactSyncEngine
 import com.codeair.mhe.cloud.sync.SyncPayload
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
+import com.codeair.mhe.security.SafetyDeniedException
+import com.codeair.mhe.security.SafetyGateway
+import com.codeair.mhe.security.SafetyOperation
+import com.codeair.mhe.security.SafetyVerdict
 import java.io.File
+import java.nio.file.Files
 import java.security.MessageDigest
 
 /** Honest accounting of a delta upload. */
@@ -36,7 +41,10 @@ const val MAX_SINGLE_FILE_UPLOAD_BYTES = 32L * 1024 * 1024
  */
 class CloudPayloadUploader(
     private val client: CloudExecutionClient,
-    private val syncEngine: CloudArtifactSyncEngine = CloudArtifactSyncEngine()
+    private val syncEngine: CloudArtifactSyncEngine = CloudArtifactSyncEngine(),
+    private val safetyGateway: SafetyGateway? = null,
+    private val sessionId: String? = null,
+    private val projectId: String? = null
 ) {
 
     fun uploadWorkspaceDelta(
@@ -84,6 +92,12 @@ class CloudPayloadUploader(
         for (relativePath in payload.relativePaths) {
             val file = File(workspaceDir, relativePath)
             if (!file.isFile) continue
+            guardUploadFile(workspaceDir, file, relativePath, worker)?.let { guardResult ->
+                return DeltaUploadResult(
+                    guardResult.copy(logs = logs + listOfNotNull(guardResult.error)),
+                    payload.manifestHash, uploaded, skipped, bytes
+                )
+            }
             val localHash = localHashes[relativePath]
             val remoteHash = knownFiles[relativePath]
             if (localHash != null && remoteHash != null &&
@@ -142,6 +156,62 @@ class CloudPayloadUploader(
             filesSkipped = skipped,
             bytesUploaded = bytes
         )
+    }
+
+    private fun guardUploadFile(
+        workspaceDir: File,
+        file: File,
+        relativePath: String,
+        worker: CloudWorkerSpec
+    ): OperationResult? {
+        if (Files.isSymbolicLink(file.toPath())) {
+            return OperationResult.failure(
+                error = "Delta upload aborted: '$relativePath' is a symlink. Symlinks are never uploaded to cloud workers."
+            )
+        }
+        val insideWorkspace = runCatching {
+            val root = workspaceDir.canonicalFile
+            val target = file.canonicalFile
+            target == root || target.path.startsWith(root.path + File.separator)
+        }.getOrDefault(false)
+        if (!insideWorkspace) {
+            return OperationResult.failure(
+                error = "Delta upload aborted: '$relativePath' resolves outside the workspace root."
+            )
+        }
+        val classification = CloudUploadSecretPolicy.classify(relativePath)
+        if (classification.sensitivity == UploadFileSensitivity.BLOCKED) {
+            return OperationResult.failure(
+                error = "Delta upload aborted: refusing to upload secret file '$relativePath' (${classification.reason})."
+            )
+        }
+        if (classification.sensitivity == UploadFileSensitivity.SENSITIVE) {
+            val gateway = safetyGateway
+                ?: return OperationResult.failure(
+                    error = "Delta upload aborted: '$relativePath' looks sensitive (${classification.reason}) " +
+                        "and requires explicit user approval, but no safety gateway is wired."
+                )
+            val operation = SafetyOperation.RemoteExec(
+                target = worker.name,
+                command = "upload $relativePath"
+            )
+            val decision = try {
+                gateway.requireAllowed(operation, sessionId, projectId)
+            } catch (denied: SafetyDeniedException) {
+                return OperationResult.failure(
+                    error = "Delta upload aborted: upload of '$relativePath' was denied: ${denied.message}"
+                )
+            }
+            if (decision.verdict != SafetyVerdict.ALLOW) {
+                val promptText = decision.prompt?.renderText()
+                return OperationResult.failure(
+                    error = "Delta upload aborted: '$relativePath' looks sensitive (${classification.reason}) " +
+                        "and requires explicit user approval." +
+                        (promptText?.let { "\n$it" } ?: "")
+                )
+            }
+        }
+        return null
     }
 
     private fun computeLocalFileHashes(workspaceDir: File, relativePaths: List<String>): Map<String, String> {

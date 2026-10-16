@@ -137,4 +137,156 @@ class CloudPayloadUploaderTest {
         assertTrue(result.result.error.orEmpty().contains("32 MB"))
         assertEquals(0, result.filesUploaded)
     }
+
+    @Test
+    fun secretFilesAreNeverUploaded() {
+        val secrets = mapOf(
+            ".env" to "API_KEY=supersecret-value",
+            ".env.production" to "DB_PASSWORD=hunter2",
+            "id_rsa" to "PRIVATE RSA KEY MATERIAL",
+            "release.jks" to "keystore-bytes",
+            "cert.pem" to "PRIVATE KEY PEM",
+            "server.key" to "PRIVATE KEY",
+            "app.keystore" to "keystore",
+            "app.p12" to "pkcs12",
+            "tls.crt" to "CERT",
+            ".npmrc" to "_authToken=npm-secret",
+            "known_hosts" to "ssh-host-keys",
+            "authorized_keys" to "ssh-pub",
+            "prod-service-account.json" to "service-account-secret",
+            "oauth_credentials.json" to "oauth-secret"
+        )
+        secrets.forEach { (name, content) -> File(tempDir, name).writeText(content) }
+        val bodies = mutableListOf<String>()
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                req.method == "POST" -> {
+                    bodies.add(req.body.orEmpty())
+                    CloudTransportResponse(201, "{}")
+                }
+                else -> CloudTransportResponse(404, "{}")
+            }
+        }
+        val uploader = CloudPayloadUploader(CloudExecutionClient(transport), CloudArtifactSyncEngine())
+        val result = uploader.uploadWorkspaceDelta(worker, tempDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("secret file"))
+        for ((_, content) in secrets) {
+            assertTrue(
+                "secret content must never leave the device",
+                bodies.none { it.contains(content) }
+            )
+        }
+    }
+
+    @Test
+    fun googleServicesJsonIsAllowedAsAppAsset() {
+        File(tempDir, "google-services.json").writeText("{\"project\": \"demo\"}")
+        val uploadedPaths = mutableListOf<String>()
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                req.method == "POST" -> {
+                    uploadedPaths.add(req.body.orEmpty())
+                    CloudTransportResponse(201, "{}")
+                }
+                else -> CloudTransportResponse(404, "{}")
+            }
+        }
+        val uploader = CloudPayloadUploader(CloudExecutionClient(transport), CloudArtifactSyncEngine())
+        val result = uploader.uploadWorkspaceDelta(worker, tempDir)
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        assertTrue(uploadedPaths.any { it.contains("google-services.json") })
+    }
+
+    @Test
+    fun symlinksAreRejected() {
+        val target = File(tempDir, "real.kt")
+        target.writeText("class Real")
+        java.nio.file.Files.createSymbolicLink(
+            File(tempDir, "link.kt").toPath(),
+            target.toPath()
+        )
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                else -> CloudTransportResponse(201, "{}")
+            }
+        }
+        val uploader = CloudPayloadUploader(CloudExecutionClient(transport), CloudArtifactSyncEngine())
+        val result = uploader.uploadWorkspaceDelta(worker, tempDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("symlink"))
+    }
+
+    @Test
+    fun sensitiveFileRequiresApprovalWithoutGateway() {
+        File(tempDir, "db-password.txt").writeText("s3cr3t")
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                else -> CloudTransportResponse(201, "{}")
+            }
+        }
+        val uploader = CloudPayloadUploader(CloudExecutionClient(transport), CloudArtifactSyncEngine())
+        val result = uploader.uploadWorkspaceDelta(worker, tempDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("explicit user approval"))
+    }
+
+    @Test
+    fun sensitiveFileUploadsAfterExplicitGrant() {
+        File(tempDir, "db-password.txt").writeText("s3cr3t")
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                else -> CloudTransportResponse(201, "{}")
+            }
+        }
+        val gateway = com.codeair.mhe.security.SafetyGateway(
+            policyEngine = com.codeair.mhe.security.PermissionPolicyEngine()
+        )
+        gateway.recordGrant(
+            com.codeair.mhe.security.SafetyOperation.RemoteExec(
+                target = worker.name,
+                command = "upload db-password.txt"
+            ),
+            com.codeair.mhe.security.PermissionLevel.SESSION,
+            sessionId = "test-session"
+        )
+        val uploader = CloudPayloadUploader(
+            CloudExecutionClient(transport),
+            CloudArtifactSyncEngine(),
+            safetyGateway = gateway,
+            sessionId = "test-session"
+        )
+        val result = uploader.uploadWorkspaceDelta(worker, tempDir)
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        assertTrue(result.filesUploaded >= 1)
+    }
+
+    @Test
+    fun sensitiveFileWithoutGrantAbortsEvenWithGateway() {
+        File(tempDir, "api-token.txt").writeText("tok123")
+        val transport = FakeCloudTransport { req: CloudTransportRequest ->
+            when {
+                req.method == "GET" -> CloudTransportResponse(404, "{}")
+                else -> CloudTransportResponse(201, "{}")
+            }
+        }
+        val gateway = com.codeair.mhe.security.SafetyGateway(
+            policyEngine = com.codeair.mhe.security.PermissionPolicyEngine()
+        )
+        val uploader = CloudPayloadUploader(
+            CloudExecutionClient(transport),
+            CloudArtifactSyncEngine(),
+            safetyGateway = gateway,
+            sessionId = "test-session"
+        )
+        val result = uploader.uploadWorkspaceDelta(worker, tempDir)
+        assertEquals(OperationStatus.FAILED, result.result.status)
+        assertTrue(result.result.error.orEmpty().contains("explicit user approval"))
+        assertTrue(result.result.error.orEmpty().contains("Allow remote execution?"))
+    }
 }
