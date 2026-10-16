@@ -348,9 +348,13 @@ class GitHubWorkflowEngine(
         val status = runCatching { gitController.status(workingDir) }.getOrNull() ?: return emptySet()
         if (!status.success) return emptySet()
         return status.output.lineSequence()
+            .map { it.trim() }
             .filter { it.length > 3 }
             .map { line ->
-                val entry = line.substring(3).trim()
+                val spaceIdx = line.indexOf(' ')
+                var pathStart = if (spaceIdx >= 0) spaceIdx else line.length
+                while (pathStart < line.length && line[pathStart] == ' ') pathStart++
+                val entry = line.substring(pathStart)
                 val renamed = entry.substringAfter(" -> ", "")
                 if (renamed.isNotEmpty()) renamed.trim() else entry
             }
