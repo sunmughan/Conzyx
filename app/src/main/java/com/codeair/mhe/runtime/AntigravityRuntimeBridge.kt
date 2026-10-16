@@ -305,7 +305,7 @@ class AntigravityRuntimeBridge(
         val launchAcknowledged = launchGate.authorizeLaunch(
             agentLabel = "Antigravity CLI",
             sessionId = sessionId,
-            projectId = projectId,
+            projectId = projectSlug,
             operation = com.codeair.mhe.security.SafetyOperation.ShellExec(
                 "agy --dangerously-skip-permissions",
                 "/workspace/$projectSlug",
@@ -507,7 +507,7 @@ class AntigravityRuntimeBridge(
         val launchAcknowledged = launchGate.authorizeLaunch(
             agentLabel = "Gemini API",
             sessionId = sessionId,
-            projectId = projectId,
+            projectId = projectSlug,
             operation = com.codeair.mhe.security.SafetyOperation.ShellExec(
                 "gemini-api-agent",
                 "/workspace/$projectSlug",

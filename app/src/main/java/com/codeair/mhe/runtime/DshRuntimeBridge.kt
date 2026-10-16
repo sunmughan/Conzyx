@@ -90,7 +90,7 @@ class DshRuntimeBridge(
         val launchAcknowledged = launchGate.authorizeLaunch(
             agentLabel = "DeepSeek Harness",
             sessionId = sessionId,
-            projectId = projectId,
+            projectId = projectSlug,
             operation = com.codeair.mhe.security.SafetyOperation.ShellExec(
                 "dsh --profile sdk (DSH_PERMISSION_MODE=danger-full-access)",
                 "/workspace/$projectSlug",
