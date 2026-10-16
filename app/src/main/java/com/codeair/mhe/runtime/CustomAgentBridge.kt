@@ -49,7 +49,7 @@ class CustomAgentBridge(
         prompt: String,
         conversationHistory: List<ChatMessage>,
         provider: ProviderProfile,
-        clientSessionId: String? = null,
+        clientSessionId: String?,
     ): String = withContext(Dispatchers.IO) {
         val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))

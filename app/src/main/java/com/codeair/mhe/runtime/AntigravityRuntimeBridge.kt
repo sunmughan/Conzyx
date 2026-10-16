@@ -285,7 +285,7 @@ class AntigravityRuntimeBridge(
         prompt: String,
         conversationHistory: List<ChatMessage>,
         provider: ProviderProfile,
-        clientSessionId: String? = null,
+        clientSessionId: String?,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
@@ -688,7 +688,7 @@ class AntigravityRuntimeBridge(
                 .setAction(RuntimeExecutionService.ACTION_START)
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                 .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, agentName)
-                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "$agentName is working in $projectName"),
+                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "$agentName is working in $projectName")
                 .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
         )
     }
@@ -700,7 +700,7 @@ class AntigravityRuntimeBridge(
                     .setAction(RuntimeExecutionService.ACTION_PROGRESS)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
-                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }
