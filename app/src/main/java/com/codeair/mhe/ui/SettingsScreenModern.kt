@@ -1215,7 +1215,11 @@ fun SettingsScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
                                             Surface(
                                                 shape = RoundedCornerShape(4.dp),
                                                 color = MaterialTheme.colorScheme.surface,
@@ -1229,12 +1233,21 @@ fun SettingsScreen(
                                                     color = MaterialTheme.colorScheme.primary,
                                                 )
                                             }
-                                            Text(entry.action, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text(
+                                                entry.action,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f),
+                                            )
                                         }
                                         Text(
                                             entry.decision.name,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            softWrap = false,
                                             color = when (entry.decision) {
                                                 com.codeair.mhe.security.AuditDecision.ALLOWED -> MaterialTheme.colorScheme.tertiary
                                                 com.codeair.mhe.security.AuditDecision.BLOCKED_DANGEROUS, com.codeair.mhe.security.AuditDecision.DENIED -> MaterialTheme.colorScheme.error
