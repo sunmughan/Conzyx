@@ -149,7 +149,7 @@ fun VisualDevToolsSheet(
                             value = consoleSearch,
                             onValueChange = { consoleSearch = it },
                             placeholder = { Text("Filter console...", fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f).height(44.dp),
+                            modifier = Modifier.weight(1f),
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             singleLine = true,
                         )
@@ -157,16 +157,25 @@ fun VisualDevToolsSheet(
                             selected = selectedLogLevel == null,
                             onClick = { selectedLogLevel = null },
                             label = { Text("All", fontSize = 10.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
                         )
                         FilterChip(
                             selected = selectedLogLevel == LogLevel.ERROR,
                             onClick = { selectedLogLevel = if (selectedLogLevel == LogLevel.ERROR) null else LogLevel.ERROR },
                             label = { Text("Errors", fontSize = 10.sp, color = MaterialTheme.colorScheme.error) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
                         )
                         FilterChip(
                             selected = selectedLogLevel == LogLevel.WARN,
                             onClick = { selectedLogLevel = if (selectedLogLevel == LogLevel.WARN) null else LogLevel.WARN },
                             label = { Text("Warn", fontSize = 10.sp, color = PocketOrange) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
                         )
                     }
 
@@ -434,7 +443,7 @@ fun VisualDevToolsSheet(
                                 value = customPortInput,
                                 onValueChange = { customPortInput = it },
                                 placeholder = { Text("Port (e.g. 8000)", fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f).height(44.dp),
+                                modifier = Modifier.weight(1f),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                                 singleLine = true,
                             )
