@@ -93,7 +93,7 @@ class GitHubWorkflowEngineTest {
         val executedCommands = mutableListOf<List<String>>()
         val gitController = scriptedStatusGitController(
             executedCommands,
-            listOf("", " M src/App.kt\n?? newfile.txt")
+            listOf(" M base.txt", " M base.txt\n M src/App.kt\n?? newfile.txt")
         )
         val workflowEngine = engine(gitController)
 
@@ -121,16 +121,6 @@ class GitHubWorkflowEngineTest {
             buildAndTestValidator = { OperationResult.success(logs = listOf("All tests pass")) }
         )
 
-        if (!result.isSuccess) {
-            System.err.println("WORKFLOW_DIAG result.error=${result.error}")
-            System.err.println("WORKFLOW_DIAG state.error=${workflowEngine.state.value.errorMessage}")
-            System.err.println("WORKFLOW_DIAG commands=$executedCommands")
-            File("/tmp/workflow_diag.txt").writeText(
-                "result.error=${result.error}\n" +
-                    "state.error=${workflowEngine.state.value.errorMessage}\n" +
-                    "commands=$executedCommands\n"
-            )
-        }
         assertTrue(
             "expected workflow success but got error: ${result.error} " +
                 "(state error: ${workflowEngine.state.value.errorMessage})",
