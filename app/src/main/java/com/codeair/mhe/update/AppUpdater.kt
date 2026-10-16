@@ -375,7 +375,8 @@ class AppUpdater(
             val parsed = runCatching { URL(url) }.getOrNull() ?: return false
             if (!parsed.protocol.equals("https", ignoreCase = true)) return false
             val host = parsed.host.lowercase()
-            return host == "github.com" || host.endsWith(".github.com")
+            return host == "github.com" || host.endsWith(".github.com") ||
+                host == "githubusercontent.com" || host.endsWith(".githubusercontent.com")
         }
 
         fun resolveRedirectUrl(currentUrl: String, location: String?): String? {

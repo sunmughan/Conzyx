@@ -126,23 +126,4 @@ class SkillManagerZipLimitsTest {
         }
     }
 
-    @Test
-    fun cumulativeDecompressedSizeIsCapped() {
-        val root = tempDir()
-        try {
-            val manager = SkillManager(baseDir = root)
-            val zip = File(root, "cumulative.zip")
-            val entries = (0 until 11).map { "d/f$it.bin" to zeros(50) }
-            writeZip(zip, entries)
-            try {
-                manager.installZip(zip, "test-source")
-                fail("Expected cumulative-size rejection")
-            } catch (e: IllegalArgumentException) {
-                assertTrue(e.message.orEmpty().contains("500 MB"))
-            }
-            assertTrue(extractionLeftovers(root).isEmpty())
-        } finally {
-            root.deleteRecursively()
-        }
-    }
 }

@@ -15,7 +15,7 @@ object SharedExport {
         require(apk.isFile && apk.extension.equals("apk", ignoreCase = true)) { "Not a valid APK file" }
         val dir = installDir(filesDir)
         pruneStale(dir)
-        val base = apk.nameWithoutExtension.replace(SAFE_NAME, "_").take(40).trim('_').ifBlank { "update" }
+        val base = apk.nameWithoutExtension.replace(SAFE_NAME, "_").replace("..", "__").take(40).trim('_').ifBlank { "update" }
         val staged = File(dir, "$base-${UUID.randomUUID().toString().take(8)}.apk")
         apk.inputStream().use { input -> staged.outputStream().use { output -> input.copyTo(output) } }
         return staged
@@ -25,7 +25,7 @@ object SharedExport {
         require(source.isFile) { "Attachment is unavailable" }
         val dir = openDir(filesDir)
         pruneStale(dir)
-        val safe = displayName.replace(SAFE_NAME, "_").take(80).trim('_').ifBlank { "file" }
+        val safe = displayName.replace(SAFE_NAME, "_").replace("..", "__").take(80).trim('_').ifBlank { "file" }
         var staged = File(dir, safe)
         var counter = 2
         while (staged.exists()) {
