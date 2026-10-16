@@ -125,6 +125,11 @@ class GitHubWorkflowEngineTest {
             System.err.println("WORKFLOW_DIAG result.error=${result.error}")
             System.err.println("WORKFLOW_DIAG state.error=${workflowEngine.state.value.errorMessage}")
             System.err.println("WORKFLOW_DIAG commands=$executedCommands")
+            File("/tmp/workflow_diag.txt").writeText(
+                "result.error=${result.error}\n" +
+                    "state.error=${workflowEngine.state.value.errorMessage}\n" +
+                    "commands=$executedCommands\n"
+            )
         }
         assertTrue(
             "expected workflow success but got error: ${result.error} " +

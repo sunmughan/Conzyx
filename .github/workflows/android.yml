@@ -149,6 +149,8 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "===== ONLINE BUILD FAILURE ====="
             tail -n 250 "$RUNNER_TEMP/online-build.log"
+            echo "===== WORKFLOW DIAGNOSTIC ====="
+            cat /tmp/workflow_diag.txt 2>/dev/null || echo "(no diagnostic file)"
             exit "$rc"
           fi
 
