@@ -2,6 +2,7 @@ package com.codeair.mhe.cloud.exec
 
 import com.codeair.mhe.cloud.model.CloudArtifact
 import com.codeair.mhe.cloud.model.CloudWorkerSpec
+import com.codeair.mhe.cloud.sync.ArtifactFilenameValidator
 import com.codeair.mhe.cloud.sync.CloudArtifactSyncEngine
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
@@ -64,11 +65,16 @@ class CloudArtifactDownloader(
                 logs.add("Skipping artifact with blank id/filename.")
                 continue
             }
+            val target = ArtifactFilenameValidator.resolveTarget(destinationDir, descriptor.filename)
+            if (target == null) {
+                logs.add("Skipping artifact '${descriptor.filename}': unsafe filename rejected.")
+                continue
+            }
             // QA Medium: artifact bytes used to be held fully in memory
             // (plus a UTF-8 String copy in the transport) — a large
             // artifact OOM'd the app. The body now streams to a temp file
             // and is SHA-256-verified incrementally before it lands.
-            val tmp = File(destinationDir, descriptor.filename + ".part")
+            val tmp = ArtifactFilenameValidator.newTempFile(destinationDir)
             val dl = client.downloadArtifactToFile(worker, remoteJobId, descriptor.id, tmp, descriptor.sha256)
             if (dl.result.status != OperationStatus.SUCCESS || dl.sha256 == null) {
                 runCatching { tmp.delete() }
@@ -82,8 +88,8 @@ class CloudArtifactDownloader(
                 )
             }
             downloaded++
-            val target = File(destinationDir, descriptor.filename)
-            if (!moveFile(tmp, target)) {
+            if (!ArtifactFilenameValidator.moveVerifiedFile(tmp, target)) {
+                runCatching { tmp.delete() }
                 return ArtifactFetchResult(
                     OperationResult.failure(
                         error = "Artifact '${descriptor.filename}' verified but could not be written to ${destinationDir.absolutePath}.",
@@ -115,17 +121,4 @@ class CloudArtifactDownloader(
             downloaded, verified, fetched
         )
     }
-
-    /**
-     * renameTo is atomic but fails across filesystems; fall back to
-     * copy+delete so a verified artifact is never lost to a rename quirk.
-     */
-    private fun moveFile(src: File, dest: File): Boolean =
-        runCatching {
-            dest.parentFile?.mkdirs()
-            if (src.renameTo(dest)) return true
-            src.copyTo(dest, overwrite = true)
-            src.delete()
-            true
-        }.getOrDefault(false)
 }

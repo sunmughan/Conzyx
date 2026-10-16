@@ -121,4 +121,80 @@ class CloudArtifactSyncEngineTest {
         syncEngine.clearCache()
         assertEquals(null, syncEngine.getCachedArtifact("cached-1"))
     }
+
+    @Test
+    fun testUnpackRemoteArtifactRejectsTraversalFilenames() {
+        val destDir = File(tempDir, "downloads")
+        destDir.mkdirs()
+        val content = "binary".toByteArray()
+        val checksum = syncEngine.calculateChecksum(content)
+        val unsafe = listOf(
+            "../evil.apk",
+            "../../evil",
+            "..\\evil.apk",
+            "/abs/path.apk",
+            "sub/dir.apk",
+            "a\\b.apk",
+            "..",
+            ".",
+            "",
+            "   "
+        )
+        for (name in unsafe) {
+            val artifact = CloudArtifact(id = "evil-$name", filename = name, checksumSha256 = checksum)
+            assertFalse("expected rejection for '$name'", syncEngine.unpackRemoteArtifact(artifact, destDir, content))
+        }
+        assertTrue("no strays may be written outside the destination", File(tempDir, "evil.apk").exists().not())
+        assertTrue("no strays may be written outside the destination", File(tempDir, "evil").exists().not())
+        assertTrue("destination must stay empty", (destDir.listFiles() ?: emptyArray()).isEmpty())
+        assertEquals(null, syncEngine.getCachedArtifact("evil-../evil.apk"))
+    }
+
+    @Test
+    fun testUnpackRemoteArtifactLeavesNoTempFilesBehind() {
+        val destDir = File(tempDir, "downloads")
+        val good = "good bytes".toByteArray()
+        val artifact = CloudArtifact(
+            id = "good-1",
+            filename = "app.apk",
+            checksumSha256 = syncEngine.calculateChecksum(good)
+        )
+        assertTrue(syncEngine.unpackRemoteArtifact(artifact, destDir, good))
+        val files = destDir.listFiles() ?: emptyArray()
+        assertEquals(1, files.size)
+        assertEquals("app.apk", files[0].name)
+        assertTrue(files.none { it.name.endsWith(".tmp") })
+    }
+
+    @Test
+    fun testUnpackRemoteArtifactChecksumMismatchLeavesNothing() {
+        val destDir = File(tempDir, "downloads")
+        val artifact = CloudArtifact(
+            id = "bad-1",
+            filename = "app.apk",
+            checksumSha256 = "0".repeat(64)
+        )
+        assertFalse(syncEngine.unpackRemoteArtifact(artifact, destDir, "tampered".toByteArray()))
+        val files = destDir.listFiles() ?: emptyArray()
+        assertTrue("neither final nor temp file may remain", files.isEmpty())
+        assertEquals(null, syncEngine.getCachedArtifact("bad-1"))
+    }
+
+    @Test
+    fun testUnpackRemoteArtifactOverwritesExistingFileSafely() {
+        val destDir = File(tempDir, "downloads")
+        destDir.mkdirs()
+        File(destDir, "app.apk").writeText("stale content")
+        val fresh = "fresh binary".toByteArray()
+        val artifact = CloudArtifact(
+            id = "overwrite-1",
+            filename = "app.apk",
+            checksumSha256 = syncEngine.calculateChecksum(fresh)
+        )
+        assertTrue(syncEngine.unpackRemoteArtifact(artifact, destDir, fresh))
+        assertEquals("fresh binary", File(destDir, "app.apk").readText())
+        val cached = syncEngine.getCachedArtifact("overwrite-1")
+        assertNotNull(cached)
+        assertEquals(File(destDir, "app.apk").absolutePath, cached!!.localCachePath)
+    }
 }

@@ -70,21 +70,29 @@ class CloudArtifactSyncEngine {
         destinationDir: File,
         artifactBytes: ByteArray? = null
     ): Boolean {
-        if (artifact.checksumSha256.isNotBlank() && artifactBytes != null) {
-            val computed = calculateChecksum(artifactBytes)
-            if (!computed.equals(artifact.checksumSha256, ignoreCase = true)) {
-                return false // Checksum mismatch
-            }
-        }
+        val targetFile = ArtifactFilenameValidator.resolveTarget(destinationDir, artifact.filename)
+            ?: return false
 
         runCatching {
             if (!destinationDir.exists()) {
                 destinationDir.mkdirs()
             }
-            val targetFile = File(destinationDir, artifact.filename)
-            targetFile.parentFile?.mkdirs()
             if (artifactBytes != null) {
-                targetFile.writeBytes(artifactBytes)
+                val tmp = ArtifactFilenameValidator.newTempFile(destinationDir)
+                try {
+                    tmp.writeBytes(artifactBytes)
+                    if (artifact.checksumSha256.isNotBlank()) {
+                        val computed = calculateChecksum(tmp.readBytes())
+                        if (!computed.equals(artifact.checksumSha256, ignoreCase = true)) {
+                            return false
+                        }
+                    }
+                    if (!ArtifactFilenameValidator.moveVerifiedFile(tmp, targetFile)) {
+                        return false
+                    }
+                } finally {
+                    runCatching { tmp.delete() }
+                }
             } else {
                 // If mocked or remote URL, ensure stub or metadata written
                 if (!targetFile.exists()) {

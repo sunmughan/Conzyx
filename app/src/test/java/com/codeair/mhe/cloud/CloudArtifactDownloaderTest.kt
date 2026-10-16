@@ -41,14 +41,16 @@ class CloudArtifactDownloaderTest {
         destDir.deleteRecursively()
     }
 
-    private fun transportWith(descriptorSha: String) = FakeCloudTransport(
+    private fun transportWith(descriptorSha: String, filename: String = "app.apk") = FakeCloudTransport(
         handler = { req ->
             when {
-                req.path.endsWith("/artifacts") && req.method == "GET" ->
+                req.path.endsWith("/artifacts") && req.method == "GET" -> {
+                    val jsonName = filename.replace("\\", "\\\\")
                     CloudTransportResponse(
                         200,
-                        """{"artifacts":[{"id":"art-1","filename":"app.apk","sizeBytes":${payload.size},"sha256":"$descriptorSha"}]}"""
+                        """{"artifacts":[{"id":"art-1","filename":"$jsonName","sizeBytes":${payload.size},"sha256":"$descriptorSha"}]}"""
                     )
+                }
                 else -> CloudTransportResponse(404, "{}")
             }
         },
@@ -109,5 +111,50 @@ class CloudArtifactDownloaderTest {
         )
         val result = downloader.fetchArtifacts(worker, "remote-1", destDir)
         assertEquals(OperationStatus.FAILED, result.result.status)
+    }
+
+    @Test
+    fun traversalFilenamesAreSkippedWithoutDownloading() {
+        for (name in listOf("../../evil.apk", "/abs/evil.apk", "a/b.apk", "a\\b.apk", "..")) {
+            val transport = transportWith(payloadSha256, name)
+            val downloader = CloudArtifactDownloader(
+                CloudExecutionClient(transport),
+                CloudArtifactSyncEngine()
+            )
+            val result = downloader.fetchArtifacts(worker, "remote-1", destDir)
+            assertEquals("unsafe name must not fail the whole fetch: '$name'", OperationStatus.SUCCESS, result.result.status)
+            assertEquals(0, result.verified)
+            assertEquals(0, result.downloaded)
+            assertTrue(
+                "no download may be attempted for '$name'",
+                transport.seen.none { it.path.endsWith("/artifacts/art-1") && it.method == "GET" }
+            )
+        }
+        assertTrue("destination must stay empty", (destDir.listFiles() ?: emptyArray()).isEmpty())
+    }
+
+    @Test
+    fun verifiedArtifactOverwritesStaleFile() {
+        File(destDir, "app.apk").writeText("stale")
+        val downloader = CloudArtifactDownloader(
+            CloudExecutionClient(transportWith(payloadSha256)),
+            CloudArtifactSyncEngine()
+        )
+        val result = downloader.fetchArtifacts(worker, "remote-1", destDir)
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        assertEquals(1, result.verified)
+        assertEquals("fake-apk-bytes", File(destDir, "app.apk").readText())
+    }
+
+    @Test
+    fun noRandomTempFilesRemainAfterFetch() {
+        val downloader = CloudArtifactDownloader(
+            CloudExecutionClient(transportWith(payloadSha256)),
+            CloudArtifactSyncEngine()
+        )
+        val result = downloader.fetchArtifacts(worker, "remote-1", destDir)
+        assertEquals(OperationStatus.SUCCESS, result.result.status)
+        val names = (destDir.listFiles() ?: emptyArray()).map { it.name }
+        assertEquals(listOf("app.apk"), names)
     }
 }
