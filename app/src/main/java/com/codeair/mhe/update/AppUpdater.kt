@@ -94,13 +94,13 @@ class AppUpdater(
     }
 
     private fun checkStandardManifest(manifestUrl: String): AppUpdateInfo? {
-        val connection = URL(manifestUrl).openConnection() as HttpURLConnection
-        connection.connectTimeout = 8_000
-        connection.readTimeout = 10_000
-        connection.instanceFollowRedirects = true
-        connection.setRequestProperty("Accept", "application/json")
-        if (authToken.isNotBlank() && isGitHubDomain(manifestUrl)) {
-            connection.setRequestProperty("Authorization", "Bearer $authToken")
+        val connection = openConnectionFollowingRedirects(manifestUrl) { hopUrl, conn ->
+            conn.connectTimeout = 8_000
+            conn.readTimeout = 10_000
+            conn.setRequestProperty("Accept", "application/json")
+            if (authToken.isNotBlank() && isGitHubDomain(hopUrl)) {
+                conn.setRequestProperty("Authorization", "Bearer $authToken")
+            }
         }
         val code = connection.responseCode
         if (code !in 200..299) {
@@ -131,13 +131,13 @@ class AppUpdater(
     }
 
     private fun checkGitHubReleaseApi(apiUrl: String): AppUpdateInfo? {
-        val connection = URL(apiUrl).openConnection() as HttpURLConnection
-        connection.connectTimeout = 8_000
-        connection.readTimeout = 10_000
-        connection.instanceFollowRedirects = true
-        connection.setRequestProperty("Accept", "application/vnd.github+json")
-        if (authToken.isNotBlank() && isGitHubDomain(apiUrl)) {
-            connection.setRequestProperty("Authorization", "Bearer $authToken")
+        val connection = openConnectionFollowingRedirects(apiUrl) { hopUrl, conn ->
+            conn.connectTimeout = 8_000
+            conn.readTimeout = 10_000
+            conn.setRequestProperty("Accept", "application/vnd.github+json")
+            if (authToken.isNotBlank() && isGitHubDomain(hopUrl)) {
+                conn.setRequestProperty("Authorization", "Bearer $authToken")
+            }
         }
         val code = connection.responseCode
         if (code !in 200..299) {
@@ -261,6 +261,35 @@ class AppUpdater(
         return target
     }
 
+    private val redirectStatusCodes = setOf(
+        HttpURLConnection.HTTP_MOVED_PERM,
+        HttpURLConnection.HTTP_MOVED_TEMP,
+        HttpURLConnection.HTTP_SEE_OTHER,
+        307,
+        308,
+    )
+
+    private fun openConnectionFollowingRedirects(
+        urlStr: String,
+        maxRedirects: Int = 5,
+        configure: (hopUrl: String, connection: HttpURLConnection) -> Unit,
+    ): HttpURLConnection {
+        var currentUrl = urlStr
+        var redirects = 0
+        while (true) {
+            val connection = URL(currentUrl).openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = false
+            configure(currentUrl, connection)
+            if (connection.responseCode !in redirectStatusCodes) return connection
+            val location = connection.getHeaderField("Location")
+            connection.disconnect()
+            currentUrl = resolveRedirectUrl(currentUrl, location)
+                ?: error("Blocked an unsafe update redirect")
+            redirects += 1
+            check(redirects <= maxRedirects) { "Too many redirects" }
+        }
+    }
+
     /**
      * Opens the download stream, following up to 5 redirects. When
      * [resumeFrom] > 0, requests `Range: bytes=<resumeFrom>-` so an
@@ -269,41 +298,24 @@ class AppUpdater(
      * at (0 when the server ignored the Range request).
      */
     private fun openDownloadStream(urlStr: String, fallbackSize: Long, resumeFrom: Long = 0L): Triple<InputStream, Long, Long> {
-        var currentUrl = urlStr
-        var attempts = 0
-        while (attempts < 5) {
-            attempts++
-            val connection = URL(currentUrl).openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.instanceFollowRedirects = false
-
-            // Only send GitHub Authorization to GitHub domain, NEVER to Amazon S3 redirects!
-            if (authToken.isNotBlank() && isGitHubDomain(currentUrl)) {
-                connection.setRequestProperty("Authorization", "Bearer $authToken")
+        val connection = openConnectionFollowingRedirects(urlStr) { hopUrl, conn ->
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 30_000
+            if (authToken.isNotBlank() && isGitHubDomain(hopUrl)) {
+                conn.setRequestProperty("Authorization", "Bearer $authToken")
             }
-            connection.setRequestProperty("Accept", "application/octet-stream")
+            conn.setRequestProperty("Accept", "application/octet-stream")
             if (resumeFrom > 0) {
-                connection.setRequestProperty("Range", "bytes=$resumeFrom-")
+                conn.setRequestProperty("Range", "bytes=$resumeFrom-")
             }
-
-            val code = connection.responseCode
-            if (code in listOf(HttpURLConnection.HTTP_MOVED_PERM, HttpURLConnection.HTTP_MOVED_TEMP, 307, 308)) {
-                val location = connection.getHeaderField("Location")
-                connection.disconnect()
-                check(!location.isNullOrBlank()) { "Redirect with missing Location header" }
-                currentUrl = location
-                continue
-            }
-
-            check(code in 200..299) { "Update download failed (HTTP $code)" }
-            val startOffset = if (code == HttpURLConnection.HTTP_PARTIAL) resumeFrom else 0L
-            val remaining = connection.contentLengthLong.takeIf { it > 0 }
-            val total = if (remaining != null) startOffset + remaining else maxOf(fallbackSize, startOffset)
-            activeDownloadConnection = connection
-            return Triple(connection.inputStream, total, startOffset)
         }
-        error("Too many redirects downloading update")
+        val code = connection.responseCode
+        check(code in 200..299) { "Update download failed (HTTP $code)" }
+        val startOffset = if (code == HttpURLConnection.HTTP_PARTIAL) resumeFrom else 0L
+        val remaining = connection.contentLengthLong.takeIf { it > 0 }
+        val total = if (remaining != null) startOffset + remaining else maxOf(fallbackSize, startOffset)
+        activeDownloadConnection = connection
+        return Triple(connection.inputStream, total, startOffset)
     }
 
     private fun fetchStringWithAuth(urlStr: String): String? {
@@ -364,6 +376,14 @@ class AppUpdater(
             if (!parsed.protocol.equals("https", ignoreCase = true)) return false
             val host = parsed.host.lowercase()
             return host == "github.com" || host.endsWith(".github.com")
+        }
+
+        fun resolveRedirectUrl(currentUrl: String, location: String?): String? {
+            if (location.isNullOrBlank()) return null
+            val base = runCatching { URL(currentUrl) }.getOrNull() ?: return null
+            val resolved = runCatching { URL(base, location) }.getOrNull() ?: return null
+            if (!resolved.protocol.equals("https", ignoreCase = true)) return null
+            return resolved.toString()
         }
 
         private fun findAssetUrlForVariant(assets: JSONArray, variant: String): String? {
