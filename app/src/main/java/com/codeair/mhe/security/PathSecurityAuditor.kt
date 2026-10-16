@@ -11,9 +11,10 @@ import java.io.File
  * - absolute paths outside the allowed root
  * - symlinks whose resolved target escapes the allowed root (symlink escape)
  *
- * When [allowedRoot] is null, only structural checks (null bytes, `..` that
- * escapes a relative base) apply; absolute paths are still flagged unless they
- * are the root itself.
+ * When [allowedRoot] is null or cannot be canonicalized, the auditor fails
+ * closed: absolute paths are rejected outright and only structural checks
+ * (null bytes, control characters, `..` escaping the base) apply to relative
+ * paths. A missing root never silently disables path restrictions.
  */
 class PathSecurityAuditor {
 
@@ -84,22 +85,30 @@ class PathSecurityAuditor {
         // symlinks, tolerating non-existent tails) tells us whether a symlink
         // smuggles the target outside. Lexically-inside but resolved-outside
         // is a symlink escape; lexically-outside is an absolute escape.
-        if (root != null) {
-            val lexicalInside = isWithin(requestedFile.toPath().normalize().toFile(), root)
-            val resolved = resolveRealPath(requestedFile)
-            val resolvedOutside = if (resolved != null) !isWithin(resolved, root) else !lexicalInside
-            if (resolvedOutside) {
-                return if (lexicalInside) {
-                    PathAuditResult.Rejected(
-                        "Symlink escape: resolved path '${resolved?.path}' is outside the allowed root",
-                        RejectionKind.SYMLINK_ESCAPE
-                    )
-                } else {
-                    PathAuditResult.Rejected(
-                        "Absolute path escapes allowed root: '$requestedPath'",
-                        RejectionKind.ABSOLUTE_ESCAPE
-                    )
-                }
+        if (root == null) {
+            if (File(normalized).isAbsolute) {
+                return PathAuditResult.Rejected(
+                    "Absolute path with no valid allowed root: '$requestedPath'",
+                    RejectionKind.ABSOLUTE_ESCAPE
+                )
+            }
+            return PathAuditResult.Safe
+        }
+
+        val lexicalInside = isWithin(requestedFile.toPath().normalize().toFile(), root)
+        val resolved = resolveRealPath(requestedFile)
+        val resolvedOutside = if (resolved != null) !isWithin(resolved, root) else !lexicalInside
+        if (resolvedOutside) {
+            return if (lexicalInside) {
+                PathAuditResult.Rejected(
+                    "Symlink escape: resolved path '${resolved?.path}' is outside the allowed root",
+                    RejectionKind.SYMLINK_ESCAPE
+                )
+            } else {
+                PathAuditResult.Rejected(
+                    "Absolute path escapes allowed root: '$requestedPath'",
+                    RejectionKind.ABSOLUTE_ESCAPE
+                )
             }
         }
 

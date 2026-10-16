@@ -77,6 +77,42 @@ class SafetyGatewayTest {
     }
 
     @Test
+    fun `workspace root resolver provides per-project containment`() {
+        val projectRoot = tempFolder.newFolder("proj-demo")
+        val resolvingGateway = SafetyGateway(
+            policyEngine = policyEngine,
+            workspaceRoot = null,
+            workspaceRootResolver = { projectId ->
+                if (projectId == "demo") projectRoot else null
+            }
+        )
+        val inside = resolvingGateway.authorize(
+            SafetyOperation.FileOp(FileOpKind.READ, File(projectRoot, "a.txt").absolutePath),
+            projectId = "demo"
+        )
+        assertEquals(SafetyVerdict.ALLOW, inside.verdict)
+        val outside = resolvingGateway.authorize(
+            SafetyOperation.FileOp(FileOpKind.READ, "/etc/passwd"),
+            projectId = "demo"
+        )
+        assertEquals(SafetyVerdict.DENY, outside.verdict)
+    }
+
+    @Test
+    fun `missing workspace root fails closed on absolute path`() {
+        val resolvingGateway = SafetyGateway(
+            policyEngine = policyEngine,
+            workspaceRoot = null,
+            workspaceRootResolver = { null }
+        )
+        val decision = resolvingGateway.authorize(
+            SafetyOperation.FileOp(FileOpKind.READ, "/etc/passwd"),
+            projectId = null
+        )
+        assertEquals(SafetyVerdict.DENY, decision.verdict)
+    }
+
+    @Test
     fun `critical shell command is denied`() {
         val decision = gateway.authorize(SafetyOperation.ShellExec("rm -rf /", "project"))
         assertEquals(SafetyVerdict.DENY, decision.verdict)

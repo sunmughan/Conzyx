@@ -416,13 +416,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // The single safety gateway: kill switch + path audit + MCP consult +
     // policy engine. It is constructed and used (not decorative): it is the
     // choke point for Claude Code's per-tool approvals and the
-    // session-start gates. workspaceRoot is null because projects vary, so
-    // per-project root containment is unavailable; structural
-    // traversal/null-byte checks + the engine's own sensitive-file rules
-    // still apply.
+    // session-start gates. Guest tool paths are rooted at /workspace/<slug>,
+    // so per-project containment resolves the guest root from the project
+    // id; a missing root fails closed inside the path auditor.
     val safetyGateway = com.codeair.mhe.security.SafetyGateway(
         policyEngine = permissionPolicyEngine,
         workspaceRoot = null,
+        workspaceRootResolver = { slug ->
+            slug?.takeIf { it.isNotBlank() }?.let { File("/workspace/$it") }
+        },
         mcpPermissionManager = mcpPermissionManager,
         mcpServerResolver = { serverId -> mcpRegistry.getServer(serverId) },
     )

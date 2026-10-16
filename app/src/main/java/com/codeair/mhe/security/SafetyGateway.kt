@@ -28,6 +28,7 @@ class SafetyGateway(
     private val policyEngine: PermissionPolicyEngine,
     private val pathAuditor: PathSecurityAuditor = PathSecurityAuditor(),
     private val workspaceRoot: File? = null,
+    private val workspaceRootResolver: ((projectId: String?) -> File?)? = null,
     private val mcpPermissionManager: McpPermissionManager? = null,
     private val mcpServerResolver: ((serverId: String) -> McpServerInfo?)? = null,
     private val auditLogger: SecurityAuditLogger = policyEngine.auditLogger
@@ -54,6 +55,7 @@ class SafetyGateway(
         }
 
         // 2. Path audit for file-bearing operations: hard deny on escape.
+        val effectiveRoot = workspaceRootResolver?.invoke(projectId) ?: workspaceRoot
         val pathToAudit: String? = when (operation) {
             is SafetyOperation.FileOp -> operation.path
             is SafetyOperation.ApkInstall -> operation.apkPath
@@ -62,7 +64,7 @@ class SafetyGateway(
             else -> null
         }
         if (pathToAudit != null) {
-            when (val pathResult = pathAuditor.audit(pathToAudit, workspaceRoot)) {
+            when (val pathResult = pathAuditor.audit(pathToAudit, effectiveRoot)) {
                 is PathSecurityAuditor.PathAuditResult.Rejected -> {
                     val reason = "Path rejected (${pathResult.kind}): ${pathResult.reason}"
                     audit(operation, categoryOf(operation), AuditDecision.BLOCKED_DANGEROUS, reason, sessionId, projectId)

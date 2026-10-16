@@ -135,4 +135,68 @@ class PathSecurityAuditorTest {
         assertTrue(auditor.isSafe("src/Main.kt", root))
         assertFalse(auditor.isSafe("../../etc/passwd", root))
     }
+
+    @Test
+    fun `null root rejects absolute path as absolute escape`() {
+        val result = auditor.audit("/etc/passwd", null)
+        assertTrue("expected Rejected but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Rejected)
+        val rejected = result as PathSecurityAuditor.PathAuditResult.Rejected
+        assertEquals(PathSecurityAuditor.RejectionKind.ABSOLUTE_ESCAPE, rejected.kind)
+    }
+
+    @Test
+    fun `null root rejects traversal in relative path`() {
+        val result = auditor.audit("../../etc/passwd", null)
+        assertTrue("expected Rejected but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Rejected)
+        val rejected = result as PathSecurityAuditor.PathAuditResult.Rejected
+        assertEquals(PathSecurityAuditor.RejectionKind.TRAVERSAL, rejected.kind)
+    }
+
+    @Test
+    fun `null root rejects null byte`() {
+        val result = auditor.audit("src/Ma\u0000in.kt", null)
+        assertTrue("expected Rejected but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Rejected)
+    }
+
+    @Test
+    fun `null root allows structurally safe relative path`() {
+        val result = auditor.audit("src/Main.kt", null)
+        assertTrue("expected Safe but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Safe)
+    }
+
+    @Test
+    fun `guest project root contains guest absolute paths`() {
+        val guestRoot = File("/workspace/demo")
+        val result = auditor.audit("/workspace/demo/src/Foo.kt", guestRoot)
+        assertTrue("expected Safe but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Safe)
+    }
+
+    @Test
+    fun `guest project root rejects host absolute path`() {
+        val guestRoot = File("/workspace/demo")
+        val result = auditor.audit("/etc/passwd", guestRoot)
+        assertTrue("expected Rejected but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Rejected)
+    }
+
+    @Test
+    fun `guest project root rejects traversal to sibling workspace`() {
+        val guestRoot = File("/workspace/demo")
+        val result = auditor.audit("/workspace/demo/../../other/x.kt", guestRoot)
+        assertTrue("expected Rejected but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Rejected)
+    }
+
+    @Test
+    fun `guest project root rejects other project workspace`() {
+        val guestRoot = File("/workspace/demo")
+        val result = auditor.audit("/workspace/other/x.kt", guestRoot)
+        assertTrue("expected Rejected but was $result",
+            result is PathSecurityAuditor.PathAuditResult.Rejected)
+    }
 }
