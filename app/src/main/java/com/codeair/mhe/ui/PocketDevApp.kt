@@ -6744,9 +6744,10 @@ private fun ClaudeActivityDisclosure(
             if (0 in expandedItems) ActivityExpandedDetail(null, "Reviewing the request and planning the next action.")
         } else {
             items.forEachIndexed { index, item ->
+                val summaryText = remember(item) { compactActivityText(item) }
                 ActivitySummaryRow(
                     item = item,
-                    text = compactActivityText(item),
+                    text = summaryText,
                     expanded = index in expandedItems,
                     showProgress = isRunning && !item.isComplete,
                     onToggle = {
@@ -6978,7 +6979,7 @@ private fun activityDetail(item: ActivityItem): String {
 private fun activityHeadline(items: List<ActivityItem>, seconds: Long, thinking: Boolean): String {
     val latest = items.lastOrNull()
     if (latest == null) return "Think · Analyzing the request · ${formatDuration(seconds)}"
-    if (thinking && latest.title == "Think") return "Think · ${latest.detail} · ${formatDuration(seconds)}"
+    if (thinking && latest.title == "Think") return "Think · ${latest.detail.replace(Regex("\\s+"), " ").trim().take(120)} · ${formatDuration(seconds)}"
     val detail = latest.detail.replace(Regex("\\s+"), " ").trim().ifBlank { latest.title }
     return "${activityName(latest)} · ${detail.take(100)} · ${formatDuration(seconds)}"
 }
@@ -7044,20 +7045,24 @@ private fun MessageBubble(
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
         ) {
-            Column(Modifier.padding(top = 12.dp)) {
+            Column(Modifier.padding(top = 12.dp, bottom = 10.dp)) {
                 val hugeText = message.text.length > 100000
                 val displayText = if (hugeText) message.text.take(100000) + "\n\n… (message truncated for display)" else message.text
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
                 if (hugeText) {
                     MarkdownText(
                         markdown = displayText,
-                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
+                        modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                         color = if (message.fromUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     )
                 } else SelectionContainer {
                     if (message.fromUser) {
                         MarkdownText(
                             markdown = message.text,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
+                            modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else if (isStreaming) {
@@ -7068,16 +7073,40 @@ private fun MessageBubble(
                         }
                         Text(
                             text = streamDisplayText,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
+                            modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                     } else {
                         MarkdownText(
                             markdown = message.text,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
+                            modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                             color = MaterialTheme.colorScheme.onSurface,
                             onRunCode = onRunInTerminal,
+                        )
+                    }
+                }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 8.dp)
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(message.text))
+                                copied = true
+                                val label = if (message.fromUser) "Prompt copied to clipboard" else "Response copied to clipboard"
+                                Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                            contentDescription = if (message.fromUser) "Copy prompt" else "Copy response",
+                            tint = if (copied) PocketGreen
+                            else if (message.fromUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.size(15.dp),
                         )
                     }
                 }
@@ -7100,44 +7129,14 @@ private fun MessageBubble(
                     }
                 }
 
-                // Action bar: worked duration (if assistant) + 1-Tap Copy button (for prompt or response)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 12.dp, end = 8.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    if (!message.fromUser && message.workedMillis > 0L) {
-                        Text(
-                            text = "Worked for ${formatDuration((message.workedMillis / 1_000L).coerceAtLeast(1L))}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                        )
-                    } else {
-                        Spacer(Modifier.width(1.dp))
-                    }
-
-                    IconButton(
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(message.text))
-                            copied = true
-                            val label = if (message.fromUser) "Prompt copied to clipboard" else "Response copied to clipboard"
-                            Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                            contentDescription = if (message.fromUser) "Copy prompt" else "Copy response",
-                            tint = if (copied) PocketGreen
-                            else if (message.fromUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            modifier = Modifier.size(15.dp),
-                        )
-                    }
+                if (!message.fromUser && message.workedMillis > 0L) {
+                    Text(
+                        text = "Worked for ${formatDuration((message.workedMillis / 1_000L).coerceAtLeast(1L))}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(start = 14.dp, top = 6.dp),
+                    )
                 }
-                Spacer(Modifier.height(2.dp))
             }
         }
     }

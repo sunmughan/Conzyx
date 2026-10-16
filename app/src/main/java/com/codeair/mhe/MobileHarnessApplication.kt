@@ -54,4 +54,9 @@ class MobileHarnessApplication : Application() {
             )
         }
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        AppCrashLogger.log("onTrimMemory level=$level")
+    }
 }
