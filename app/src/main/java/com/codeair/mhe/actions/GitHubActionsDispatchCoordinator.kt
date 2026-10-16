@@ -67,7 +67,7 @@ class GitHubActionsDispatchCoordinator(
     }
 
     fun dispatchBuild(
-token: <redacted>
+        token: String,
         repoFullName: String,
         workflowId: String = "android.yml",
         ref: String = "v3",
