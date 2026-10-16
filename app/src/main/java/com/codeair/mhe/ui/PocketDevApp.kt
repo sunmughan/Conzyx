@@ -132,6 +132,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
@@ -576,6 +577,7 @@ fun PocketDevApp(
             onAddAttachments = viewModel::addChatAttachments,
             onRemoveAttachment = viewModel::removePendingAttachment,
             onOpenAttachment = viewModel::openChatAttachment,
+            onSaveAttachmentToUri = viewModel::saveChatAttachmentToStorage,
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
             onSelectExecutionMode = viewModel::setExecutionMode,
             onToggleScratchpad = viewModel::toggleScratchpadExpanded,
@@ -4768,6 +4770,7 @@ private fun WorkspaceScreen(
     onAddAttachments: (List<Uri>) -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
+    onSaveAttachmentToUri: (ChatAttachment, Uri) -> Unit = { _, _ -> },
     onBuildAndRunAndroid: () -> Unit,
     onSelectExecutionMode: (ExecutionMode) -> Unit = {},
     onToggleScratchpad: () -> Unit = {},
@@ -4827,6 +4830,15 @@ private fun WorkspaceScreen(
     val attachmentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = onAddAttachments,
+    )
+    var saveTargetAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
+    val saveAttachmentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(),
+        onResult = { uri ->
+            val attachment = saveTargetAttachment
+            saveTargetAttachment = null
+            if (uri != null && attachment != null) onSaveAttachmentToUri(attachment, uri)
+        },
     )
     val unknownAppsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -5285,6 +5297,10 @@ private fun WorkspaceScreen(
                     },
                     onRemoveAttachment = onRemoveAttachment,
                     onOpenAttachment = onOpenAttachment,
+                    onSaveAttachment = {
+                        saveTargetAttachment = it
+                        saveAttachmentLauncher.launch(it.displayName)
+                    },
                     onRunInTerminal = { command ->
                         selectedTab = WorkspaceTab.TERMINAL
                         onTerminalOpened()
@@ -6041,6 +6057,7 @@ private fun ChatTab(
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
+    onSaveAttachment: (ChatAttachment) -> Unit = {},
     onRunInTerminal: (String) -> Unit,
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
@@ -6296,6 +6313,7 @@ private fun ChatTab(
                             isStreaming = rawMessage.id == streamingMessageId,
                             onRunInTerminal = onRunInTerminal,
                             onOpenAttachment = onOpenAttachment,
+                            onSaveAttachment = onSaveAttachment,
                             onAddRoadmapComment = { stepId ->
                                 val stepTitle = message.roadmap?.steps?.firstOrNull { it.id == stepId }?.title ?: ""
                                 message.roadmap?.let { r ->
@@ -7032,6 +7050,7 @@ private fun MessageBubble(
     isStreaming: Boolean = false,
     onRunInTerminal: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
+    onSaveAttachment: (ChatAttachment) -> Unit = {},
     onAddRoadmapComment: (stepId: String?) -> Unit = {},
     onApproveAndBuildRoadmap: () -> Unit = {},
 ) {
@@ -7124,7 +7143,7 @@ private fun MessageBubble(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         message.attachments.forEach { attachment ->
-                            AttachmentChip(attachment = attachment, onOpen = { onOpenAttachment(attachment) }, onRemove = null)
+                            AttachmentChip(attachment = attachment, onOpen = { onOpenAttachment(attachment) }, onSave = { onSaveAttachment(attachment) }, onRemove = null)
                         }
                     }
                 }
@@ -7146,6 +7165,7 @@ private fun MessageBubble(
 private fun AttachmentChip(
     attachment: ChatAttachment,
     onOpen: (() -> Unit)?,
+    onSave: (() -> Unit)? = null,
     onRemove: (() -> Unit)?,
 ) {
     val icon = when {
@@ -7164,6 +7184,11 @@ private fun AttachmentChip(
             Column(Modifier.widthIn(max = 180.dp)) {
                 Text(attachment.displayName, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(formatFileSize(attachment.sizeBytes), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (onSave != null) {
+                IconButton(onClick = onSave, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Save, "Save to", Modifier.size(15.dp))
+                }
             }
             if (onRemove != null) {
                 IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
