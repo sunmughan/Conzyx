@@ -207,6 +207,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -6066,6 +6067,7 @@ private fun ChatTab(
     }
     var prompt by rememberSaveable { mutableStateOf("") }
     var inputFocused by remember { mutableStateOf(false) }
+    var inputLineCount by remember { mutableStateOf(1) }
     var inputSectionHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
     var showWorkspaceControls by rememberSaveable { mutableStateOf(false) }
@@ -6440,6 +6442,7 @@ private fun ChatTab(
                             -toolsMenuHeightPx - with(density) { 8.dp.roundToPx() },
                         ),
                         onDismissRequest = { toolsOpen = false },
+                        properties = PopupProperties(focusable = true),
                     ) {
                     Surface(
                         modifier = Modifier.onGloballyPositioned { toolsMenuHeightPx = it.size.height },
@@ -6556,7 +6559,7 @@ private fun ChatTab(
                     ) {
                         IconButton(
                             onClick = { toolsOpen = !toolsOpen },
-                            modifier = Modifier.size(40.dp).align(if (inputFocused) Alignment.Bottom else Alignment.CenterVertically),
+                            modifier = Modifier.size(40.dp).align(if (inputLineCount > 1) Alignment.Bottom else Alignment.CenterVertically),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
@@ -6573,6 +6576,7 @@ private fun ChatTab(
                                 prompt = it
                                 updateMentionQuery(it)
                             },
+                            onTextLayout = { inputLineCount = it.lineCount },
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(horizontal = 4.dp)
@@ -6603,7 +6607,7 @@ private fun ChatTab(
                         )
                         IconButton(
                             onClick = onStartVoiceInput,
-                            modifier = Modifier.size(40.dp).align(if (inputFocused) Alignment.Bottom else Alignment.CenterVertically),
+                            modifier = Modifier.size(40.dp).align(if (inputLineCount > 1) Alignment.Bottom else Alignment.CenterVertically),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,

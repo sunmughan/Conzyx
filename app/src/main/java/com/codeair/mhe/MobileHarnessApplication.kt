@@ -28,11 +28,6 @@ class MobileHarnessApplication : Application() {
         super.onCreate()
         AppCrashLogger.initialize(this)
         runCatching {
-            if (com.codeair.mhe.data.AppPreferences(this).agentBrowserDriveEnabled) {
-                android.webkit.WebView.setWebContentsDebuggingEnabled(true)
-            }
-        }
-        runCatching {
             FirebaseApp.initializeApp(this)
             FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled =
                 AppCrashLogger.isCrashReportingEnabled
