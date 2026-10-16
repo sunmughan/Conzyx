@@ -29,7 +29,11 @@ class FullAccessLaunchGateTest {
     @Before
     fun setUp() {
         policyEngine = PermissionPolicyEngine(policyDir = tempFolder.newFolder("security"))
-        gateway = SafetyGateway(policyEngine = policyEngine, workspaceRoot = null)
+        gateway = SafetyGateway(
+            policyEngine = policyEngine,
+            workspaceRoot = null,
+            workspaceRootResolver = { java.io.File("/workspace/proj") }
+        )
     }
 
     private fun op() = SafetyOperation.ShellExec("agent-launch-probe", "/workspace/proj")
