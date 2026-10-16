@@ -42,6 +42,14 @@ class SkillManager(
     constructor(context: Context) : this(context, null)
     constructor(baseDir: File) : this(null, baseDir)
 
+    companion object {
+        const val MAX_SKILL_ARCHIVE_BYTES = 100L * 1024L * 1024L
+        const val MAX_SKILL_EXTRACTED_BYTES = 500L * 1024L * 1024L
+        const val MAX_SKILL_FILE_BYTES = 50L * 1024L * 1024L
+        const val MAX_SKILL_ENTRIES = 10_000
+        const val MAX_SKILL_COMPRESSION_RATIO = 100L
+    }
+
     private val root = (baseDir ?: File(context?.filesDir, "skills")).apply { mkdirs() }
     private val registryFile = File(root, "registry.json")
     private val cache = context?.cacheDir ?: File(root, ".cache").apply { mkdirs() }
@@ -146,7 +154,9 @@ class SkillManager(
         try {
             val stream = context?.contentResolver?.openInputStream(uri) ?: error("Could not read the selected skill archive.")
             stream.use { input ->
-                temp.outputStream().use { output -> input.copyTo(output) }
+                temp.outputStream().use { output ->
+                    copyStreamWithCap(input, output, MAX_SKILL_ARCHIVE_BYTES, "Skill archive exceeds the 100 MB safety limit.")
+                }
             }
             return installZip(temp, uri.toString())
         } finally {
@@ -341,6 +351,18 @@ class SkillManager(
         }
     }
 
+    private fun copyStreamWithCap(input: java.io.InputStream, output: java.io.OutputStream, capBytes: Long, message: String) {
+        val buffer = ByteArray(128 * 1024)
+        var copied = 0L
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            copied += count
+            require(copied <= capBytes) { message }
+            output.write(buffer, 0, count)
+        }
+    }
+
     private fun downloadSkillArchive(url: String, destination: File) {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
@@ -351,53 +373,64 @@ class SkillManager(
         try {
             val status = connection.responseCode
             if (status !in 200..299) throw SkillDownloadException(status, "GitHub skill download failed with HTTP $status")
-            connection.inputStream.use { input -> destination.outputStream().use { output -> input.copyTo(output) } }
+            connection.inputStream.use { input ->
+                destination.outputStream().use { output ->
+                    copyStreamWithCap(input, output, MAX_SKILL_ARCHIVE_BYTES, "Skill archive exceeds the 100 MB download limit.")
+                }
+            }
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun extractSkillArchive(zip: File, extraction: File) {
+    internal fun extractZipArchive(zip: File, extraction: File) {
         ZipInputStream(zip.inputStream().buffered()).use { input ->
             var entries = 0
+            var totalBytes = 0L
+            val buffer = ByteArray(128 * 1024)
             while (true) {
                 val entry = input.nextEntry ?: break
                 entries++
-                require(entries <= 10_000) { "Skill archive contains too many files." }
+                require(entries <= MAX_SKILL_ENTRIES) { "Skill archive contains too many files." }
                 val name = entry.name.replace('\\', '/')
                 require(!name.startsWith("/") && !name.split('/').any { it == ".." }) { "Skill archive contains an unsafe path." }
                 val target = File(extraction, name).canonicalFile
                 require(target.toPath().startsWith(extraction.canonicalFile.toPath())) { "Skill archive escapes its extraction directory." }
-                if (entry.isDirectory) target.mkdirs() else {
+                if (entry.isDirectory) {
+                    target.mkdirs()
+                } else {
                     target.parentFile?.mkdirs()
-                    target.outputStream().use { output -> input.copyTo(output) }
+                    var fileBytes = 0L
+                    target.outputStream().use { output ->
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            fileBytes += count
+                            require(fileBytes <= MAX_SKILL_FILE_BYTES) { "Skill archive file exceeds the 50 MB safety limit." }
+                            totalBytes += count
+                            require(totalBytes <= MAX_SKILL_EXTRACTED_BYTES) { "Skill archive exceeds the 500 MB decompressed safety limit." }
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                    val compressed = entry.compressedSize
+                    if (compressed > 0 && fileBytes > compressed * MAX_SKILL_COMPRESSION_RATIO) {
+                        error("Skill archive file has a suspicious compression ratio.")
+                    }
                 }
                 input.closeEntry()
             }
         }
     }
 
-    private fun installZip(zip: File, source: String): List<SkillInfo> {
-        require(zip.length() <= 100L * 1024L * 1024L) { "Skill archive exceeds the 100 MB safety limit." }
+    private fun extractSkillArchive(zip: File, extraction: File) {
+        extractZipArchive(zip, extraction)
+    }
+
+    internal fun installZip(zip: File, source: String): List<SkillInfo> {
+        require(zip.length() <= MAX_SKILL_ARCHIVE_BYTES) { "Skill archive exceeds the 100 MB safety limit." }
         val extraction = File(cache, "skill-extract-" + UUID.randomUUID()).apply { mkdirs() }
         try {
-            ZipInputStream(zip.inputStream().buffered()).use { input ->
-                var entries = 0
-                while (true) {
-                    val entry = input.nextEntry ?: break
-                    entries++
-                    require(entries <= 10_000) { "Skill archive contains too many files." }
-                    val name = entry.name.replace('\\', '/')
-                    require(!name.startsWith("/") && !name.split('/').any { it == ".." }) { "Skill archive contains an unsafe path." }
-                    val target = File(extraction, name).canonicalFile
-                    require(target.toPath().startsWith(extraction.canonicalFile.toPath())) { "Skill archive escapes its extraction directory." }
-                    if (entry.isDirectory) target.mkdirs() else {
-                        target.parentFile?.mkdirs()
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    input.closeEntry()
-                }
-            }
+            extractZipArchive(zip, extraction)
             val manifests = extraction.walkTopDown().filter { it.isFile && it.name.equals("SKILL.md", ignoreCase = true) }.take(100).toList()
             require(manifests.isNotEmpty()) { "No SKILL.md or skill.md was found in the selected skill source." }
 
