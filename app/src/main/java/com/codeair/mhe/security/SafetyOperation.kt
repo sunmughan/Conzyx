@@ -78,4 +78,4 @@ sealed class SafetyOperation {
 
 enum class FileOpKind { READ, CREATE, WRITE, DELETE }
 
-enum class GitOpKind { COMMIT, PUSH, BRANCH, CLONE, FETCH }
+enum class GitOpKind { STAGE, COMMIT, PUSH, BRANCH, CLONE, FETCH }

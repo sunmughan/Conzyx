@@ -7,6 +7,11 @@ import com.codeair.mhe.git.workflow.WorkflowStepStatus
 import com.codeair.mhe.network.GitHubClient
 import com.codeair.mhe.network.GitHubIssue
 import com.codeair.mhe.network.GitHubPullRequest
+import com.codeair.mhe.security.GitSafetyAdapter
+import com.codeair.mhe.security.PermissionCategory
+import com.codeair.mhe.security.PermissionLevel
+import com.codeair.mhe.security.PermissionPolicyEngine
+import com.codeair.mhe.security.SafetyGateway
 import com.codeair.mhe.workspace.GitDomainController
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -40,18 +45,56 @@ token: String,
 
 class GitHubWorkflowEngineTest {
 
-    private fun engine(gitController: GitDomainController) =
-        GitHubWorkflowEngine(gitController, FakeGitHubClient())
+    private fun testGitSafety(
+        repoDir: File,
+        deny: Set<PermissionCategory> = emptySet()
+    ): GitSafetyAdapter {
+        val policyDir = File(
+            System.getProperty("java.io.tmpdir"),
+            "git_safety_policy_${System.nanoTime()}"
+        ).apply { mkdirs() }
+        val policyEngine = PermissionPolicyEngine(policyDir = policyDir)
+        listOf(
+            PermissionCategory.GIT_COMMIT,
+            PermissionCategory.GIT_PUSH,
+            PermissionCategory.GIT_BRANCH
+        ).forEach { policyEngine.grantPermission(it, PermissionLevel.ALWAYS) }
+        deny.forEach { policyEngine.grantPermission(it, PermissionLevel.DENY) }
+        val gateway = SafetyGateway(policyEngine = policyEngine, workspaceRoot = repoDir)
+        return GitSafetyAdapter(gateway)
+    }
+
+    private fun engine(
+        gitController: GitDomainController,
+        deny: Set<PermissionCategory> = emptySet()
+    ) = GitHubWorkflowEngine(gitController, FakeGitHubClient(), testGitSafety(tempDir, deny))
 
     private val tempDir = File(System.getProperty("java.io.tmpdir"), "workflow_test_repo").apply { mkdirs() }
+
+    private fun scriptedStatusGitController(
+        executedCommands: MutableList<List<String>>,
+        statusOutputs: List<String>
+    ): GitDomainController {
+        var statusCalls = 0
+        return GitDomainController { args, _, _ ->
+            executedCommands += args
+            if (args.firstOrNull() == "status") {
+                val output = statusOutputs.getOrElse(statusCalls) { "" }
+                statusCalls++
+                0 to output
+            } else {
+                0 to "ok"
+            }
+        }
+    }
 
     @Test
     fun autonomousWorkflowOfflineSuccess() = runBlocking {
         val executedCommands = mutableListOf<List<String>>()
-        val gitController = GitDomainController { args, _, _ ->
-            executedCommands += args
-            0 to "ok"
-        }
+        val gitController = scriptedStatusGitController(
+            executedCommands,
+            listOf("", " M src/App.kt\n?? newfile.txt")
+        )
         val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(
@@ -107,13 +150,22 @@ class GitHubWorkflowEngineTest {
 
         // Verify git commands executed
         assertTrue(executedCommands.any { it.contains("checkout") && it.contains("fix/issue-42-crash-on-app-launch") })
-        assertTrue(executedCommands.any { it.contains("add") && it.contains("-A") })
+        assertTrue(executedCommands.any { it == listOf("add", "src/App.kt") })
+        assertTrue(executedCommands.any { it == listOf("add", "newfile.txt") })
+        assertTrue(
+            "workflow must never stage the whole tree",
+            executedCommands.none { it.contains("-A") }
+        )
         assertTrue(executedCommands.any { it.contains("commit") })
+        assertTrue(executedCommands.any { it.contains("push") })
     }
 
     @Test
     fun autonomousWorkflowSelfRepairCycle() = runBlocking {
-        val gitController = GitDomainController { _, _, _ -> 0 to "ok" }
+        val gitController = scriptedStatusGitController(
+            mutableListOf(),
+            listOf("", " M src/Fix.kt")
+        )
         val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(
@@ -192,7 +244,10 @@ class GitHubWorkflowEngineTest {
 
     @Test
     fun workflowResetClearsState() = runBlocking {
-        val gitController = GitDomainController { _, _, _ -> 0 to "ok" }
+        val gitController = scriptedStatusGitController(
+            mutableListOf(),
+            listOf("", " M src/Bug.kt")
+        )
         val workflowEngine = engine(gitController)
 
         val issue = GitHubIssue(number = 1, title = "Bug", state = "open", user = "u", comments = 0, htmlUrl = "")
@@ -211,5 +266,139 @@ class GitHubWorkflowEngineTest {
         assertEquals(WorkflowStage.IDLE, workflowEngine.state.value.currentStage)
         assertEquals(0, workflowEngine.state.value.issueNumber)
         assertTrue(workflowEngine.state.value.steps.isEmpty())
+    }
+
+    @Test
+    fun deniedPushNeverReachesGit() = runBlocking {
+        val executedCommands = mutableListOf<List<String>>()
+        val gitController = scriptedStatusGitController(
+            executedCommands,
+            listOf("", " M src/App.kt")
+        )
+        val workflowEngine = engine(gitController, deny = setOf(PermissionCategory.GIT_PUSH))
+
+        val issue = GitHubIssue(number = 7, title = "Denied push", state = "open", user = "u", comments = 0, htmlUrl = "")
+        val result = workflowEngine.runAutonomousWorkflow(
+            issue = issue,
+            token = "fake-token-for-testing",
+            repoFullName = "example/repo",
+            workingDir = tempDir,
+            agentExecutor = { OperationResult.success() },
+            buildAndTestValidator = { OperationResult.success() }
+        )
+
+        assertFalse(result.isSuccess)
+        assertEquals(WorkflowStage.FAILED, workflowEngine.state.value.currentStage)
+        assertTrue(executedCommands.any { it.contains("commit") })
+        assertTrue(
+            "a gateway-denied push must never reach the git boundary",
+            executedCommands.none { it.contains("push") }
+        )
+    }
+
+    @Test
+    fun deniedStageNeverReachesGit() = runBlocking {
+        val executedCommands = mutableListOf<List<String>>()
+        val gitController = scriptedStatusGitController(
+            executedCommands,
+            listOf("", " M src/App.kt")
+        )
+        val workflowEngine = engine(gitController, deny = setOf(PermissionCategory.GIT_COMMIT))
+
+        val issue = GitHubIssue(number = 8, title = "Denied stage", state = "open", user = "u", comments = 0, htmlUrl = "")
+        val result = workflowEngine.runAutonomousWorkflow(
+            issue = issue,
+            token = "fake-token-for-testing",
+            repoFullName = "example/repo",
+            workingDir = tempDir,
+            agentExecutor = { OperationResult.success() },
+            buildAndTestValidator = { OperationResult.success() }
+        )
+
+        assertFalse(result.isSuccess)
+        assertEquals(WorkflowStage.FAILED, workflowEngine.state.value.currentStage)
+        assertTrue(
+            "a gateway-denied stage must never reach the git boundary",
+            executedCommands.none { it.contains("add") }
+        )
+        assertTrue(executedCommands.none { it.contains("commit") })
+    }
+
+    @Test
+    fun onlyWorkflowPathsAreStaged() = runBlocking {
+        val executedCommands = mutableListOf<List<String>>()
+        val gitController = scriptedStatusGitController(
+            executedCommands,
+            listOf(" M old.txt", " M old.txt\n?? new.txt")
+        )
+        val workflowEngine = engine(gitController)
+
+        val issue = GitHubIssue(number = 9, title = "Selective stage", state = "open", user = "u", comments = 0, htmlUrl = "")
+        val result = workflowEngine.runAutonomousWorkflow(
+            issue = issue,
+            token = "fake-token-for-testing",
+            repoFullName = "example/repo",
+            workingDir = tempDir,
+            agentExecutor = { OperationResult.success() },
+            buildAndTestValidator = { OperationResult.success() }
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue(executedCommands.any { it == listOf("add", "new.txt") })
+        assertTrue(
+            "pre-existing dirty files must never be staged",
+            executedCommands.none { it == listOf("add", "old.txt") }
+        )
+        assertTrue(executedCommands.none { it.contains("-A") })
+    }
+
+    @Test
+    fun unisolatableDirtyTreeRefusesCommit() = runBlocking {
+        val executedCommands = mutableListOf<List<String>>()
+        val gitController = scriptedStatusGitController(
+            executedCommands,
+            listOf(" M old.txt", " M old.txt")
+        )
+        val workflowEngine = engine(gitController)
+
+        val issue = GitHubIssue(number = 10, title = "Dirty tree", state = "open", user = "u", comments = 0, htmlUrl = "")
+        val result = workflowEngine.runAutonomousWorkflow(
+            issue = issue,
+            token = "fake-token-for-testing",
+            repoFullName = "example/repo",
+            workingDir = tempDir,
+            agentExecutor = { OperationResult.success() },
+            buildAndTestValidator = { OperationResult.success() }
+        )
+
+        assertFalse(result.isSuccess)
+        assertEquals(WorkflowStage.FAILED, workflowEngine.state.value.currentStage)
+        assertTrue(result.error.orEmpty().contains("cannot be safely isolated"))
+        assertTrue(executedCommands.none { it.contains("commit") })
+        assertTrue(executedCommands.none { it.contains("push") })
+    }
+
+    @Test
+    fun cleanTreeStillRefusesEmptyCommit() = runBlocking {
+        val executedCommands = mutableListOf<List<String>>()
+        val gitController = scriptedStatusGitController(
+            executedCommands,
+            listOf("", "")
+        )
+        val workflowEngine = engine(gitController)
+
+        val issue = GitHubIssue(number = 11, title = "No changes", state = "open", user = "u", comments = 0, htmlUrl = "")
+        val result = workflowEngine.runAutonomousWorkflow(
+            issue = issue,
+            token = "fake-token-for-testing",
+            repoFullName = "example/repo",
+            workingDir = tempDir,
+            agentExecutor = { OperationResult.success() },
+            buildAndTestValidator = { OperationResult.success() }
+        )
+
+        assertFalse(result.isSuccess)
+        assertTrue(result.error.orEmpty().contains("no changes"))
+        assertTrue(executedCommands.none { it.contains("commit") })
     }
 }

@@ -2,10 +2,11 @@ package com.codeair.mhe.git.workflow
 
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
-import com.codeair.mhe.git.model.GitCommandResult
 import com.codeair.mhe.network.GitHubClient
 import com.codeair.mhe.network.GitHubIssue
 import com.codeair.mhe.network.GitHubPullRequest
+import com.codeair.mhe.security.GitOpKind
+import com.codeair.mhe.security.GitSafetyAdapter
 import com.codeair.mhe.workspace.GitDomainController
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,7 +74,8 @@ data class WorkflowExecutionState(
  */
 class GitHubWorkflowEngine(
     private val gitController: GitDomainController,
-    private val githubClient: GitHubClient = GitHubClient()
+    private val githubClient: GitHubClient = GitHubClient(),
+    private val gitSafety: GitSafetyAdapter,
 ) {
 
     private val _state = MutableStateFlow(WorkflowExecutionState())
@@ -138,10 +140,14 @@ class GitHubWorkflowEngine(
 
             // 2. Create Branch
             updateStep(WorkflowStage.CREATING_BRANCH, WorkflowStepStatus.IN_PROGRESS, "Checking out $branchName...")
-            val branchRes = gitController.checkout(workingDir, branchName, createNew = true)
+            val branchRes = guardedGit(GitOpKind.BRANCH, workingDir) {
+                gitController.checkout(workingDir, branchName, createNew = true)
+            }
             if (!branchRes.success) {
                 // If branch exists, checkout directly
-                val retry = gitController.checkout(workingDir, branchName, createNew = false)
+                val retry = guardedGit(GitOpKind.BRANCH, workingDir) {
+                    gitController.checkout(workingDir, branchName, createNew = false)
+                }
                 if (!retry.success) {
                     return failWorkflow(
                         "Could not create or check out branch $branchName: ${retry.errorMessage ?: retry.output}",
@@ -150,6 +156,7 @@ class GitHubWorkflowEngine(
                 }
             }
             updateStep(WorkflowStage.CREATING_BRANCH, WorkflowStepStatus.SUCCESS, "Active branch: $branchName")
+            val baselineDirty = dirtyPaths(workingDir)
 
             // 3. Implement Solution — awaits the REAL agent result.
             updateStep(WorkflowStage.IMPLEMENTING, WorkflowStepStatus.IN_PROGRESS, "Autonomous coding agent modifying workspace...")
@@ -224,20 +231,47 @@ class GitHubWorkflowEngine(
                 updateStep(WorkflowStage.FIXING, WorkflowStepStatus.SKIPPED, "No repairs needed")
             }
 
-            // 7. Commit — only when the agent actually changed something.
+            // 7. Commit
             updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.IN_PROGRESS, "Verifying changes...")
-            val diffCheck = workingTreeDiff(workingDir)
-            if (!diffCheck.hasChanges) {
-                updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, "Empty diff")
-                return failWorkflow(
-                    "The agent produced no changes (working tree is clean). Refusing to commit an empty diff.",
-                    startedAt = startedAt,
-                )
+            val currentDirty = dirtyPaths(workingDir)
+            val workflowPaths = (currentDirty - baselineDirty).sorted()
+            if (workflowPaths.isEmpty()) {
+                updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, "No attributable changes")
+                return if (currentDirty.isEmpty()) {
+                    failWorkflow(
+                        "The agent produced no changes (working tree is clean). Refusing to commit an empty diff.",
+                        startedAt = startedAt,
+                    )
+                } else {
+                    failWorkflow(
+                        "The working tree holds changes that pre-date this workflow and the agent's own " +
+                            "changes cannot be safely isolated from them. Refusing to commit: stash or " +
+                            "commit your unrelated changes and re-run the workflow.",
+                        startedAt = startedAt,
+                    )
+                }
             }
-            updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.IN_PROGRESS, "Staging and committing...")
-            gitController.stageAll(workingDir)
+            updateStep(
+                WorkflowStage.COMMITTING,
+                WorkflowStepStatus.IN_PROGRESS,
+                "Staging ${workflowPaths.size} workflow files..."
+            )
+            for (path in workflowPaths) {
+                val stageRes = guardedGit(GitOpKind.STAGE, workingDir) {
+                    gitController.stageFile(workingDir, path)
+                }
+                if (!stageRes.success) {
+                    updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, stageRes.errorMessage ?: "Stage failed")
+                    return failWorkflow(
+                        "Could not stage workflow file '$path': ${stageRes.errorMessage ?: stageRes.output}",
+                        startedAt = startedAt,
+                    )
+                }
+            }
             val commitMsg = "fix(#${issue.number}): ${issue.title}\n\nCloses #${issue.number}\nAutomated by Conzyx Autonomous Workflow."
-            val commitRes = gitController.commitDetailed(workingDir, commitMsg)
+            val commitRes = guardedGit(GitOpKind.COMMIT, workingDir) {
+                gitController.commitDetailed(workingDir, commitMsg)
+            }
             if (!commitRes.success && !commitRes.output.contains("nothing to commit", ignoreCase = true)) {
                 updateStep(WorkflowStage.COMMITTING, WorkflowStepStatus.FAILED, commitRes.errorMessage ?: "Commit failed")
                 return failWorkflow(commitRes.errorMessage ?: "Commit failed", startedAt = startedAt)
@@ -246,7 +280,9 @@ class GitHubWorkflowEngine(
 
             // 8. Push — token was validated up front, so this path always has credentials.
             updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.IN_PROGRESS, "Pushing $branchName to origin...")
-            val pushRes = gitController.push(workingDir, "origin", branchName)
+            val pushRes = guardedGit(GitOpKind.PUSH, workingDir, "origin") {
+                gitController.push(workingDir, "origin", branchName)
+            }
             if (!pushRes.success) {
                 updateStep(WorkflowStage.PUSHING, WorkflowStepStatus.FAILED, pushRes.errorMessage ?: "Push failed")
                 return failWorkflow(pushRes.errorMessage ?: "Push failed", startedAt = startedAt)
@@ -301,34 +337,27 @@ class GitHubWorkflowEngine(
         }
     }
 
-    /**
-     * Checks whether the working tree (unstaged + staged) contains any real changes.
-     */
-    private fun workingTreeDiff(workingDir: File): DiffCheck {
-        val status: GitCommandResult = try {
-            gitController.status(workingDir)
-        } catch (e: Exception) {
-            return DiffCheck(hasChanges = false, detail = "git status failed: ${e.message}")
-        }
-        if (!status.success) {
-            return DiffCheck(hasChanges = false, detail = "git status failed: ${status.errorMessage ?: status.output}")
-        }
-        val shortStatus = status.output.trim()
-        if (shortStatus.isNotEmpty()) {
-            return DiffCheck(hasChanges = true, detail = shortStatus.lineSequence().take(10).joinToString("\n"))
-        }
-        val staged: GitCommandResult = try {
-            gitController.rawDiff(workingDir, staged = true)
-        } catch (e: Exception) {
-            return DiffCheck(hasChanges = false, detail = "git diff --staged failed: ${e.message}")
-        }
-        return DiffCheck(
-            hasChanges = staged.success && staged.output.trim().isNotEmpty(),
-            detail = staged.output.trim().lineSequence().take(10).joinToString("\n"),
-        )
-    }
+    private fun <T> guardedGit(
+        kind: GitOpKind,
+        workingDir: File,
+        remoteUrl: String? = null,
+        effect: () -> T
+    ): T = gitSafety.git(kind, workingDir.absolutePath, remoteUrl) { effect() }
 
-    private data class DiffCheck(val hasChanges: Boolean, val detail: String)
+    private fun dirtyPaths(workingDir: File): Set<String> {
+        val status = runCatching { gitController.status(workingDir) }.getOrNull() ?: return emptySet()
+        if (!status.success) return emptySet()
+        return status.output.lineSequence()
+            .map { it.trim() }
+            .filter { it.length > 3 }
+            .map { line ->
+                val entry = line.substring(3)
+                val renamed = entry.substringAfter(" -> ", "")
+                if (renamed.isNotEmpty()) renamed else entry
+            }
+            .filter { it.isNotEmpty() }
+            .toSet()
+    }
 
     private fun updateStep(stage: WorkflowStage, status: WorkflowStepStatus, detail: String) {
         _state.update { curr ->

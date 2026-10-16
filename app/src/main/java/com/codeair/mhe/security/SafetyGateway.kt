@@ -209,6 +209,7 @@ class SafetyGateway(
         }
         is SafetyOperation.ShellExec -> PermissionCategory.SHELL_EXEC
         is SafetyOperation.GitOp -> when (operation.kind) {
+            GitOpKind.STAGE -> PermissionCategory.GIT_COMMIT
             GitOpKind.COMMIT -> PermissionCategory.GIT_COMMIT
             GitOpKind.PUSH -> PermissionCategory.GIT_PUSH
             GitOpKind.BRANCH -> PermissionCategory.GIT_BRANCH

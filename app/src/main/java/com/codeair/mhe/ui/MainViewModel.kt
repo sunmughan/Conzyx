@@ -501,7 +501,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         credentialStore = mcpCredentialStore,
     )
     val gitHubClient = com.codeair.mhe.network.GitHubClient()
-    val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(gitDomainController, gitHubClient)
+    val gitWorkflowEngine = com.codeair.mhe.git.workflow.GitHubWorkflowEngine(
+        gitDomainController,
+        gitHubClient,
+        com.codeair.mhe.security.GitSafetyAdapter(safetyGateway)
+    )
     val marketplaceInstallManager = com.codeair.mhe.marketplace.MarketplaceInstallManager(application)
     val marketplacePublishedItemsStore = com.codeair.mhe.marketplace.MarketplacePublishedItemsStore(application)
     val teamConcurrencyController = com.codeair.mhe.agent.team.runtime.AdaptiveConcurrencyController(application)

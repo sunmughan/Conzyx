@@ -71,7 +71,7 @@ data class AuthorizationPrompt(
                 is SafetyOperation.GitOp -> when (operation.kind) {
                     GitOpKind.PUSH -> PromptRisk.HIGH to
                         "The app will push commits from '${operation.repoPath}' to '${operation.remoteUrl ?: "the configured remote"}'. Remote history will change."
-                    GitOpKind.COMMIT, GitOpKind.BRANCH -> PromptRisk.LOW to
+                    GitOpKind.COMMIT, GitOpKind.BRANCH, GitOpKind.STAGE -> PromptRisk.LOW to
                         "The app will modify only the local repository at '${operation.repoPath}'."
                     GitOpKind.CLONE, GitOpKind.FETCH -> PromptRisk.MEDIUM to
                         "The app will download data from '${operation.remoteUrl ?: "a remote"}' into '${operation.repoPath}'."
