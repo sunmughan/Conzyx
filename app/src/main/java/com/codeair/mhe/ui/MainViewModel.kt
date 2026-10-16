@@ -5165,12 +5165,6 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
     fun cancelTeamSession() =
         teamCoordinator.cancelTeamSession()
 
-    fun setCloudRoutingPolicy(policy: com.codeair.mhe.cloud.model.WorkloadRoutingPolicy) =
-        cloudCoordinator.setCloudRoutingPolicy(policy)
-
-    fun submitHybridWorkload(title: String, type: com.codeair.mhe.cloud.model.WorkloadType): com.codeair.mhe.cloud.model.HybridExecutionJob =
-        cloudCoordinator.submitHybridWorkload(title, type)
-
     override fun onCleared() {
         super.onCleared()
         AppCrashLogger.log("MainViewModel.onCleared: cleaning up running processes and sessions")
