@@ -93,7 +93,7 @@ class GitHubWorkflowEngineTest {
         val executedCommands = mutableListOf<List<String>>()
         val gitController = scriptedStatusGitController(
             executedCommands,
-            listOf(" M base.txt", " M base.txt\n M src/App.kt\n?? newfile.txt")
+            listOf("", " M src/App.kt\n?? newfile.txt")
         )
         val workflowEngine = engine(gitController)
 

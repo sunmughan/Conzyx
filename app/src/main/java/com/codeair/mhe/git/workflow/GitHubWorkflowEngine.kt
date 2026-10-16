@@ -348,12 +348,11 @@ class GitHubWorkflowEngine(
         val status = runCatching { gitController.status(workingDir) }.getOrNull() ?: return emptySet()
         if (!status.success) return emptySet()
         return status.output.lineSequence()
-            .map { it.trim() }
             .filter { it.length > 3 }
             .map { line ->
-                val entry = line.substring(3)
+                val entry = line.substring(3).trim()
                 val renamed = entry.substringAfter(" -> ", "")
-                if (renamed.isNotEmpty()) renamed else entry
+                if (renamed.isNotEmpty()) renamed.trim() else entry
             }
             .filter { it.isNotEmpty() }
             .toSet()
