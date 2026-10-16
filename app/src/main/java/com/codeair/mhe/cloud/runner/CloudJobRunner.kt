@@ -6,9 +6,14 @@ import com.codeair.mhe.cloud.model.HybridExecutionJob
 import com.codeair.mhe.cloud.model.HybridJobState
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
+import com.codeair.mhe.security.SafetyGateway
+import com.codeair.mhe.security.SafetyOperation
+import com.codeair.mhe.security.SafetyVerdict
+import com.codeair.mhe.security.redactSecrets
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Cloud & Local Hybrid Job Execution Runner (Phase 12).
@@ -47,6 +52,7 @@ class CloudJobRunner(
      * path honestly reports NOT_CONFIGURED.
      */
     private val cloudOrchestrator: com.codeair.mhe.cloud.exec.CloudExecutionOrchestrator? = null,
+    private val safetyGateway: SafetyGateway? = null,
 ) {
 
     private val runningJobs = ConcurrentHashMap<String, Boolean>()
@@ -120,10 +126,26 @@ class CloudJobRunner(
                 "Local execution requested but the job carries no command to run. Nothing was executed."
             )
         }
-        appendLog("[LocalRunner] Running: $command")
+        val gateway = safetyGateway
+        if (gateway != null) {
+            val decision = gateway.authorize(SafetyOperation.ShellExec(command))
+            if (decision.verdict != SafetyVerdict.ALLOW) {
+                val endTime = System.currentTimeMillis()
+                runningJobs.remove(jobId)
+                appendLog("[LocalRunner] Blocked by the safety gateway (${decision.verdict}).")
+                return job.copy(
+                    state = HybridJobState.FAILED,
+                    outputLogs = logs,
+                    finishedAt = endTime,
+                    durationMs = endTime - startTime,
+                    errorMessage = "Local command blocked by the safety gateway: ${redactSecrets(decision.reason)}",
+                )
+            }
+        }
+        appendLog("[LocalRunner] Running: ${redactSecrets(command)}")
         val result = runCatching { localCommandRunner(command) }
             .getOrElse { e -> OperationResult.failure("Local command runner crashed: ${e.message}") }
-        result.logs.forEach(::appendLog)
+        result.logs.forEach { appendLog(redactSecrets(it)) }
 
         val endTime = System.currentTimeMillis()
         runningJobs.remove(jobId)
@@ -211,12 +233,22 @@ private fun defaultWorkerReachability(worker: CloudWorkerSpec): Boolean {
  * Runs a shell command locally and reports its REAL exit code and output.
  * Never fabricates success.
  */
+private const val LOCAL_COMMAND_TIMEOUT_MINUTES = 10L
+
 private fun defaultLocalCommandRunner(command: String): OperationResult {
     val startedAt = System.currentTimeMillis()
     return try {
         val process = ProcessBuilder("sh", "-c", command)
             .redirectErrorStream(true)
             .start()
+        val finished = process.waitFor(LOCAL_COMMAND_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+        if (!finished) {
+            process.destroyForcibly()
+            return OperationResult.failure(
+                error = "Local command timed out after $LOCAL_COMMAND_TIMEOUT_MINUTES minutes and was killed.",
+                startedAt = startedAt,
+            )
+        }
         val output = process.inputStream.bufferedReader().readText()
         val exitCode = process.waitFor()
         val logs = output.lines().takeLast(200)
