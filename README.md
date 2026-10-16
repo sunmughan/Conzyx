@@ -143,10 +143,11 @@ Want the full in-depth guide? Start here:
 - Project scaffolding for Jetpack Compose, Flutter, React Native, and HTML5 web apps
 - On-device Gradle APK builds, APK signing verification, release keystores, and Play Store listing preparation
 
-### ☁️ Cloud Hybrid Execution
+### ☁️ Cloud Build via GitHub Actions
 
-- Authenticated cloud worker protocol: submit jobs, stream logs, poll status, cancel
-- Delta payload uploads (only changed files, SHA-256 verified), artifact download verification
+- Build locally on-device or dispatch to GitHub Actions runners
+- GitHub Actions supports any OS: Android, Linux, macOS, Windows, iOS
+- Connect via `gh` CLI; dispatch workflows and poll run status from the app
 - Cost controls: per-job estimates and rolling 30-day budget caps enforced before dispatch
 
 ### 🛒 AI Developer Marketplace
