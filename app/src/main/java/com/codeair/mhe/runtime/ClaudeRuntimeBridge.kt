@@ -1029,7 +1029,7 @@ class ClaudeRuntimeBridge(
                     .setAction(RuntimeExecutionService.ACTION_PROGRESS)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, activeProjectSlug)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Claude Code")
-                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, text),
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, text)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }
@@ -1066,7 +1066,7 @@ class ClaudeRuntimeBridge(
                 .setAction(RuntimeExecutionService.ACTION_START)
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                 .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Claude Code")
-                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Claude Code is working in $projectName"),
+                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Claude Code is working in $projectName")
                 .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
         )
     }
@@ -1084,7 +1084,7 @@ class ClaudeRuntimeBridge(
                     )
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Claude Code")
-                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { error ->
@@ -1099,7 +1099,7 @@ class ClaudeRuntimeBridge(
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
-                    .setAction(RuntimeExecutionService.ACTION_CANCELLED),
+                    .setAction(RuntimeExecutionService.ACTION_CANCELLED)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure {

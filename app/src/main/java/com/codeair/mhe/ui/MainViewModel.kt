@@ -462,15 +462,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, customRuntime, codexRuntime)
     private fun createRuntimeBridge(kind: AgentKind, interactiveApprovals: Boolean = true): com.codeair.mhe.runtime.RuntimeBridge =
         when (kind) {
-            AgentKind.CLAUDE_CODE -> ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
+            AgentKind.CLAUDE_CODE -> ClaudeRuntimeBridge(getApplication<Application>(), { profile -> vault.get(profile.kind.name) }, safetyGateway)
             AgentKind.DEEPSEEK_HARNESS -> DshRuntimeBridge(
-                application,
+                getApplication<Application>(),
                 { profile -> vault.get(profile.kind.name) },
                 safetyGateway,
                 interactiveApprovals = interactiveApprovals,
             )
             AgentKind.ANTIGRAVITY -> AntigravityRuntimeBridge(
-                application,
+                getApplication<Application>(),
                 model = { _state.value.antigravityModel },
                 effort = { _state.value.antigravityEffort },
                 conversationId = { projectId ->
@@ -484,7 +484,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 geminiApiConfig = { currentGeminiApiConfig() },
             )
             AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
-            AgentKind.CODEX -> CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+            AgentKind.CODEX -> CodexRuntimeBridge(getApplication<Application>()) { profile -> vault.get(profile.kind.name) }
         }
     private val projectBridgePool = ProjectBridgePool { kind -> createRuntimeBridge(kind) }
     private fun sessionBridge(projectId: String, kind: AgentKind = _state.value.agentKind): com.codeair.mhe.runtime.RuntimeBridge {
@@ -4140,7 +4140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // The request-level Think summary is seeded once in sendPrompt.
                     // After that segment has been committed to the timeline, later
                     // agent turns must not repeat the same request summary.
-                    if (existingIndex < 0) return@update current
+                    if (existingIndex < 0) return@updateSessionScoped current
                     val reasoning = ActivityItem(
                         title = "Think",
                         detail = current.liveProcess.getOrNull(existingIndex)?.detail
@@ -4180,7 +4180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             isComplete = event.isFinal,
                         )
                     } else {
-                        return@update current
+                        return@updateSessionScoped current
                     }
                     current.copy(
                         liveProcess = process,

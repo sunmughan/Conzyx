@@ -378,7 +378,7 @@ class CodexRuntimeBridge(
                 .setAction(RuntimeExecutionService.ACTION_START)
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                 .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Codex CLI")
-                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Codex CLI is working in $projectName"),
+                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Codex CLI is working in $projectName")
                 .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
         )
     }
@@ -390,7 +390,7 @@ class CodexRuntimeBridge(
                     .setAction(RuntimeExecutionService.ACTION_PROGRESS)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Codex CLI")
-                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }
@@ -405,7 +405,7 @@ class CodexRuntimeBridge(
                     .setAction(if (completed) RuntimeExecutionService.ACTION_COMPLETE else RuntimeExecutionService.ACTION_FAILED)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Codex CLI")
-                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
@@ -417,7 +417,7 @@ class CodexRuntimeBridge(
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
-                    .setAction(RuntimeExecutionService.ACTION_CANCELLED),
+                    .setAction(RuntimeExecutionService.ACTION_CANCELLED)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }

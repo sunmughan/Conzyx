@@ -715,7 +715,7 @@ class AntigravityRuntimeBridge(
                     .setAction(if (completed) RuntimeExecutionService.ACTION_COMPLETE else RuntimeExecutionService.ACTION_FAILED)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
-                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
@@ -727,7 +727,7 @@ class AntigravityRuntimeBridge(
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
-                    .setAction(RuntimeExecutionService.ACTION_CANCELLED),
+                    .setAction(RuntimeExecutionService.ACTION_CANCELLED)
                     .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
