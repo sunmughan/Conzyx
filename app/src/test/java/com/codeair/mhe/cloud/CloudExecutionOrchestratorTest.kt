@@ -182,7 +182,16 @@ class CloudExecutionOrchestratorTest {
     @Test
     fun artifactChecksumMismatchFailsJob() {
         val statusCalls = AtomicInteger(0)
-        val transport = FakeCloudTransport { req ->
+        val transport = FakeCloudTransport(
+            downloadHandler = { req, dest ->
+                if (req.path == "/api/v1/jobs/remote-2/artifacts/art-1" && req.method == "GET") {
+                    dest.writeBytes(payload)
+                    StreamedDownload(200, null, payload.size.toLong())
+                } else {
+                    StreamedDownload(404, "not found", 0)
+                }
+            },
+            handler = { req ->
             val p = req.path
             when {
                 p.startsWith("/api/v1/payloads/") && req.method == "GET" -> CloudTransportResponse(404, "{}")
@@ -202,7 +211,8 @@ class CloudExecutionOrchestratorTest {
                     CloudTransportResponse(200, "ok", payload)
                 else -> CloudTransportResponse(404, "{}")
             }
-        }
+            }
+        )
         val orch = orchestratorWith(transport)
         val result = orch.executeCloudJob(cloudJob(), worker, workspaceDir, artifactDir)
         // Remote succeeded but the artifact could not be verified: never COMPLETED.

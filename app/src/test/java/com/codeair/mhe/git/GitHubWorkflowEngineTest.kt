@@ -121,7 +121,11 @@ class GitHubWorkflowEngineTest {
             buildAndTestValidator = { OperationResult.success(logs = listOf("All tests pass")) }
         )
 
-        assertTrue(result.isSuccess)
+        assertTrue(
+            "expected workflow success but got error: ${result.error} " +
+                "(state error: ${workflowEngine.state.value.errorMessage})",
+            result.isSuccess
+        )
         val state = workflowEngine.state.value
 
         assertEquals(WorkflowStage.COMPLETED, state.currentStage)
