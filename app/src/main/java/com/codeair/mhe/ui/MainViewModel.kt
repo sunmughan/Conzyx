@@ -3446,6 +3446,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun saveChatAttachmentToStorage(attachment: ChatAttachment, destination: Uri) {
+        val project = _state.value.activeProject
+        if (project == null) {
+            _state.update { it.copy(toastMessage = "No active project") }
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val root = projectWorkspaceRoot(project).canonicalFile
+                val file = File(root, attachment.relativePath).canonicalFile
+                require(file.isFile && file.toPath().startsWith(root.toPath())) { "Attachment is unavailable" }
+                val resolver = getApplication<Application>().contentResolver
+                resolver.openOutputStream(destination)?.buffered()?.use { output ->
+                    file.inputStream().buffered().use { input -> input.copyTo(output) }
+                } ?: error("Could not write to the chosen location")
+            }.onSuccess {
+                _state.update { it.copy(toastMessage = "\"${attachment.displayName}\" saved") }
+            }.onFailure { error ->
+                _state.update { it.copy(toastMessage = error.message ?: "Could not save attachment") }
+            }
+        }
+    }
+
     private fun copyChatAttachment(project: Project, chatId: String, uri: Uri): ChatAttachment {
         val resolver = getApplication<Application>().contentResolver
         var displayName = "attachment"
