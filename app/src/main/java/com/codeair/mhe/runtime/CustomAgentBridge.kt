@@ -49,8 +49,9 @@ class CustomAgentBridge(
         prompt: String,
         conversationHistory: List<ChatMessage>,
         provider: ProviderProfile,
+        clientSessionId: String? = null,
     ): String = withContext(Dispatchers.IO) {
-        val sessionId = UUID.randomUUID().toString()
+        val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         val secret = secretFor(provider).orEmpty()
         if (secret.isBlank()) {

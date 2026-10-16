@@ -31,7 +31,7 @@ class AgentSessionManagerRecoveryTest {
         )
 
         // Read through interrupted session check
-        val detected = manager.detectInterruptedSession()
+        val detected = manager.detectInterruptedSessions().firstOrNull()
         assertNotNull(detected)
         assertEquals("session-101", detected?.sessionId)
         assertEquals("proj-abc", detected?.projectId)
@@ -61,9 +61,9 @@ class AgentSessionManagerRecoveryTest {
             ),
         )
 
-        manager.updateSessionProgress(roadmap, summary = "Step 1 completed")
+        manager.updateSessionProgress("session-102", roadmap, summary = "Step 1 completed")
 
-        val interrupted = manager.detectInterruptedSession()
+        val interrupted = manager.detectInterruptedSessions().firstOrNull()
         assertNotNull(interrupted)
         assertEquals("Step 1 completed", interrupted?.summary)
         assertEquals(2, interrupted?.activeRoadmap?.steps?.size)
@@ -82,10 +82,10 @@ class AgentSessionManagerRecoveryTest {
             prompt = "Fix crash on startup",
         )
 
-        manager.recordSessionCompleted(summary = "Crash fixed successfully")
+        manager.recordSessionCompleted("session-103", summary = "Crash fixed successfully")
 
         // Active session should be deleted
-        assertNull(manager.checkInterruptedSession())
+        assertTrue(manager.checkInterruptedSessions().isEmpty())
 
         // Historical archive should contain the completed session
         val history = manager.listSessionHistory()
@@ -107,9 +107,9 @@ class AgentSessionManagerRecoveryTest {
             prompt = "Refactor payment module",
         )
 
-        manager.recordSessionCancelled()
+        manager.recordSessionCancelled("session-104")
 
-        assertNull(manager.checkInterruptedSession())
+        assertTrue(manager.checkInterruptedSessions().isEmpty())
         val history = manager.listSessionHistory()
         assertEquals(1, history.size)
         assertEquals(AgentSessionStatus.INTERRUPTED, history[0].status)
@@ -128,9 +128,9 @@ class AgentSessionManagerRecoveryTest {
             prompt = "Long running compile task",
         )
 
-        manager.recordSessionTimeout(120_000L) // 2 minutes
+        manager.recordSessionTimeout("session-105", 120_000L) // 2 minutes
 
-        assertNull(manager.checkInterruptedSession())
+        assertTrue(manager.checkInterruptedSessions().isEmpty())
         val history = manager.listSessionHistory()
         assertEquals(1, history.size)
         assertEquals(AgentSessionStatus.FAILED, history[0].status)

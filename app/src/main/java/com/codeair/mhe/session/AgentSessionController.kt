@@ -1,7 +1,6 @@
 package com.codeair.mhe.session
 
 import android.content.Context
-import com.codeair.mhe.AppCrashLogger
 import com.codeair.mhe.model.ActiveRoadmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,17 +8,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 data class AgentSessionDomainState(
-    val activeSession: PersistedAgentSession? = null,
-    val isRunning: Boolean = false,
-    val interruptedSession: PersistedAgentSession? = null,
-    val activeRoadmap: ActiveRoadmap? = null,
+    val activeSessions: Map<String, PersistedAgentSession> = emptyMap(),
+    val interruptedSessions: List<PersistedAgentSession> = emptyList(),
+    val sessionRoadmaps: Map<String, ActiveRoadmap?> = emptyMap(),
     val lastError: String? = null,
 )
 
-/**
- * Domain controller for managing Agent sessions, persistence across app lifecycles,
- * cancellation, timeouts, and crash recovery.
- */
 class AgentSessionController(
     private val context: Context,
     private val sessionManager: AgentSessionManager = AgentSessionManager(context),
@@ -28,10 +22,9 @@ class AgentSessionController(
     val state: StateFlow<AgentSessionDomainState> = _state.asStateFlow()
 
     init {
-        // Detect interrupted session upon controller initialization
-        val interrupted = sessionManager.detectInterruptedSession()
-        if (interrupted != null) {
-            _state.update { it.copy(interruptedSession = interrupted) }
+        val interrupted = sessionManager.detectInterruptedSessions()
+        if (interrupted.isNotEmpty()) {
+            _state.update { it.copy(interruptedSessions = interrupted) }
         }
     }
 
@@ -64,77 +57,81 @@ class AgentSessionController(
         )
         _state.update {
             it.copy(
-                activeSession = session,
-                isRunning = true,
-                interruptedSession = null,
-                activeRoadmap = roadmap,
+                activeSessions = it.activeSessions + (sessionId to session),
+                interruptedSessions = it.interruptedSessions.filterNot { s -> s.sessionId == sessionId },
+                sessionRoadmaps = it.sessionRoadmaps + (sessionId to roadmap),
                 lastError = null,
             )
         }
     }
 
-    fun updateProgress(roadmap: ActiveRoadmap?, summary: String? = null) {
-        sessionManager.updateSessionProgress(roadmap, summary)
+    fun updateProgress(sessionId: String, roadmap: ActiveRoadmap?, summary: String? = null) {
+        sessionManager.updateSessionProgress(sessionId, roadmap, summary)
         _state.update {
+            val current = it.activeSessions[sessionId]
             it.copy(
-                activeRoadmap = roadmap ?: it.activeRoadmap,
-                activeSession = it.activeSession?.copy(
+                sessionRoadmaps = it.sessionRoadmaps + (sessionId to (roadmap ?: it.sessionRoadmaps[sessionId])),
+                activeSessions = if (current == null) it.activeSessions else it.activeSessions + (sessionId to current.copy(
                     updatedAt = System.currentTimeMillis(),
-                    activeRoadmap = roadmap ?: it.activeRoadmap,
-                    summary = summary ?: it.activeSession?.summary,
-                ),
+                    activeRoadmap = roadmap ?: current.activeRoadmap,
+                    summary = summary ?: current.summary,
+                )),
             )
         }
     }
 
-    fun completeSession(summary: String? = null) {
-        sessionManager.recordSessionCompleted(summary)
+    fun completeSession(sessionId: String, summary: String? = null) {
+        sessionManager.recordSessionCompleted(sessionId, summary)
         _state.update {
             it.copy(
-                activeSession = null,
-                isRunning = false,
+                activeSessions = it.activeSessions - sessionId,
+                sessionRoadmaps = it.sessionRoadmaps - sessionId,
                 lastError = null,
             )
         }
     }
 
-    fun failSession(reason: String) {
-        sessionManager.recordSessionFailed(reason)
+    fun failSession(sessionId: String, reason: String) {
+        sessionManager.recordSessionFailed(sessionId, reason)
         _state.update {
             it.copy(
-                activeSession = null,
-                isRunning = false,
+                activeSessions = it.activeSessions - sessionId,
+                sessionRoadmaps = it.sessionRoadmaps - sessionId,
                 lastError = reason,
             )
         }
     }
 
-    fun cancelSession() {
-        sessionManager.recordSessionCancelled()
+    fun cancelSession(sessionId: String) {
+        sessionManager.recordSessionCancelled(sessionId)
         _state.update {
             it.copy(
-                activeSession = null,
-                isRunning = false,
+                activeSessions = it.activeSessions - sessionId,
+                sessionRoadmaps = it.sessionRoadmaps - sessionId,
                 lastError = "Cancelled by user",
             )
         }
     }
 
-    fun timeoutSession(timeoutMs: Long) {
-        sessionManager.recordSessionTimeout(timeoutMs)
+    fun timeoutSession(sessionId: String, timeoutMs: Long) {
+        sessionManager.recordSessionTimeout(sessionId, timeoutMs)
         _state.update {
             it.copy(
-                activeSession = null,
-                isRunning = false,
+                activeSessions = it.activeSessions - sessionId,
+                sessionRoadmaps = it.sessionRoadmaps - sessionId,
                 lastError = "Session timed out",
             )
         }
     }
 
-    fun dismissInterruptedSession() {
-        sessionManager.clearActiveSession()
-        _state.update { it.copy(interruptedSession = null) }
+    fun dismissInterruptedSession(sessionId: String) {
+        sessionManager.clearActiveSession(sessionId)
+        _state.update { it.copy(interruptedSessions = it.interruptedSessions.filterNot { s -> s.sessionId == sessionId }) }
     }
+
+    fun sessionProjectId(sessionId: String): String? =
+        _state.value.activeSessions[sessionId]?.projectId
+            ?: _state.value.interruptedSessions.firstOrNull { it.sessionId == sessionId }?.projectId
 
     fun listHistory(): List<PersistedAgentSession> = sessionManager.listSessionHistory()
 

@@ -129,8 +129,9 @@ class CodexRuntimeBridge(
         prompt: String,
         conversationHistory: List<ChatMessage>,
         provider: ProviderProfile,
+        clientSessionId: String? = null,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
-        val sessionId = UUID.randomUUID().toString()
+        val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
         activeSessionId = sessionId
         userStopRequested = false
@@ -149,7 +150,7 @@ class CodexRuntimeBridge(
         }
 
         runCatching {
-            RuntimeTaskController.stopAction = {
+            RuntimeTaskController.registerStop(sessionId) {
                 userStopRequested = true
                 activeProcess?.destroy()
             }
@@ -292,7 +293,7 @@ class CodexRuntimeBridge(
         }
         activeProcess = null
         activeSessionId = null
-        RuntimeTaskController.stopAction = null
+        RuntimeTaskController.unregisterStop(sessionId)
         sessionId
     }
 
@@ -378,6 +379,7 @@ class CodexRuntimeBridge(
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                 .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Codex CLI")
                 .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Codex CLI is working in $projectName"),
+                .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
         )
     }
 
@@ -389,6 +391,7 @@ class CodexRuntimeBridge(
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Codex CLI")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }
     }
@@ -403,6 +406,7 @@ class CodexRuntimeBridge(
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Codex CLI")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
     }
@@ -414,6 +418,7 @@ class CodexRuntimeBridge(
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
                     .setAction(RuntimeExecutionService.ACTION_CANCELLED),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
     }
