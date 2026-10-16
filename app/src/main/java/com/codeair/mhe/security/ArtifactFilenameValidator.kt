@@ -1,6 +1,5 @@
-package com.codeair.mhe.cloud.sync
+package com.codeair.mhe.security
 
-import com.codeair.mhe.security.PathSecurityAuditor
 import java.io.File
 import java.util.UUID
 

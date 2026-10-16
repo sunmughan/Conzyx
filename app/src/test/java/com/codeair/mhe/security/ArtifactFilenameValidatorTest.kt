@@ -1,7 +1,6 @@
-package com.codeair.mhe.cloud
+package com.codeair.mhe.security
 
-import com.codeair.mhe.cloud.sync.ArtifactFilenameValidator
-import com.codeair.mhe.cloud.sync.ArtifactFilenameValidator.FilenameValidation
+import com.codeair.mhe.security.ArtifactFilenameValidator.FilenameValidation
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

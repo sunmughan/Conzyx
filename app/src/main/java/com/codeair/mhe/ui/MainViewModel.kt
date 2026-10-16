@@ -398,7 +398,6 @@ data class AppUiState(
     val gitPullRequests: List<com.codeair.mhe.network.GitHubPullRequest> = emptyList(),
     val gitConnectedRepo: String? = null,
     val teamSessionState: com.codeair.mhe.agent.team.model.TeamSessionState = com.codeair.mhe.agent.team.model.TeamSessionState(),
-    val cloudHybridState: com.codeair.mhe.cloud.model.CloudHybridState = com.codeair.mhe.cloud.model.CloudHybridState(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -560,7 +559,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ),
         concurrencyController = teamConcurrencyController,
     )
-    val cloudHybridCoordinator = com.codeair.mhe.cloud.CloudHybridCoordinator(application = application)
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -776,11 +774,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(teamSessionState = teamState) }
             }
         }
-        viewModelScope.launch {
-            cloudHybridCoordinator.state.collect { chState ->
-                _state.update { it.copy(cloudHybridState = chState) }
-            }
-        }
         runCatching { RuntimeSetupController.restore(application) }
         val storageHealth = runtimeHealthController.checkStorageHealth()
         if (storageHealth is com.codeair.mhe.runtime.StorageHealthResult.Critical) {
@@ -962,8 +955,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     private val teamCoordinator =
         com.codeair.mhe.ui.coordinators.TeamCoordinator(teamOrchestrator)
-    private val cloudCoordinator =
-        com.codeair.mhe.ui.coordinators.CloudCoordinator(cloudHybridCoordinator)
     private val visualCoordinator =
         com.codeair.mhe.ui.coordinators.VisualCoordinator(
             host = coordinatorHost,

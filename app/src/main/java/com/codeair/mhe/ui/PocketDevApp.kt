@@ -442,11 +442,7 @@ fun PocketDevApp(
     }
 
     if (navigator.showCloudHybridScreen) {
-        BackHandler(onBack = { navigator.closeOverlay() })
-        com.codeair.mhe.cloud.ui.CloudHybridScreen(
-            coordinator = viewModel.cloudHybridCoordinator,
-            onClose = { navigator.closeOverlay() }
-        )
+        navigator.closeOverlay()
         return
     }
 
