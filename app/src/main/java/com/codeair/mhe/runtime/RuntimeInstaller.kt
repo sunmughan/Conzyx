@@ -2714,6 +2714,7 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
                     when {
                         entry.isDirectory -> target.mkdirs()
                         entry.isSymbolicLink -> {
+                            validateArchiveSymlinkTarget(destination, target, entry.linkName)
                             target.parentFile?.mkdirs()
                             if (target.exists() || java.nio.file.Files.isSymbolicLink(target.toPath())) target.delete()
                             Os.symlink(entry.linkName, target.absolutePath)
@@ -3569,4 +3570,12 @@ internal fun relocateCredentialFiles(legacyDir: File, secureDir: File) {
         }
     }
     runCatching { legacyDir.deleteRecursively() }
+}
+
+internal fun validateArchiveSymlinkTarget(root: File, linkFile: File, linkName: String) {
+    require(linkName.isNotBlank()) { "Archive symlink has an empty target" }
+    require(!linkName.startsWith("/")) { "Archive symlink target is absolute" }
+    val rootPath = root.canonicalFile.toPath()
+    val resolved = File(linkFile.parentFile ?: root, linkName).canonicalFile.toPath()
+    require(resolved.startsWith(rootPath)) { "Archive symlink target escapes the extraction root" }
 }
