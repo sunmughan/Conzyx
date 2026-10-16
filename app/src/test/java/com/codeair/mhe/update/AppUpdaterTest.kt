@@ -77,13 +77,41 @@ class AppUpdaterTest {
     fun testIsGitHubDomain() {
         assertTrue(AppUpdater.isGitHubDomain("https://api.github.com/repos/sunmughan/Conzyx/releases/latest"))
         assertTrue(AppUpdater.isGitHubDomain("https://github.com/sunmughan/Conzyx/releases/latest/download/manifest.json"))
-        assertTrue(AppUpdater.isGitHubDomain("https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/manifest.json"))
-        assertTrue(AppUpdater.isGitHubDomain("https://objects.githubusercontent.com/github-production-release-asset-2e65be/"))
+        assertTrue(AppUpdater.isGitHubDomain("https://codeload.github.com/sunmughan/Conzyx/tar.gz/v3.2.10"))
 
         // External mirrors or S3 redirect URLs should return false so auth headers are NOT forwarded
         assertFalse(AppUpdater.isGitHubDomain("https://updates.example.workers.dev/check"))
         assertFalse(AppUpdater.isGitHubDomain("https://s3.amazonaws.com/github-production-assets/apk.bin"))
         assertFalse(AppUpdater.isGitHubDomain("https://cloudflare-r2.storage.example/app.apk"))
+        assertFalse(AppUpdater.isGitHubDomain("https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/manifest.json"))
+        assertFalse(AppUpdater.isGitHubDomain("https://objects.githubusercontent.com/github-production-release-asset-2e65be/"))
+    }
+
+    @Test
+    fun testIsGitHubDomainRejectsLookalikes() {
+        assertFalse(AppUpdater.isGitHubDomain("https://attackergithub.com/releases/latest"))
+        assertFalse(AppUpdater.isGitHubDomain("https://evil-github.com/manifest.json"))
+        assertFalse(AppUpdater.isGitHubDomain("https://github.com.evil.com/manifest.json"))
+        assertFalse(AppUpdater.isGitHubDomain("https://api.github.com.evil.com/repos/x"))
+        assertFalse(AppUpdater.isGitHubDomain("https://notgithub.com"))
+    }
+
+    @Test
+    fun testIsGitHubDomainHandlesCaseAndScheme() {
+        assertTrue(AppUpdater.isGitHubDomain("https://GitHub.COM/sunmughan/Conzyx"))
+        assertTrue(AppUpdater.isGitHubDomain("https://API.GitHub.COM/repos/sunmughan/Conzyx/releases/latest"))
+        assertFalse(AppUpdater.isGitHubDomain("http://github.com/sunmughan/Conzyx"))
+        assertFalse(AppUpdater.isGitHubDomain("http://api.github.com/repos/sunmughan/Conzyx/releases/latest"))
+        assertFalse(AppUpdater.isGitHubDomain("ftp://github.com/manifest.json"))
+    }
+
+    @Test
+    fun testIsGitHubDomainRejectsMalformedUrls() {
+        assertFalse(AppUpdater.isGitHubDomain(""))
+        assertFalse(AppUpdater.isGitHubDomain("not a url"))
+        assertFalse(AppUpdater.isGitHubDomain("https://"))
+        assertFalse(AppUpdater.isGitHubDomain("github.com/no-scheme"))
+        assertFalse(AppUpdater.isGitHubDomain("https://github.com:badport/x"))
     }
 
     @Test

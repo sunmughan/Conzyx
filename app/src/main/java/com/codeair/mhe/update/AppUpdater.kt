@@ -99,7 +99,7 @@ class AppUpdater(
         connection.readTimeout = 10_000
         connection.instanceFollowRedirects = true
         connection.setRequestProperty("Accept", "application/json")
-        if (authToken.isNotBlank()) {
+        if (authToken.isNotBlank() && isGitHubDomain(manifestUrl)) {
             connection.setRequestProperty("Authorization", "Bearer $authToken")
         }
         val code = connection.responseCode
@@ -136,7 +136,7 @@ class AppUpdater(
         connection.readTimeout = 10_000
         connection.instanceFollowRedirects = true
         connection.setRequestProperty("Accept", "application/vnd.github+json")
-        if (authToken.isNotBlank()) {
+        if (authToken.isNotBlank() && isGitHubDomain(apiUrl)) {
             connection.setRequestProperty("Authorization", "Bearer $authToken")
         }
         val code = connection.responseCode
@@ -360,8 +360,10 @@ class AppUpdater(
         }
 
         fun isGitHubDomain(url: String): Boolean {
-            val host = runCatching { URL(url).host.lowercase() }.getOrNull() ?: ""
-            return host.endsWith("github.com") || host.endsWith("githubusercontent.com")
+            val parsed = runCatching { URL(url) }.getOrNull() ?: return false
+            if (!parsed.protocol.equals("https", ignoreCase = true)) return false
+            val host = parsed.host.lowercase()
+            return host == "github.com" || host.endsWith(".github.com")
         }
 
         private fun findAssetUrlForVariant(assets: JSONArray, variant: String): String? {
