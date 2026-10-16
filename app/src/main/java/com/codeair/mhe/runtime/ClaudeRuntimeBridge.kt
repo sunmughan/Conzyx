@@ -124,8 +124,8 @@ class ClaudeRuntimeBridge(
     private var lastThinkingUpdateAt = 0L
     private var currentThinkingBlockId = 0L
 
-    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile): String = withContext(Dispatchers.IO + NonCancellable) {
-        val sessionId = UUID.randomUUID().toString()
+    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, clientSessionId: String? = null): String = withContext(Dispatchers.IO + NonCancellable) {
+        val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         finishedSessions.remove(sessionId)
         activeSessionId = sessionId
         userStopRequested = false
@@ -156,7 +156,7 @@ class ClaudeRuntimeBridge(
         var formatGateway: LocalFormatGateway? = null
         var openRouterGateway: OpenRouterRoutingGateway? = null
         runCatching {
-            RuntimeTaskController.stopAction = {
+            RuntimeTaskController.registerStop(sessionId) {
                 userStopRequested = true
                 val running = activeProcess
                 if (running != null) {
@@ -324,7 +324,7 @@ class ClaudeRuntimeBridge(
         openRouterGateway?.close()
         activeProcess = null
         activeSessionId = null
-        RuntimeTaskController.stopAction = null
+        RuntimeTaskController.unregisterStop(sessionId)
         sessionId
     }
 
@@ -1030,6 +1030,7 @@ class ClaudeRuntimeBridge(
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, activeProjectSlug)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Claude Code")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, text),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }
     }
@@ -1066,6 +1067,7 @@ class ClaudeRuntimeBridge(
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                 .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Claude Code")
                 .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Claude Code is working in $projectName"),
+                .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
         )
     }
 
@@ -1083,6 +1085,7 @@ class ClaudeRuntimeBridge(
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Claude Code")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure { error ->
             Log.w("ClaudeBridge", "Could not post task result notification", error)
@@ -1097,6 +1100,7 @@ class ClaudeRuntimeBridge(
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
                     .setAction(RuntimeExecutionService.ACTION_CANCELLED),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
             )
         }.onFailure {
             context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java))

@@ -6,91 +6,150 @@ import android.os.IBinder
 import android.os.PowerManager
 
 internal object RuntimeTaskController {
-    @Volatile var stopAction: (() -> Unit)? = null
+    private val stopActions = mutableMapOf<String, () -> Unit>()
 
-    fun requestStop() {
-        stopAction?.invoke()
+    @Synchronized
+    fun registerStop(sessionId: String, action: () -> Unit) {
+        stopActions[sessionId] = action
+    }
+
+    @Synchronized
+    fun unregisterStop(sessionId: String) {
+        stopActions.remove(sessionId)
+    }
+
+    @Synchronized
+    fun requestStop(sessionId: String? = null) {
+        val action = if (sessionId != null) stopActions[sessionId] else stopActions.values.firstOrNull()
+        action?.invoke()
     }
 }
 
 class RuntimeExecutionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
-    private var projectName: String = "your project"
-    private var notificationTitle: String = "Conzyx is working"
-    private var agentName: String = "Coding agent"
     private var canStop: Boolean = true
-    private var taskRunning: Boolean = false
+
+    private data class SessionNotification(
+        var projectName: String,
+        var agentName: String,
+        var detail: String,
+    )
+
+    private val sessions = mutableMapOf<String, SessionNotification>()
 
     override fun onCreate() {
         super.onCreate()
         NotificationCoordinator.ensureChannels(this)
     }
 
+    private fun notificationManager(): android.app.NotificationManager =
+        getSystemService(android.app.NotificationManager::class.java)
+
+    private fun sessionNotificationId(sessionId: String): Int = sessionId.hashCode()
+
+    private fun refreshForegroundNotification() {
+        val summary = if (sessions.size == 1) {
+            val info = sessions.values.first()
+            NotificationCoordinator.running(
+                context = this,
+                title = "Conzyx is working",
+                detail = info.detail,
+                canStop = canStop,
+                sessionId = sessions.keys.first(),
+            )
+        } else {
+            NotificationCoordinator.running(
+                context = this,
+                title = "Conzyx is working",
+                detail = "${sessions.size} tasks running",
+                canStop = false,
+                sessionId = null,
+            )
+        }
+        startForeground(NotificationCoordinator.RUNNING_NOTIFICATION_ID, summary)
+    }
+
+    private fun stopIfIdle() {
+        if (sessions.isEmpty()) {
+            releaseLocks()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            refreshForegroundNotification()
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.getStringExtra(EXTRA_PROJECT_NAME)?.takeIf(String::isNotBlank)?.let { projectName = it }
-        intent?.getStringExtra(EXTRA_AGENT_NAME)?.takeIf(String::isNotBlank)?.let { agentName = it }
-        intent?.getStringExtra(EXTRA_TITLE)?.takeIf(String::isNotBlank)?.let { notificationTitle = it }
+        val sessionId = intent?.getStringExtra(EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() } ?: "legacy"
+        val projectName = intent?.getStringExtra(EXTRA_PROJECT_NAME)?.takeIf { it.isNotBlank() }
+        val agentName = intent?.getStringExtra(EXTRA_AGENT_NAME)?.takeIf { it.isNotBlank() }
         if (intent?.hasExtra(EXTRA_CAN_STOP) == true) canStop = intent.getBooleanExtra(EXTRA_CAN_STOP, true)
         when (intent?.action ?: ACTION_START) {
             ACTION_STOP -> {
-                RuntimeTaskController.requestStop()
-                getSystemService(android.app.NotificationManager::class.java).notify(
-                    NotificationCoordinator.RUNNING_NOTIFICATION_ID,
-                    NotificationCoordinator.running(this, notificationTitle, "Stopping safely…", false),
-                )
+                RuntimeTaskController.requestStop(sessionId.takeIf { it != "legacy" })
+                if (sessions.containsKey(sessionId)) {
+                    notificationManager().notify(
+                        sessionNotificationId(sessionId),
+                        NotificationCoordinator.running(this, "Conzyx is working", "Stopping safely…", false, sessionId),
+                    )
+                }
             }
             ACTION_PROGRESS -> {
-                // Live step updates only matter while a task is actually running.
-                if (!taskRunning) return START_STICKY
-                val detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
-                    ?: "$agentName is working in $projectName"
-                getSystemService(android.app.NotificationManager::class.java).notify(
-                    NotificationCoordinator.RUNNING_NOTIFICATION_ID,
-                    NotificationCoordinator.running(this, notificationTitle, detail, canStop),
+                val info = sessions[sessionId] ?: return START_STICKY
+                if (projectName != null) info.projectName = projectName
+                if (agentName != null) info.agentName = agentName
+                info.detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
+                    ?: "${info.agentName} is working in ${info.projectName}"
+                notificationManager().notify(
+                    sessionNotificationId(sessionId),
+                    NotificationCoordinator.running(this, "Conzyx is working", info.detail, canStop, sessionId),
                 )
+                refreshForegroundNotification()
             }
             ACTION_COMPLETE -> finishTask(
+                sessionId = sessionId,
                 title = "Task completed",
-                detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "$agentName finished working in $projectName.",
+                detail = intent?.getStringExtra(EXTRA_DETAIL)
+                    ?: "${agentName ?: "Agent"} finished working in ${projectName ?: "your project"}.",
                 failed = false,
             )
             ACTION_FAILED -> finishTask(
+                sessionId = sessionId,
                 title = "Task needs attention",
-                detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "$agentName could not finish the task.",
+                detail = intent?.getStringExtra(EXTRA_DETAIL)
+                    ?: "${agentName ?: "Agent"} could not finish the task.",
                 failed = true,
             )
             ACTION_CANCELLED -> {
-                taskRunning = false
-                releaseLocks()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                sessions.remove(sessionId)
+                notificationManager().cancel(sessionNotificationId(sessionId))
+                stopIfIdle()
             }
             else -> {
-                taskRunning = true
-                val startDetail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
-                    ?: "$agentName is working in $projectName"
-                startForeground(
-                    NotificationCoordinator.RUNNING_NOTIFICATION_ID,
-                    NotificationCoordinator.running(
-                        context = this,
-                        title = notificationTitle,
-                        detail = startDetail,
-                        canStop = canStop,
-                    ),
+                val info = SessionNotification(
+                    projectName = projectName ?: "your project",
+                    agentName = agentName ?: "Coding agent",
+                    detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
+                        ?: "${agentName ?: "Coding agent"} is working in ${projectName ?: "your project"}",
                 )
+                sessions[sessionId] = info
+                notificationManager().notify(
+                    sessionNotificationId(sessionId),
+                    NotificationCoordinator.running(this, "Conzyx is working", info.detail, canStop, sessionId),
+                )
+                refreshForegroundNotification()
                 acquireLocks()
             }
         }
         return START_STICKY
     }
 
-    private fun finishTask(title: String, detail: String, failed: Boolean) {
-        taskRunning = false
-        releaseLocks()
+    private fun finishTask(sessionId: String, title: String, detail: String, failed: Boolean) {
+        sessions.remove(sessionId)
+        notificationManager().cancel(sessionNotificationId(sessionId))
         NotificationCoordinator.postResult(this, title, detail, failed)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopIfIdle()
     }
 
     private fun acquireLocks() {
@@ -155,6 +214,7 @@ class RuntimeExecutionService : Service() {
         const val EXTRA_DETAIL = "detail"
         const val EXTRA_TITLE = "title"
         const val EXTRA_CAN_STOP = "can_stop"
+        const val EXTRA_SESSION_ID = "session_id"
 
         private const val MAX_WAKE_LOCK_MS = 90 * 60 * 1_000L
     }

@@ -6,7 +6,6 @@ import com.codeair.mhe.model.StepStatus
 import com.codeair.mhe.workspace.WorkspaceCheckpointManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -48,14 +47,14 @@ class AppRestartRecoveryTest {
             roadmap = roadmap,
         )
 
-        process1Manager.updateSessionProgress(roadmap, summary = "Completed step 1, working on step 2")
+        process1Manager.updateSessionProgress("session-pid-101", roadmap, summary = "Completed step 1, working on step 2")
 
         // Phase 2: Process 1 dies abruptly (e.g. SIGKILL, Android OS memory reclamation)
         // No graceful completeSession() or clean teardown is called.
 
         // Phase 3: App cold restarts. Fresh manager instance created on the same storage directory.
         val process2Manager = AgentSessionManager(sessionsDir)
-        val restoredSession = process2Manager.detectInterruptedSession()
+        val restoredSession = process2Manager.detectInterruptedSessions().firstOrNull()
 
         assertNotNull("Process 2 must detect the interrupted session from disk", restoredSession)
         assertEquals("session-pid-101", restoredSession?.sessionId)
@@ -107,7 +106,7 @@ class AppRestartRecoveryTest {
         val checkpointManager2 = WorkspaceCheckpointManager(checkpointsDir)
         val sessionManager2 = AgentSessionManager(sessionsDir)
 
-        val restoredSession = sessionManager2.detectInterruptedSession()
+        val restoredSession = sessionManager2.detectInterruptedSessions().firstOrNull()
         assertNotNull(restoredSession)
         assertEquals("session-ckpt-202", restoredSession?.sessionId)
 
@@ -126,8 +125,8 @@ class AppRestartRecoveryTest {
         activeFile.writeText("{ corrupted_json_truncate... ")
 
         val manager = AgentSessionManager(sessionsDir)
-        val detected = manager.detectInterruptedSession()
-        assertNull("Corrupted json must fail safely and return null", detected)
+        val detected = manager.detectInterruptedSessions()
+        assertTrue("Corrupted json must fail safely and return empty", detected.isEmpty())
     }
 
     @Test
@@ -143,9 +142,9 @@ class AppRestartRecoveryTest {
         )
 
         val manager2 = AgentSessionManager(sessionsDir)
-        assertNotNull(manager2.detectInterruptedSession())
+        assertNotNull(manager2.detectInterruptedSessions().firstOrNull())
 
-        manager2.clearActiveSession()
-        assertNull(manager2.checkInterruptedSession())
+        manager2.clearActiveSession("session-to-clear")
+        assertTrue(manager2.checkInterruptedSessions().isEmpty())
     }
 }

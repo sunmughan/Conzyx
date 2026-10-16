@@ -61,6 +61,7 @@ object NotificationCoordinator {
         title: String,
         detail: String,
         canStop: Boolean,
+        sessionId: String? = null,
     ): Notification {
         val builder = NotificationCompat.Builder(context, RUNNING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -75,9 +76,10 @@ object NotificationCoordinator {
         if (canStop) {
             val stopIntent = PendingIntent.getService(
                 context,
-                2,
+                sessionId?.hashCode() ?: 2,
                 Intent(context, RuntimeExecutionService::class.java)
-                    .setAction(RuntimeExecutionService.ACTION_STOP),
+                    .setAction(RuntimeExecutionService.ACTION_STOP)
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             builder.addAction(0, "Stop task", stopIntent)

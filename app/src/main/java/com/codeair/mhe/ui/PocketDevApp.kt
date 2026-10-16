@@ -4727,7 +4727,7 @@ private fun ReadOnlyProjectScreen(
                 onOpenAttachment = {},
                 onRunInTerminal = {},
                 readOnly = true,
-                readOnlyBlocked = state.isRunning || state.projectTerminalRunning,
+                readOnlyBlocked = false,
                 onContinueHere = onContinueHere,
             )
         }
