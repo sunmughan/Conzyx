@@ -27,6 +27,13 @@ class MobileHarnessApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppCrashLogger.initialize(this)
+        reportPreviousDeath()
+        runCatching { com.codeair.mhe.runtime.AnrWatchdog.start() }
+        runCatching {
+            val pm = getSystemService(POWER_SERVICE) as? android.os.PowerManager
+            val ignored = pm?.isIgnoringBatteryOptimizations(packageName) ?: false
+            AppCrashLogger.log("Battery optimization ignored=$ignored")
+        }
         runCatching {
             FirebaseApp.initializeApp(this)
             FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled =
@@ -44,10 +51,12 @@ class MobileHarnessApplication : Application() {
             ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : DefaultLifecycleObserver {
                     override fun onStop(owner: LifecycleOwner) {
+                        markBackgrounded(true)
                         runCatching { KeepAliveService.start(this@MobileHarnessApplication) }
                     }
 
                     override fun onStart(owner: LifecycleOwner) {
+                        markBackgrounded(false)
                         runCatching { KeepAliveService.stop(this@MobileHarnessApplication) }
                     }
                 }
@@ -58,5 +67,36 @@ class MobileHarnessApplication : Application() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         AppCrashLogger.log("onTrimMemory level=$level")
+    }
+
+    private fun forensicsPrefs() =
+        getSharedPreferences("process_forensics", MODE_PRIVATE)
+
+    private fun reportPreviousDeath() {
+        runCatching {
+            val prefs = forensicsPrefs()
+            val cleanExit = prefs.getBoolean("clean_exit", true)
+            val wasBackground = prefs.getBoolean("was_background", false)
+            if (!cleanExit) {
+                if (wasBackground) {
+                    AppCrashLogger.log("PREVIOUS PROCESS DIED IN BACKGROUND (system reclaim, likely normal)")
+                } else {
+                    AppCrashLogger.log("PREVIOUS PROCESS DIED WHILE FOREGROUND (crash/kill, investigate)")
+                }
+            }
+            prefs.edit().putBoolean("clean_exit", false).apply()
+        }
+    }
+
+    fun markCleanExit() {
+        runCatching {
+            forensicsPrefs().edit().putBoolean("clean_exit", true).apply()
+        }
+    }
+
+    fun markBackgrounded(background: Boolean) {
+        runCatching {
+            forensicsPrefs().edit().putBoolean("was_background", background).apply()
+        }
     }
 }

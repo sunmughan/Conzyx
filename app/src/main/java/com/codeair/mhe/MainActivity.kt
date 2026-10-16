@@ -61,6 +61,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        runCatching {
+            (application as? MobileHarnessApplication)?.markCleanExit()
+        }
+        super.onDestroy()
+    }
+
     companion object {
         const val EXTRA_NOTIFICATION_ROUTE = "notification_route"
     }
