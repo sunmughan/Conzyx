@@ -7607,6 +7607,7 @@ private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AllProjectsScreen(
     projects: List<Project>,
