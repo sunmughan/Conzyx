@@ -105,6 +105,7 @@ class ProviderSafetyMatrixTest {
                 val adapter = RemoteWorkSafetyAdapter(gateway)
                 adapter.execRemote(operation.target, operation.command, effect = effect)
             }
+            else -> throw IllegalArgumentException("No provider adapter for UI operation: $operation")
         }
     }
 
