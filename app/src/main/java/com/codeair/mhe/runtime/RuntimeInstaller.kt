@@ -22,6 +22,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.coroutineContext
 import com.codeair.mhe.model.DevStack
@@ -449,6 +450,96 @@ class RuntimeInstaller(private val context: Context) {
         githubCliMarker.writeText(GITHUB_CLI_VERSION)
         check(isGitHubCliInstalled()) { "GitHub CLI installation is incomplete" }
         onProgress(RuntimeInstallProgress("GitHub CLI is ready", 1f))
+    }
+
+    fun penTestingSetupDir(): File = File(rootfs, PENTESTING_GUEST_SETUP_DIR.removePrefix("/"))
+
+    fun isPenTestingInstalled(): Boolean {
+        val dir = penTestingSetupDir()
+        return dir.resolve(".pocket-pentesting-version").readTextOrNull() == PENTESTING_BUNDLE_VERSION &&
+            File(dir, "pentagi-arm64-proot").canExecute()
+    }
+
+    fun penTestingBackendLog(): File = File(rootfs, "root/pentagi-data/backend.log")
+
+    suspend fun downloadPenTestingBundle(onBytes: suspend (downloaded: Long, total: Long) -> Unit): File {
+        val downloaded = File(downloads, "pentagi-ondevice-test.tar.gz")
+        downloadVerified(PENTESTING_BUNDLE_URL, downloaded, PENTESTING_BUNDLE_SHA256, onBytes = onBytes)
+        return downloaded
+    }
+
+    suspend fun extractPenTestingBundle(archive: File) = withContext(Dispatchers.IO) {
+        val destination = penTestingSetupDir()
+        destination.mkdirs()
+        TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
+            var entry: TarArchiveEntry? = tar.nextEntry
+            while (entry != null) {
+                val cleanName = entry.name.removePrefix("./").substringAfter('/', "")
+                if (cleanName.isNotBlank()) {
+                    val target = safeChild(destination, cleanName)
+                    when {
+                        entry.isDirectory -> target.mkdirs()
+                        entry.isSymbolicLink -> {
+                            val linkTarget = resolveArchiveSymlinkTarget(destination, target, entry.linkName)
+                            target.parentFile?.mkdirs()
+                            if (target.exists() || java.nio.file.Files.isSymbolicLink(target.toPath())) target.delete()
+                            Os.symlink(linkTarget, target.absolutePath)
+                        }
+                        entry.isFile -> {
+                            target.parentFile?.mkdirs()
+                            FileOutputStream(target).use { output -> tar.copyTo(output) }
+                        }
+                    }
+                }
+                entry = tar.nextEntry
+            }
+        }
+        val binary = File(destination, "pentagi-arm64-proot")
+        check(binary.isFile) { "Pen testing bundle did not contain the backend binary" }
+        Os.chmod(binary.absolutePath, 0b111101101)
+        File(destination, ".pocket-pentesting-version").writeText(PENTESTING_BUNDLE_VERSION)
+    }
+
+    fun startPenTestingSetup(outputFile: File): Process {
+        val runtime = installedRuntime()
+        return process(
+            proot = runtime.proot,
+            rootfs = runtime.rootfs,
+            workspace = File(runtime.rootfs, "root"),
+            environment = emptyMap(),
+            guestCommand = listOf(
+                "/usr/bin/env", "bash", "-lc",
+                "cd /root/pentagi-setup && chmod +x setup-and-boot.sh pentagi-arm64-proot && ./setup-and-boot.sh",
+            ),
+            outputFile = outputFile,
+        )
+    }
+
+    suspend fun stopPenTestingBackend(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val runtime = installedRuntime()
+            val proc = process(
+                proot = runtime.proot,
+                rootfs = runtime.rootfs,
+                workspace = File(runtime.rootfs, "root"),
+                environment = emptyMap(),
+                guestCommand = listOf(
+                    "/usr/bin/env", "bash", "-lc",
+                    "kill $(cat /root/pentagi-data/backend.pid) 2>/dev/null",
+                ),
+            )
+            proc.waitFor() == 0
+        }.getOrDefault(false)
+    }
+
+    suspend fun isPenTestingApiUp(port: Int = PENTESTING_API_PORT): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            (URL("http://127.0.0.1:$port/api/v1/info").openConnection() as HttpURLConnection).run {
+                connectTimeout = 3_000
+                readTimeout = 3_000
+                responseCode == 200
+            }
+        }.getOrDefault(false)
     }
 
     /**
@@ -3521,6 +3612,11 @@ main().catch((err) => {
         private const val GITHUB_CLI_VERSION = "2.100.0"
         private const val GITHUB_CLI_RELEASE_URL = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz"
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
+        const val PENTESTING_BUNDLE_URL = "https://github.com/sunmughan/Conzyx/releases/download/pentagi-ondevice-1/pentagi-ondevice-test.tar.gz"
+        private const val PENTESTING_BUNDLE_SHA256 = "084fcedd3f4caa2e94b3f8b6ff4e777f9ea51a544b7bc9657b8899afff77b516"
+        private const val PENTESTING_BUNDLE_VERSION = "1"
+        const val PENTESTING_API_PORT = 18080
+        const val PENTESTING_GUEST_SETUP_DIR = "/root/pentagi-setup"
         private const val LEGACY_README = "# Pocket Dev project\n\nThis project is managed locally on Android.\n"
         private const val LEGACY_INDEX = "<!doctype html><title>Pocket Dev</title><h1>Hello from Android</h1>\n"
         private const val ROOTFS_VERSION = "ubuntu-20.04.5-arm64"

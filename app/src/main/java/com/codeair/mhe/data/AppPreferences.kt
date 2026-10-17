@@ -50,6 +50,10 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("runtime_setup_complete", false)
         set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).commit() }
 
+    var penTestingSetupComplete: Boolean
+        get() = preferences.getBoolean("pen_testing_setup_complete", false)
+        set(value) { preferences.edit().putBoolean("pen_testing_setup_complete", value).commit() }
+
     var backgroundSetupComplete: Boolean
         get() = preferences.getBoolean("background_setup_complete", false)
         set(value) { preferences.edit().putBoolean("background_setup_complete", value).commit() }

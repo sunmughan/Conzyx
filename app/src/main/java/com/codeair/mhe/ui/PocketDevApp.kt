@@ -134,6 +134,7 @@ import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -463,6 +464,14 @@ fun PocketDevApp(
         return
     }
 
+    if (navigator.showPenTestingScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
+        com.codeair.mhe.pentest.ui.PenTestingSetupScreen(
+            onBack = { navigator.closeOverlay() },
+        )
+        return
+    }
+
     when {
         state.startupStage == StartupStage.CHECKING -> StartupLoadingScreen(
             state = state,
@@ -632,6 +641,7 @@ fun PocketDevApp(
             onOpenAppFactory = { openStudio(OverlayScreen.APP_FACTORY) },
             onOpenTeamStudio = { openStudio(OverlayScreen.TEAM_STUDIO) },
             onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
+            onOpenPenTesting = { navigator.openPenTesting() },
         )
     }
 }
@@ -2397,6 +2407,7 @@ private fun RootScreenHost(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
+    onOpenPenTesting: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2474,6 +2485,7 @@ private fun RootScreenHost(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
+                    onOpenPenTesting = onOpenPenTesting,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3623,6 +3635,7 @@ private fun StudioCardsSection(
     onOpenAppFactory: () -> Unit,
     onOpenTeamStudio: () -> Unit,
     onOpenCloudHybrid: () -> Unit,
+    onOpenPenTesting: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
@@ -3761,6 +3774,48 @@ private fun StudioCardsSection(
                     )
                 }
             }
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(112.dp)
+                    .clickable { onOpenPenTesting() },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Pen Testing",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
     }
 }
@@ -3793,6 +3848,7 @@ private fun ProjectsScreen(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
+    onOpenPenTesting: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -4095,6 +4151,7 @@ private fun ProjectsScreen(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
+                    onOpenPenTesting = onOpenPenTesting,
                 )
             }
         }
