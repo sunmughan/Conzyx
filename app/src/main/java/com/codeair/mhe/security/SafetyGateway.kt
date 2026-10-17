@@ -219,6 +219,13 @@ class SafetyGateway(
         is SafetyOperation.NetworkRequest -> PermissionCategory.NETWORK
         is SafetyOperation.ApkInstall -> PermissionCategory.INSTALL_APK
         is SafetyOperation.RemoteExec -> PermissionCategory.EXTERNAL_SERVICES
+        is SafetyOperation.UiTap,
+        is SafetyOperation.UiLongPress,
+        is SafetyOperation.UiScroll,
+        is SafetyOperation.UiTypeText,
+        is SafetyOperation.UiPressBack,
+        is SafetyOperation.UiLaunchApp,
+        is SafetyOperation.UiWait -> PermissionCategory.UI_INTERACT
     }
 
     private fun toPermissionRequest(
@@ -235,6 +242,13 @@ class SafetyGateway(
             is SafetyOperation.NetworkRequest -> operation.url
             is SafetyOperation.ApkInstall -> operation.apkPath
             is SafetyOperation.RemoteExec -> "${operation.target}:${operation.command}"
+            is SafetyOperation.UiTap -> operation.targetId
+            is SafetyOperation.UiLongPress -> operation.targetId
+            is SafetyOperation.UiScroll -> operation.targetId
+            is SafetyOperation.UiTypeText -> operation.targetId
+            is SafetyOperation.UiPressBack -> operation.targetLabel.ifBlank { "back" }
+            is SafetyOperation.UiLaunchApp -> operation.packageName
+            is SafetyOperation.UiWait -> "${operation.millis}ms"
         }
         val command = when (operation) {
             is SafetyOperation.ShellExec -> operation.command

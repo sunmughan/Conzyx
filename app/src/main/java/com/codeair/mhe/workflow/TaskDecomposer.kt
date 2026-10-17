@@ -78,6 +78,17 @@ class TemplateTaskDecomposer : TaskDecomposer {
                     target = "origin", dependsOn = listOf("commit")),
             )
             WorkflowGoalKind.CUSTOM -> return decomposeCustom(goal)
+            WorkflowGoalKind.OPERATE_APP -> listOf(
+                PlanStep("observe", PlanStepKind.OPERATOR_OBSERVE, "Observe target app",
+                    "Capture the current UI state of the target app.",
+                    target = goal.description),
+                PlanStep("act", PlanStepKind.OPERATOR_ACT, "Act on target app",
+                    "Perform the next operator action toward the goal.",
+                    target = goal.description, dependsOn = listOf("observe"), maxAttempts = 3),
+                PlanStep("verify", PlanStepKind.OPERATOR_VERIFY, "Verify outcome",
+                    "Check whether the action produced the expected UI change.",
+                    target = goal.description, dependsOn = listOf("act")),
+            )
         }
         return DecompositionOutcome.Planned(WorkflowPlan(goal, steps))
     }

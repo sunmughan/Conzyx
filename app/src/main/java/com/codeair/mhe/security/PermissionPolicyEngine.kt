@@ -24,7 +24,8 @@ enum class PermissionCategory {
     GIT_BRANCH,
     INSTALL_APK,
     SECRETS,
-    ACCESS_ENV
+    ACCESS_ENV,
+    UI_INTERACT
 }
 
 enum class PermissionLevel {
@@ -375,6 +376,7 @@ class PermissionPolicyEngine(
             PermissionCategory.INSTALL_APK -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Device APK installation requires user consent")
             PermissionCategory.SECRETS -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Access to secrets requires authorization")
             PermissionCategory.ACCESS_ENV -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "Reading environment variables requires user authorization")
+            PermissionCategory.UI_INTERACT -> PermissionDecision(allowed = false, requiresPrompt = true, reason = "UI interaction with a target app requires user consent")
         }
     }
 

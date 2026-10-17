@@ -41,6 +41,13 @@ data class AuthorizationPrompt(
             is SafetyOperation.NetworkRequest -> "Allow network request?"
             is SafetyOperation.ApkInstall -> "Allow APK install?"
             is SafetyOperation.RemoteExec -> "Allow remote execution?"
+            is SafetyOperation.UiTap -> "Allow UI tap?"
+            is SafetyOperation.UiLongPress -> "Allow UI long-press?"
+            is SafetyOperation.UiScroll -> "Allow UI scroll?"
+            is SafetyOperation.UiTypeText -> "Allow typing into app?"
+            is SafetyOperation.UiPressBack -> "Allow press back?"
+            is SafetyOperation.UiLaunchApp -> "Allow launch app?"
+            is SafetyOperation.UiWait -> "Allow wait?"
         }
 
         /** Builds a prompt with risk derived from the operation. */
@@ -84,6 +91,20 @@ data class AuthorizationPrompt(
                     "The app will install '${operation.apkPath}' on this device. Installed apps can access device capabilities."
                 is SafetyOperation.RemoteExec -> PromptRisk.HIGH to
                     "The app will run '${operation.command}' on remote worker '${operation.target}'. You will be billed for remote compute."
+                is SafetyOperation.UiTap -> PromptRisk.LOW to
+                    "The app will tap the '${operation.targetLabel.ifBlank { operation.targetId }}' control in the target app. No data is modified by the tap itself."
+                is SafetyOperation.UiLongPress -> PromptRisk.LOW to
+                    "The app will long-press the '${operation.targetLabel.ifBlank { operation.targetId }}' control in the target app. No data is modified by the long-press itself."
+                is SafetyOperation.UiScroll -> PromptRisk.LOW to
+                    "The app will scroll ${operation.direction.name.lowercase()} in '${operation.targetLabel.ifBlank { operation.targetId }}' in the target app. No data is modified by the scroll itself."
+                is SafetyOperation.UiTypeText -> PromptRisk.MEDIUM to
+                    "The app will type text into '${operation.targetId.ifBlank { "the focused field" }}' in the target app."
+                is SafetyOperation.UiPressBack -> PromptRisk.LOW to
+                    "The app will navigate back in the target app."
+                is SafetyOperation.UiLaunchApp -> PromptRisk.MEDIUM to
+                    "The app will launch '${operation.appLabel.ifBlank { operation.packageName }}'. The target app will come to the foreground."
+                is SafetyOperation.UiWait -> PromptRisk.LOW to
+                    "The app will pause ${operation.millis}ms before the next step."
             }
             val scopes = when (risk) {
                 PromptRisk.LOW -> listOf(

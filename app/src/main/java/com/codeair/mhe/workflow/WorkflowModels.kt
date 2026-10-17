@@ -20,6 +20,7 @@ enum class WorkflowGoalKind {
     REFACTOR,
     /** Caller-supplied step list, validated before execution. */
     CUSTOM,
+    OPERATE_APP,
 }
 
 data class WorkflowGoal(
@@ -46,6 +47,9 @@ enum class PlanStepKind {
     GIT_COMMIT,
     /** Git push through the safety gateway. Runs only after review approval. */
     GIT_PUSH,
+    OPERATOR_OBSERVE,
+    OPERATOR_ACT,
+    OPERATOR_VERIFY,
 }
 
 data class PlanStep(

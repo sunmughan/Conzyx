@@ -74,7 +74,46 @@ sealed class SafetyOperation {
     ) : SafetyOperation() {
         override fun describe(): String = "Remote exec on $target: $command"
     }
+
+    data class UiTap(val targetId: String, val targetLabel: String = "") : SafetyOperation() {
+        override fun describe(): String =
+            "UI tap: " + (targetLabel.ifBlank { targetId })
+    }
+
+    data class UiLongPress(val targetId: String, val targetLabel: String = "") : SafetyOperation() {
+        override fun describe(): String =
+            "UI long-press: " + (targetLabel.ifBlank { targetId })
+    }
+
+    data class UiScroll(
+        val targetId: String,
+        val direction: ScrollDirection,
+        val targetLabel: String = ""
+    ) : SafetyOperation() {
+        override fun describe(): String =
+            "UI scroll ${direction.name.lowercase()}: " + (targetLabel.ifBlank { targetId })
+    }
+
+    data class UiTypeText(val targetId: String, val text: String) : SafetyOperation() {
+        override fun describe(): String =
+            "UI type text into ${targetId.ifBlank { "focused field" }}"
+    }
+
+    data class UiPressBack(val targetLabel: String = "") : SafetyOperation() {
+        override fun describe(): String = "UI press back"
+    }
+
+    data class UiLaunchApp(val packageName: String, val appLabel: String = "") : SafetyOperation() {
+        override fun describe(): String =
+            "UI launch app: " + (appLabel.ifBlank { packageName })
+    }
+
+    data class UiWait(val millis: Long) : SafetyOperation() {
+        override fun describe(): String = "UI wait ${millis}ms"
+    }
 }
+
+enum class ScrollDirection { UP, DOWN, LEFT, RIGHT }
 
 enum class FileOpKind { READ, CREATE, WRITE, DELETE }
 

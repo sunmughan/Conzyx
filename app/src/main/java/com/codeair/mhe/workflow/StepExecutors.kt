@@ -300,3 +300,24 @@ class GitStepExecutor(
         }
     }
 }
+
+private class UnwiredOperatorStepExecutor(
+    override val kind: PlanStepKind,
+) : StepExecutor {
+
+    init {
+        require(
+            kind == PlanStepKind.OPERATOR_OBSERVE ||
+                kind == PlanStepKind.OPERATOR_ACT ||
+                kind == PlanStepKind.OPERATOR_VERIFY
+        ) {
+            "UnwiredOperatorStepExecutor only handles operator kinds, got $kind"
+        }
+    }
+
+    override suspend fun execute(step: PlanStep, ctx: WorkflowContext): OperationResult =
+        OperationResult.failure("operator step kind not yet wired to an executor")
+}
+
+fun operatorStepExecutor(kind: PlanStepKind): StepExecutor =
+    UnwiredOperatorStepExecutor(kind)
