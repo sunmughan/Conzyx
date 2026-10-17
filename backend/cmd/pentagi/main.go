@@ -21,6 +21,7 @@ import (
 	"pentagi/pkg/controller"
 	"pentagi/pkg/database"
 	"pentagi/pkg/docker"
+	"pentagi/pkg/proot"
 	"pentagi/pkg/graph/subscriptions"
 	obs "pentagi/pkg/observability"
 	"pentagi/pkg/observability/profiling"
@@ -218,9 +219,19 @@ func main() {
 		go profiling.Start(cfg.PprofAddr)
 	}
 
-	client, err := docker.NewDockerClient(ctx, queries, cfg)
+	// Executor selection: PENTAGI_EXECUTOR=proot wires the proot-native
+	// executor (no Docker daemon) instead of the moby client. PROOT_ROOTFS
+	// overrides the guest root (default "/": nested proot, used on the phone
+	// where the backend itself already runs inside proot).
+	var client docker.DockerClient
+	if os.Getenv("PENTAGI_EXECUTOR") == "proot" {
+		logrus.Info("PENTAGI_EXECUTOR=proot: using proot-native executor")
+		client, err = proot.New(cfg.DataDir, queries, os.Getenv("PROOT_ROOTFS"))
+	} else {
+		client, err = docker.NewDockerClient(ctx, queries, cfg)
+	}
 	if err != nil {
-		logrus.WithError(err).Fatal("Docker runtime client initialization failed")
+		logrus.WithError(err).Fatal("runtime client initialization failed")
 	}
 
 	providers, err := providers.NewProviderController(cfg, queries, client)
