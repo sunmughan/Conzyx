@@ -7227,9 +7227,9 @@ private fun MessageBubble(
                     lower.endsWith(".go") || lower.endsWith(".rs") ||
                     lower.endsWith(".rb") || lower.endsWith(".swift"))
                 when {
-                    isCodeFile -> onOpenFileLink(path)
+                    isCodeFile -> try { onOpenFileLink(path) } catch (_: Throwable) { }
                     isArchive -> { }
-                    else -> try { uriHandler.openUri(rawUrl) } catch (_: Throwable) { }
+                    else -> { }
                 }
             } else {
                 try { uriHandler.openUri(rawUrl) } catch (_: Throwable) {
