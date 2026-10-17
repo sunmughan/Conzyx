@@ -158,14 +158,6 @@ fun DiagnosticsLogScreen(onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    IconButton(onClick = ::copyLog) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy log")
-                    }
-                    IconButton(onClick = ::shareLog) {
-                        Icon(Icons.Default.Share, contentDescription = "Share log")
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
