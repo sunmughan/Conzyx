@@ -17,7 +17,7 @@ class ArchiveSymlinkValidationTest {
 
     private fun assertRejected(root: File, linkFile: File, linkName: String, messagePart: String) {
         try {
-            validateArchiveSymlinkTarget(root, linkFile, linkName)
+            resolveArchiveSymlinkTarget(root, linkFile, linkName)
             fail("symlink target '$linkName' must be rejected")
         } catch (e: IllegalArgumentException) {
             assertTrue(
@@ -28,15 +28,33 @@ class ArchiveSymlinkValidationTest {
     }
 
     @Test
-    fun absoluteLinkTargetIsRejected() {
+    fun absoluteLinkTargetIsRewrittenInsideRoot() {
         val root = root()
-        assertRejected(root, File(root, "evil"), "/etc/passwd", "absolute")
+        val rewritten = resolveArchiveSymlinkTarget(root, File(root, "evil"), "/etc/passwd")
+        assertTrue("absolute target should be contained, got '$rewritten'", rewritten == "etc/passwd")
+        val resolved = File(root, rewritten).canonicalFile.toPath()
+        assertTrue(resolved.startsWith(root.canonicalFile.toPath()))
     }
 
     @Test
-    fun absoluteLinkTargetWithDoubleSlashIsRejected() {
+    fun absoluteLinkTargetWithDoubleSlashIsRewrittenInsideRoot() {
         val root = root()
-        assertRejected(root, File(root, "evil"), "//etc/passwd", "absolute")
+        val rewritten = resolveArchiveSymlinkTarget(root, File(root, "evil"), "//etc/passwd")
+        assertTrue("double-slash target should be contained, got '$rewritten'", rewritten == "etc/passwd")
+    }
+
+    @Test
+    fun absoluteLinkTargetFromSubdirStaysRelativeToLinkDir() {
+        val root = root()
+        File(root, "bin").mkdirs()
+        val rewritten = resolveArchiveSymlinkTarget(root, File(root, "bin/tool"), "/usr/bin/python3")
+        assertTrue("expected ../usr/bin/python3, got '$rewritten'", rewritten == "../usr/bin/python3")
+    }
+
+    @Test
+    fun absoluteTraversalPastRootIsRejected() {
+        val root = root()
+        assertRejected(root, File(root, "evil"), "/../outside", "escapes")
     }
 
     @Test
@@ -64,7 +82,7 @@ class ArchiveSymlinkValidationTest {
         val root = root()
         val real = File(root, "real").apply { mkdirs() }
         val alias = File(root, "alias")
-        validateArchiveSymlinkTarget(root, alias, "real")
+        resolveArchiveSymlinkTarget(root, alias, "real")
         Files.createSymbolicLink(alias.toPath(), real.toPath())
         assertRejected(root, File(alias, "chained"), "../../escape", "escapes")
     }
@@ -73,7 +91,7 @@ class ArchiveSymlinkValidationTest {
     fun forwardLinkChainToEscapingLinkIsRejected() {
         val root = root()
         val first = File(root, "first")
-        validateArchiveSymlinkTarget(root, first, "second")
+        resolveArchiveSymlinkTarget(root, first, "second")
         Files.createSymbolicLink(first.toPath(), File(root, "second").toPath())
         assertRejected(root, File(root, "second"), "../escape", "escapes")
     }
@@ -92,9 +110,9 @@ class ArchiveSymlinkValidationTest {
         val root = root()
         File(root, "bin").mkdirs()
         File(root, "sub").mkdirs()
-        validateArchiveSymlinkTarget(root, File(root, "link1"), "bin/tool")
-        validateArchiveSymlinkTarget(root, File(root, "sub/link2"), "../bin/tool")
-        validateArchiveSymlinkTarget(root, File(root, "self"), "self")
-        validateArchiveSymlinkTarget(root, File(root, "dot"), "./bin/tool")
+        resolveArchiveSymlinkTarget(root, File(root, "link1"), "bin/tool")
+        resolveArchiveSymlinkTarget(root, File(root, "sub/link2"), "../bin/tool")
+        resolveArchiveSymlinkTarget(root, File(root, "self"), "self")
+        resolveArchiveSymlinkTarget(root, File(root, "dot"), "./bin/tool")
     }
 }

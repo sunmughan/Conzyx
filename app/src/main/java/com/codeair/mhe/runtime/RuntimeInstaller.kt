@@ -2770,10 +2770,10 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
                     when {
                         entry.isDirectory -> target.mkdirs()
                         entry.isSymbolicLink -> {
-                            validateArchiveSymlinkTarget(destination, target, entry.linkName)
+                            val linkTarget = resolveArchiveSymlinkTarget(destination, target, entry.linkName)
                             target.parentFile?.mkdirs()
                             if (target.exists() || java.nio.file.Files.isSymbolicLink(target.toPath())) target.delete()
-                            Os.symlink(entry.linkName, target.absolutePath)
+                            Os.symlink(linkTarget, target.absolutePath)
                         }
                         entry.isLink -> {
                             target.parentFile?.mkdirs()
@@ -3634,10 +3634,17 @@ internal fun relocateCredentialFiles(legacyDir: File, secureDir: File) {
     runCatching { legacyDir.deleteRecursively() }
 }
 
-internal fun validateArchiveSymlinkTarget(root: File, linkFile: File, linkName: String) {
+internal fun resolveArchiveSymlinkTarget(root: File, linkFile: File, linkName: String): String {
     require(linkName.isNotBlank()) { "Archive symlink has an empty target" }
-    require(!linkName.startsWith("/")) { "Archive symlink target is absolute" }
     val rootPath = root.canonicalFile.toPath()
-    val resolved = File(linkFile.parentFile ?: root, linkName).canonicalFile.toPath()
-    require(resolved.startsWith(rootPath)) { "Archive symlink target escapes the extraction root" }
+    val parentDir = (linkFile.parentFile ?: root).canonicalFile.toPath()
+    val intended = if (linkName.startsWith("/")) {
+        val stripped = linkName.trimStart('/')
+        require(stripped.isNotBlank()) { "Archive symlink has an empty target" }
+        rootPath.resolve(stripped)
+    } else {
+        parentDir.resolve(linkName)
+    }.normalize()
+    require(intended.startsWith(rootPath)) { "Archive symlink target escapes the extraction root" }
+    return parentDir.relativize(intended).toString().ifEmpty { "." }
 }
