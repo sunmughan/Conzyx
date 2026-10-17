@@ -56,6 +56,10 @@ class PocketDevNavigator {
         openOverlay = OverlayScreen.DIAGNOSTICS
     }
 
+    fun openAllProjects() {
+        openOverlay = OverlayScreen.ALL_PROJECTS
+    }
+
     fun closeOverlay() {
         openOverlay = null
     }
@@ -67,6 +71,7 @@ class PocketDevNavigator {
     val showMarketplaceScreen: Boolean get() = openOverlay == OverlayScreen.MARKETPLACE
     val showPenTestingScreen: Boolean get() = openOverlay == OverlayScreen.PEN_TESTING
     val showDiagnosticsScreen: Boolean get() = openOverlay == OverlayScreen.DIAGNOSTICS
+    val showAllProjectsScreen: Boolean get() = openOverlay == OverlayScreen.ALL_PROJECTS
 }
 
 /** The full-screen overlay destinations reachable from PocketDev. */
@@ -77,4 +82,5 @@ enum class OverlayScreen {
     MARKETPLACE,
     PEN_TESTING,
     DIAGNOSTICS,
+    ALL_PROJECTS,
 }

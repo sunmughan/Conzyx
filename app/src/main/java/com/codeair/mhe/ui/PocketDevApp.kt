@@ -218,6 +218,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -478,6 +479,24 @@ fun PocketDevApp(
     if (navigator.showDiagnosticsScreen) {
         BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.diagnostics.ui.DiagnosticsLogScreen(
+            onBack = { navigator.closeOverlay() },
+        )
+        return
+    }
+
+    if (navigator.showAllProjectsScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
+        AllProjectsScreen(
+            projects = state.projects,
+            isRunning = state.isRunning,
+            activeProjectId = state.activeProject?.id,
+            projectTerminalRunning = state.projectTerminalRunning,
+            onOpen = { project ->
+                navigator.closeOverlay()
+                viewModel.openProject(project)
+            },
+            onRename = { id, name -> viewModel.renameProject(id, name) },
+            onDelete = { id -> viewModel.deleteProject(id) },
             onBack = { navigator.closeOverlay() },
         )
         return
@@ -4114,7 +4133,20 @@ private fun ProjectsScreen(
                     }
                 }
             }
-            item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (projects.size > 3) {
+                        TextButton(onClick = { navigator.openAllProjects() }) {
+                            Text("View All", color = PocketOrange, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
             if (projects.isEmpty()) {
                 item {
                     Card(
@@ -4163,7 +4195,7 @@ private fun ProjectsScreen(
                     }
                 }
             } else {
-                items(projects, key = { it.id }) { project ->
+                items(projects.take(3), key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
                         taskRunning = state.isRunning && state.activeProject?.id == project.id,
@@ -4172,6 +4204,19 @@ private fun ProjectsScreen(
                         onRename = { onRenameProject(project.id, it) },
                         onDelete = { onDeleteProject(project.id) },
                     )
+                }
+                if (projects.size > 3) {
+                    item {
+                        OutlinedButton(
+                            onClick = { navigator.openAllProjects() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Text("View All ${projects.size} Projects", color = PocketOrange)
+                        }
+                    }
                 }
             }
             item {
@@ -5403,6 +5448,7 @@ private fun WorkspaceScreen(
                     emergencyKillSwitchActive = state.emergencyKillSwitchActive,
                     onResetEmergencyKillSwitch = onResetEmergencyKillSwitch,
                     onApprovalWithLevel = onApprovalWithLevel,
+                    onOpenFileByPath = onOpenFileByPath,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -6144,6 +6190,7 @@ private fun ChatTab(
     onOpenAttachment: (ChatAttachment) -> Unit,
     onSaveAttachment: (ChatAttachment) -> Unit = {},
     onRunInTerminal: (String) -> Unit,
+    onOpenFileByPath: (String) -> Unit = {},
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
     onContinueHere: () -> Unit = {},
@@ -6410,6 +6457,7 @@ private fun ChatTab(
                                     onApproveAndBuildRoadmap(r, null)
                                 }
                             },
+                            onOpenFileLink = onOpenFileByPath,
                         )
                     }
                 }
@@ -7138,10 +7186,57 @@ private fun MessageBubble(
     onSaveAttachment: (ChatAttachment) -> Unit = {},
     onAddRoadmapComment: (stepId: String?) -> Unit = {},
     onApproveAndBuildRoadmap: () -> Unit = {},
+    onOpenFileLink: (String) -> Unit = {},
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
+
+    val uriHandler = LocalUriHandler.current
+    val fileLinkHandler: (String) -> Unit = remember(onOpenFileLink, uriHandler, context) {
+        { rawUrl: String ->
+            val path = when {
+                rawUrl.startsWith("file://") -> rawUrl.removePrefix("file://")
+                rawUrl.startsWith("/workspace/") || rawUrl.startsWith("/root/") -> rawUrl
+                else -> null
+            }
+            if (path != null) {
+                val lower = path.lowercase()
+                val isArchive = lower.endsWith(".zip") || lower.endsWith(".apk") ||
+                    lower.endsWith(".tar") || lower.endsWith(".gz") ||
+                    lower.endsWith(".rar") || lower.endsWith(".7z") ||
+                    lower.endsWith(".txc")
+                val isCodeFile = !isArchive && (lower.endsWith(".php") ||
+                    lower.endsWith(".js") || lower.endsWith(".jsx") ||
+                    lower.endsWith(".ts") || lower.endsWith(".tsx") ||
+                    lower.endsWith(".kt") || lower.endsWith(".java") ||
+                    lower.endsWith(".py") || lower.endsWith(".css") ||
+                    lower.endsWith(".html") || lower.endsWith(".htm") ||
+                    lower.endsWith(".json") || lower.endsWith(".xml") ||
+                    lower.endsWith(".md") || lower.endsWith(".txt") ||
+                    lower.endsWith(".yml") || lower.endsWith(".yaml") ||
+                    lower.endsWith(".sh") || lower.endsWith(".sql") ||
+                    lower.endsWith(".vue") || lower.endsWith(".c") ||
+                    lower.endsWith(".cpp") || lower.endsWith(".h") ||
+                    lower.endsWith(".go") || lower.endsWith(".rs") ||
+                    lower.endsWith(".rb") || lower.endsWith(".swift"))
+                when {
+                    isCodeFile -> onOpenFileLink(path)
+                    isArchive -> { }
+                    else -> try { uriHandler.openUri(rawUrl) } catch (_: Throwable) { }
+                }
+            } else {
+                try { uriHandler.openUri(rawUrl) } catch (_: Throwable) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (_: Throwable) { }
+                }
+            }
+        }
+    }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         Surface(
@@ -7161,6 +7256,7 @@ private fun MessageBubble(
                         markdown = displayText,
                         modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                         color = if (message.fromUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                        onOpenUri = fileLinkHandler,
                     )
                 } else SelectionContainer {
                     if (message.fromUser) {
@@ -7168,6 +7264,7 @@ private fun MessageBubble(
                             markdown = message.text,
                             modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            onOpenUri = fileLinkHandler,
                         )
                     } else if (isStreaming) {
                         val streamDisplayText = if (message.text.length > MAX_STREAMING_DISPLAY_CHARS) {
@@ -7187,6 +7284,7 @@ private fun MessageBubble(
                             modifier = Modifier.padding(start = 14.dp, end = 44.dp),
                             color = MaterialTheme.colorScheme.onSurface,
                             onRunCode = onRunInTerminal,
+                            onOpenUri = fileLinkHandler,
                         )
                     }
                 }
@@ -7500,5 +7598,49 @@ private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
             contentDescription = "Conzyx",
             modifier = Modifier.fillMaxSize(),
         )
+    }
+}
+
+@Composable
+private fun AllProjectsScreen(
+    projects: List<Project>,
+    isRunning: Boolean,
+    activeProjectId: String?,
+    projectTerminalRunning: Boolean,
+    onOpen: (Project) -> Unit,
+    onRename: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("All Projects (${projects.size})", fontWeight = FontWeight.SemiBold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(projects, key = { it.id }) { project ->
+                ProjectCard(
+                    project = project,
+                    taskRunning = isRunning && activeProjectId == project.id,
+                    terminalRunning = projectTerminalRunning && activeProjectId == project.id,
+                    onOpen = { onOpen(project) },
+                    onRename = { onRename(project.id, it) },
+                    onDelete = { onDelete(project.id) },
+                )
+            }
+        }
     }
 }
