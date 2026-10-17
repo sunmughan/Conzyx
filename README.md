@@ -3,6 +3,17 @@
 <div align="center" style="font-size: 1.5em; margin: 20px 0;">
     <strong>P</strong>enetration testing <strong>A</strong>rtificial <strong>G</strong>eneral <strong>I</strong>ntelligence
 </div>
+
+> **This fork is the world's 1st mobile-ready PentAGI to run on Android.** The full multi-agent penetration testing system now runs on a phone, inside a proot Ubuntu environment, with no Docker daemon and no rooted device needed.
+
+## What's new in this fork
+
+- **Proot-native executor** (`backend/pkg/proot`): a drop-in replacement for the Docker executor that runs every agent tool call inside proot. Select it with `PENTAGI_EXECUTOR=proot`. All 14 DockerClient methods are implemented and tested.
+- **Zero-Docker operation**: agents run their tools (nmap, Metasploit, sqlmap and 20+ more) in the proot sandbox instead of Docker containers.
+- **ARM64 static binary**: builds with `CGO_ENABLED=0 GOOS=linux GOARCH=arm64` into a single ~92MB static binary with zero CGO dependencies, ready to run on Android phones.
+- **PostgreSQL + pgvector on device**: the backend runs all its migrations against a device-local PostgreSQL with the pgvector extension, no external database server needed.
+
+Based on the upstream [vxcontrol/pentagi](https://github.com/vxcontrol/pentagi) project (MIT). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 <br>
 <div align="center">
 
