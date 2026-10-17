@@ -462,6 +462,12 @@ class RuntimeInstaller(private val context: Context) {
 
     fun penTestingBackendLog(): File = File(rootfs, "root/pentagi-data/backend.log")
 
+    fun cleanPenTestingInstall() {
+        penTestingSetupDir().deleteRecursively()
+        File(rootfs, "root/pgdata").deleteRecursively()
+        File(rootfs, "root/pentagi-data").deleteRecursively()
+    }
+
     suspend fun downloadPenTestingBundle(onBytes: suspend (downloaded: Long, total: Long) -> Unit): File {
         val downloaded = File(downloads, "pentagi-ondevice-test.tar.gz")
         downloadVerified(PENTESTING_BUNDLE_URL, downloaded, PENTESTING_BUNDLE_SHA256, onBytes = onBytes)
