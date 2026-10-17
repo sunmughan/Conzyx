@@ -673,6 +673,7 @@ fun PocketDevApp(
             onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
             onOpenPenTesting = { openStudio(OverlayScreen.PEN_TESTING) },
             onOpenDiagnostics = { navigator.openDiagnostics() },
+            onOpenAllProjects = { navigator.openAllProjects() },
         )
     }
 }
@@ -2440,6 +2441,7 @@ private fun RootScreenHost(
     onOpenCloudHybrid: () -> Unit = {},
     onOpenPenTesting: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
+    onOpenAllProjects: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2518,7 +2520,7 @@ private fun RootScreenHost(
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
                     onOpenPenTesting = onOpenPenTesting,
-                    onOpenAllProjects = { navigator.openAllProjects() },
+                    onOpenAllProjects = onOpenAllProjects,
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
