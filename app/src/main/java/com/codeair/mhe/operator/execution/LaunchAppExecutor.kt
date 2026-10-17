@@ -1,7 +1,7 @@
 package com.codeair.mhe.operator.execution
 
 import com.codeair.mhe.security.SafetyOperation
-import com.codeair.mhe.security.UiLaunchApp
+import com.codeair.mhe.security.SafetyOperation.UiLaunchApp
 import java.util.UUID
 
 class LaunchAppExecutor : OperatorStepExecutor {

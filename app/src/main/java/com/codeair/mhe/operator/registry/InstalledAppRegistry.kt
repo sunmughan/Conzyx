@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 
-internal data class DiscoveredApp(
+data class DiscoveredApp(
     val packageName: String,
     val appLabel: String
 )

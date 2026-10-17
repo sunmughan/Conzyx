@@ -2,7 +2,7 @@ package com.codeair.mhe.operator.execution
 
 import com.codeair.mhe.operator.observation.ObservationCoordinator
 import com.codeair.mhe.security.SafetyOperation
-import com.codeair.mhe.security.UiTypeText
+import com.codeair.mhe.security.SafetyOperation.UiTypeText
 import java.util.UUID
 
 class TypeTextExecutor : OperatorStepExecutor {
