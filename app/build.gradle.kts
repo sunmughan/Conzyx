@@ -38,7 +38,7 @@ val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
     // The release workflow resolves the newest verified runtime assets before every build.
     from(runtimeBundleDir) {
-        include("manifest.json", "conzyx-agy-arm64-*.tar.zst")
+        include("manifest.json")
     }
     into(generatedRuntimeAssets.map { it.dir("shared/runtime") })
 }
@@ -52,6 +52,7 @@ val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAss
             "conzyx-python-arm64-*.tar.zst",
             "conzyx-android-arm64-*.tar.zst",
             "conzyx-dsh-arm64-*.tar.zst",
+            "conzyx-agy-arm64-*.tar.zst",
         )
     }
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })
@@ -135,7 +136,8 @@ android {
             )
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasUploadSigning) {
                 signingConfig = signingConfigs.getByName("upload")
             }

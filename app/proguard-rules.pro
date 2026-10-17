@@ -1,1 +1,3 @@
-# Mobile Harness Extended alpha: release shrinking is intentionally disabled.
+-keepclasseswithmembernames class com.codeair.mhe.runtime.NativeSpawnProcessKt$NativeSpawn {
+    native <methods>;
+}

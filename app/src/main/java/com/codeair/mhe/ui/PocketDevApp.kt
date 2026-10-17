@@ -3774,6 +3774,11 @@ private fun StudioCardsSection(
                     )
                 }
             }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Surface(
                 modifier = Modifier
                     .weight(1f)
@@ -3816,6 +3821,8 @@ private fun StudioCardsSection(
                     )
                 }
             }
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
         }
     }
 }
