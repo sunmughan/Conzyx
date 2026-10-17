@@ -33,15 +33,33 @@ import com.codeair.mhe.R
 class KeepAliveService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var foregrounded = false
 
     override fun onCreate() {
         super.onCreate()
-        ensureChannel()
+        try {
+            ensureChannel()
+            startForeground(NOTIFICATION_ID, buildNotification())
+            foregrounded = true
+        } catch (e: Exception) {
+            stopSelf()
+            return
+        }
         acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification())
+        if (!foregrounded) {
+            try {
+                ensureChannel()
+                startForeground(NOTIFICATION_ID, buildNotification())
+                foregrounded = true
+            } catch (e: Exception) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            acquireWakeLock()
+        }
         // QA H30: NOT_STICKY — a system kill or a user swipe-away does
         // not resurrect this service. It restarts only when the app
         // backgrounds again (Application ON_STOP).
