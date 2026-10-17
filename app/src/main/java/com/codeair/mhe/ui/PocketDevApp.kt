@@ -653,6 +653,7 @@ fun PocketDevApp(
             onOpenTeamStudio = { openStudio(OverlayScreen.TEAM_STUDIO) },
             onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
             onOpenPenTesting = { openStudio(OverlayScreen.PEN_TESTING) },
+            onOpenDiagnostics = { navigator.openDiagnostics() },
         )
     }
 }
@@ -2419,6 +2420,7 @@ private fun RootScreenHost(
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
     onOpenPenTesting: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2625,7 +2627,7 @@ private fun RootScreenHost(
                     onToggleAutoUpdateToolsAndSkills = viewModel::toggleAutoUpdateToolsAndSkills,
                     onUpdateAllToolsAndSkills = { viewModel.autoUpdateToolsAndSkills(force = true) },
                     onOpenPrivacyPolicy = { showPrivacyPolicy = true },
-                    onOpenDiagnostics = { navigator.openDiagnostics() },
+                    onOpenDiagnostics = onOpenDiagnostics,
                     authViewModel = authViewModel,
                     onNavigateToAuth = onNavigateToAuth,
                     onBackupWorkspaces = { viewModel.backupAllWorkspaces() },
