@@ -8,7 +8,7 @@
 
 A platform that does not exist on mobile devices. Run a real Linux development environment, command multi-agent AI engineering teams, automate GitHub workflows, and build Android APKs, all from your phone. No root required.
 
-[![Release v3.2.11](https://img.shields.io/badge/Release-v3.2.11-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Conzyx/releases/tag/v3.2.11)
+[![Release v3.3.0](https://img.shields.io/badge/Release-v3.3.0-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Conzyx/releases/tag/v3.3.0)
 [![CI](https://img.shields.io/github/actions/workflow/status/sunmughan/Conzyx/android.yml?branch=v3&style=flat-square&label=CI)](https://github.com/sunmughan/Conzyx/actions)
 [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#-system-requirements)
 [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#-system-requirements)
@@ -16,8 +16,8 @@ A platform that does not exist on mobile devices. Run a real Linux development e
 
 <br/>
 
-[**Download Online APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.2.11/app-online-release.apk) &nbsp;·&nbsp;
-[**Download Offline APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.2.11/app-offline-release.apk)
+[**Download Online APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.3.0/app-online-release.apk) &nbsp;·&nbsp;
+[**Download Offline APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.3.0/app-offline-release.apk)
 
 </div>
 
@@ -28,6 +28,7 @@ A platform that does not exist on mobile devices. Run a real Linux development e
 - [What is Conzyx?](#-what-is-conzyx)
 - [Documentation](#-documentation)
 - [Features](#-features)
+  - [Pen Testing](#-pen-testing)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Building from Source](#-building-from-source)
@@ -133,6 +134,15 @@ Want the full in-depth guide? Start here:
 - Project scaffolding for Jetpack Compose, Flutter, React Native, and HTML5 web apps
 - On-device Gradle APK builds, APK signing verification, release keystores, and Play Store listing preparation
 
+### 🎯 Pen Testing
+
+A full multi-agent AI penetration testing system running on your phone. Describe a target and a goal in plain language; specialized AI agents plan the work, run professional security tools, and hand you a report.
+
+- One-tap **Setup Pen Testing** from the Studios card: downloads the verified backend package, installs PostgreSQL with pgvector, and boots the backend inside the proot Linux environment. No Docker needed.
+- **Open Web UI** launches the backend's web interface at `127.0.0.1:18080` inside the app's own in-app browser.
+- Stop, restart, reinstall, and view backend logs from the same screen.
+- Requires the core Linux runtime installed first; first setup needs internet once and takes 10-15 minutes.
+
 ### ☁️ Cloud Build via GitHub Actions
 
 - Build locally on-device or dispatch to GitHub Actions runners
@@ -169,7 +179,7 @@ The app runs 100% in rootless userspace. No root, no custom ROM, no special perm
 
 ## 📲 Installation
 
-1. Go to the [v3.2.11 release page](https://github.com/sunmughan/Conzyx/releases/tag/v3.2.11).
+1. Go to the [v3.3.0 release page](https://github.com/sunmughan/Conzyx/releases/tag/v3.3.0).
 2. Download the edition you want:
    - `app-online-release.apk` - lightweight, downloads runtimes on demand
    - `app-offline-release.apk` - everything bundled, works offline after install
@@ -344,6 +354,23 @@ When all four are set, the `upload` signing config is applied to release builds 
 
 </details>
 
+<details>
+<summary><b>Pen Testing</b></summary>
+
+The Pen Testing studio runs a multi-agent AI penetration testing backend on the device.
+
+**What setup does** (one tap on **Setup Pen Testing**):
+
+1. Downloads `pentagi-ondevice-test.tar.gz` (about 57MB) from the `pentagi-ondevice-1` GitHub release and verifies its SHA-256 checksum.
+2. Extracts it into the proot Linux environment at `/root/pentagi-setup`.
+3. Runs the setup script: installs PostgreSQL with the pgvector extension, initializes the database, and boots the backend with the proot-native executor. No Docker daemon is required.
+
+**Requirements:** the core Linux runtime must be installed first; internet is needed once for the download; first setup takes 10-15 minutes with live progress. Leaving the setup screen cancels the run.
+
+**Using it:** once ready, **Open Web UI** opens the backend interface at `http://127.0.0.1:18080` in the app's in-app browser. **Stop** shuts the backend down; **Start Pen Testing** boots it again; **Reinstall** re-runs setup; **View Logs** tails the backend log at `<rootfs>/root/pentagi-data/backend.log`.
+
+</details>
+
 ---
 
 ## 🗂️ Project Structure
@@ -387,7 +414,7 @@ Conzyx/
 
 ```
 +-------------------------------------------------------------------+
-|              Conzyx (v3.2.11)                      |
+|              Conzyx (v3.3.0)                      |
 |                                                                    |
 |  +------------------+  +-----------------+  +------------------+   |
 |  | Mobile IDE       |  | Visual DevTools |  | Android App      |   |
@@ -411,6 +438,12 @@ Conzyx/
 |  +--------------------------------------------------------------+  |
 |  |              Safety Engine                                   |  |
 |  |  Command interception - File shielding - Permissions - Audit |  |
+|  +--------------------------------------------------------------+  |
+|                                                                    |
+|  +--------------------------------------------------------------+  |
+|  |  Pen Testing: multi-agent AI penetration testing backend    |  |
+|  |  PostgreSQL + pgvector - Web UI at 127.0.0.1:18080          |  |
+|  |  One-tap setup - proot-native execution, no Docker needed   |  |
 |  +--------------------------------------------------------------+  |
 |                                                                    |
 |  +--------------------------------------------------------------+  |
