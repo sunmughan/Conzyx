@@ -2518,6 +2518,7 @@ private fun RootScreenHost(
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
                     onOpenPenTesting = onOpenPenTesting,
+                    onOpenAllProjects = { navigator.openAllProjects() },
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3896,6 +3897,7 @@ private fun ProjectsScreen(
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
     onOpenPenTesting: () -> Unit = {},
+    onOpenAllProjects: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -4141,7 +4143,7 @@ private fun ProjectsScreen(
                 ) {
                     Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (projects.size > 3) {
-                        TextButton(onClick = { navigator.openAllProjects() }) {
+                        TextButton(onClick = onOpenAllProjects) {
                             Text("View All", color = PocketOrange, fontWeight = FontWeight.SemiBold)
                         }
                     }
@@ -4208,7 +4210,7 @@ private fun ProjectsScreen(
                 if (projects.size > 3) {
                     item {
                         OutlinedButton(
-                            onClick = { navigator.openAllProjects() },
+                            onClick = onOpenAllProjects,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp),
