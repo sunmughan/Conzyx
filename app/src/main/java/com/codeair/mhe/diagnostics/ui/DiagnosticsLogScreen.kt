@@ -59,9 +59,11 @@ import kotlinx.coroutines.withContext
 
 private enum class LogSource(val label: String) {
     APP("App Log"),
+    SYSTEM("System Log"),
+    RUNTIME_SETUP("Runtime Setup"),
     PENTEST_SETUP("Pen Testing Setup"),
     PENTEST_BACKEND("Pen Testing Backend"),
-    RUNTIME("Runtime Output"),
+    LATEST_COMMAND("Latest Command Output"),
 }
 
 private const val MAX_LINES = 800
@@ -79,15 +81,31 @@ fun DiagnosticsLogScreen(onBack: () -> Unit) {
     fun resolveFile(): File? {
         return when (source) {
             LogSource.APP -> File(context.filesDir, "crash.log")
+            LogSource.SYSTEM -> null
+            LogSource.RUNTIME_SETUP -> File(context.filesDir, "setup/runtime-setup.log")
             LogSource.PENTEST_SETUP -> File(context.cacheDir, "pentagi-setup.log")
             LogSource.PENTEST_BACKEND -> installer.penTestingBackendLog()
-            LogSource.RUNTIME -> context.cacheDir.listFiles()
-                ?.filter { it.name.startsWith("runtime-output-") && it.name.endsWith(".log") }
+            LogSource.LATEST_COMMAND -> context.cacheDir.listFiles()
+                ?.filter { it.name.endsWith(".log") && it.name != "pentagi-setup.log" }
                 ?.maxByOrNull { it.lastModified() }
         }
     }
 
+    fun readSystemLog(): String {
+        return try {
+            val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "threadtime"))
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            val lines = out.lines()
+            if (lines.isEmpty()) "(empty system log)"
+            else lines.takeLast(MAX_LINES).joinToString("\n")
+        } catch (e: Exception) {
+            "Could not read system log: ${e.message}"
+        }
+    }
+
     fun readTail(): String {
+        if (source == LogSource.SYSTEM) return readSystemLog()
         val file = resolveFile()
         if (file == null || !file.isFile) return "No log file yet for \"${source.label}\"."
         return try {
