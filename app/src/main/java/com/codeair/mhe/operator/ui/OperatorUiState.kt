@@ -9,7 +9,8 @@ data class OperatorUiState(
     val timeline: List<OperatorTimelineEvent> = emptyList(),
     val pendingPrompt: AuthorizationPrompt? = null,
     val pendingBindingId: String = "",
-    val isRunning: Boolean = false
+    val isRunning: Boolean = false,
+    val error: String = ""
 )
 
 data class OperatorTimelineEvent(

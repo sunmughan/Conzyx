@@ -301,7 +301,7 @@ class GitStepExecutor(
     }
 }
 
-private class UnwiredOperatorStepExecutor(
+private class WiredOperatorStepExecutor(
     override val kind: PlanStepKind,
 ) : StepExecutor {
 
@@ -311,13 +311,25 @@ private class UnwiredOperatorStepExecutor(
                 kind == PlanStepKind.OPERATOR_ACT ||
                 kind == PlanStepKind.OPERATOR_VERIFY
         ) {
-            "UnwiredOperatorStepExecutor only handles operator kinds, got $kind"
+            "WiredOperatorStepExecutor only handles operator kinds, got $kind"
         }
     }
 
-    override suspend fun execute(step: PlanStep, ctx: WorkflowContext): OperationResult =
-        OperationResult.failure("operator step kind not yet wired to an executor")
+    override suspend fun execute(step: PlanStep, ctx: WorkflowContext): OperationResult {
+        val orchestrator = com.codeair.mhe.operator.OperatorRuntime.orchestrator
+            ?: return OperationResult.failure("operator not initialized: open the operator UI first")
+        return try {
+            when (kind) {
+                PlanStepKind.OPERATOR_OBSERVE -> orchestrator.observeForWorkflow()
+                PlanStepKind.OPERATOR_ACT -> orchestrator.actForWorkflow(step.target.ifBlank { step.title })
+                PlanStepKind.OPERATOR_VERIFY -> orchestrator.verifyForWorkflow()
+                else -> OperationResult.failure("Unsupported operator step kind $kind")
+            }
+        } catch (e: Exception) {
+            OperationResult.failure("operator step failed: ${e.message}")
+        }
+    }
 }
 
 fun operatorStepExecutor(kind: PlanStepKind): StepExecutor =
-    UnwiredOperatorStepExecutor(kind)
+    WiredOperatorStepExecutor(kind)

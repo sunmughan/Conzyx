@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun OperatorEntryScreen(
     state: OperatorUiState,
+    onSubmitGoal: (String) -> Unit,
     onOpenPreflight: () -> Unit,
     onOpenTimeline: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -52,6 +53,20 @@ fun OperatorEntryScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (state.error.isNotBlank()) {
+            Text(
+                state.error,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Button(
+            onClick = { onSubmitGoal(goal) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = goal.isNotBlank() && !state.isRunning
+        ) {
+            Text(if (state.isRunning) "Running..." else "Run")
+        }
         Button(onClick = onOpenPreflight, modifier = Modifier.fillMaxWidth()) {
             Text("Preflight checks")
         }

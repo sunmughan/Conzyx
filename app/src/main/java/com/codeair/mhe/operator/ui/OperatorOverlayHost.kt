@@ -23,6 +23,7 @@ fun OperatorOverlayHost(
     when (destination) {
         0 -> OperatorEntryScreen(
             state = state,
+            onSubmitGoal = { viewModel.submitGoal(it) },
             onOpenPreflight = { destination = 1 },
             onOpenTimeline = { destination = 2 },
             onOpenHistory = { destination = 3 },
@@ -68,8 +69,8 @@ fun OperatorOverlayHost(
         OperatorApprovalSheet(
             prompt = pendingPrompt,
             bindingId = state.pendingBindingId,
-            onGrant = { viewModel.clearPendingApproval() },
-            onDeny = { viewModel.clearPendingApproval() }
+            onGrant = { level -> viewModel.grantApproval(state.pendingBindingId, level) },
+            onDeny = { viewModel.denyApproval(state.pendingBindingId) }
         )
     }
 }

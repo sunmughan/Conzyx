@@ -18,7 +18,7 @@ class OperatorTaskExecutor(
     fun executeStep(runId: String, stepId: String, operation: SafetyOperation): OperatorActionResult {
         val observationBeforeId = observation.capture().observationId
         val dispatchedAtMillis = System.currentTimeMillis()
-        val decision = gateway.authorize(operation)
+        val decision = gateway.authorize(operation, sessionId = runId)
         when (decision.verdict) {
             SafetyVerdict.DENY -> return failedResult(
                 message = "Denied: ${decision.reason}",

@@ -206,3 +206,18 @@ interface ObservationRefDao {
     @Query("SELECT * FROM observation_refs WHERE packageName = :packageName ORDER BY timestampMillis DESC LIMIT :limit")
     suspend fun latestByPackage(packageName: String, limit: Int): List<ObservationRef>
 }
+
+@Dao
+interface ApprovalRecordDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(record: ApprovalRecord)
+
+    @Query("SELECT * FROM approval_records WHERE approvalId = :approvalId")
+    suspend fun getById(approvalId: String): ApprovalRecord?
+
+    @Query("UPDATE approval_records SET consumed = 1 WHERE approvalId = :approvalId")
+    suspend fun markConsumed(approvalId: String)
+
+    @Query("SELECT * FROM approval_records WHERE runId = :runId ORDER BY createdAtMillis ASC")
+    suspend fun listByRun(runId: String): List<ApprovalRecord>
+}

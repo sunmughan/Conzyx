@@ -20,8 +20,9 @@ import androidx.room.RoomDatabase
         ActionRecipe::class,
         InstalledApp::class,
         ObservationRef::class,
+        ApprovalRecord::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class MemoryDatabase : RoomDatabase() {
@@ -38,6 +39,7 @@ abstract class MemoryDatabase : RoomDatabase() {
     abstract fun actionRecipeDao(): ActionRecipeDao
     abstract fun installedAppDao(): InstalledAppDao
     abstract fun observationRefDao(): ObservationRefDao
+    abstract fun approvalRecordDao(): ApprovalRecordDao
 
     companion object {
         private const val DB_NAME = "conzyx_memory.db"
@@ -51,7 +53,7 @@ abstract class MemoryDatabase : RoomDatabase() {
                     context.applicationContext,
                     MemoryDatabase::class.java,
                     DB_NAME,
-                ).build().also { instance = it }
+                ).fallbackToDestructiveMigration().build().also { instance = it }
             }
         }
     }

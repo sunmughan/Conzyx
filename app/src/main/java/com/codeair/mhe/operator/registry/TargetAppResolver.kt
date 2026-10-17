@@ -9,9 +9,13 @@ data class ResolvedTarget(
 class TargetAppResolver(private val registry: InstalledAppRegistry) {
 
     fun resolve(userText: String): ResolvedTarget? {
+        return resolveAll(userText).firstOrNull()
+    }
+
+    fun resolveAll(userText: String): List<ResolvedTarget> {
         val query = userText.lowercase().trim()
-        if (query.isBlank()) return null
-        var best: ResolvedTarget? = null
+        if (query.isBlank()) return emptyList()
+        val scored = mutableListOf<ResolvedTarget>()
         for (app in registry.launchableApps()) {
             val confidence = runCatching {
                 when {
@@ -24,10 +28,10 @@ class TargetAppResolver(private val registry: InstalledAppRegistry) {
                     else -> null
                 }
             }.getOrNull()
-            if (confidence != null && (best == null || confidence > best.confidence)) {
-                best = ResolvedTarget(app.packageName, app.appLabel, confidence)
+            if (confidence != null) {
+                scored.add(ResolvedTarget(app.packageName, app.appLabel, confidence))
             }
         }
-        return best
+        return scored.sortedByDescending { it.confidence }
     }
 }

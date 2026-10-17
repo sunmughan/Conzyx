@@ -285,3 +285,29 @@ data class ObservationRef(
     val redactionNote: String = "",
     val evidenceRef: String = "",
 )
+
+@Entity(
+    tableName = "approval_records",
+    foreignKeys = [
+        ForeignKey(
+            entity = ExecutionRun::class,
+            parentColumns = ["runId"],
+            childColumns = ["runId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["runId", "createdAtMillis"]),
+    ],
+)
+data class ApprovalRecord(
+    @PrimaryKey val approvalId: String,
+    val runId: String,
+    val stepId: String = "",
+    val operationDescribe: String = "",
+    val parametersHash: String = "",
+    val targetPackage: String = "",
+    val expiresAtMillis: Long = 0L,
+    val consumed: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+)

@@ -68,6 +68,20 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        runCatching {
+            com.codeair.mhe.operator.capture.ScreenCaptureService.handleActivityResult(
+                requestCode,
+                resultCode,
+                data,
+                com.codeair.mhe.operator.capture.ScreenCaptureService.DEFAULT_REQUEST_CODE,
+                this
+            )
+        }
+    }
+
     companion object {
         const val EXTRA_NOTIFICATION_ROUTE = "notification_route"
     }

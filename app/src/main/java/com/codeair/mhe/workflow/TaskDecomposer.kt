@@ -120,3 +120,13 @@ class TemplateTaskDecomposer : TaskDecomposer {
         }
     }
 }
+
+fun operatorWorkflowGoal(goalText: String): WorkflowGoal {
+    val trimmed = goalText.trim()
+    require(trimmed.isNotBlank()) { "operator goal text is blank" }
+    return WorkflowGoal(
+        title = trimmed.take(80),
+        description = trimmed,
+        kind = WorkflowGoalKind.OPERATE_APP
+    )
+}
