@@ -4,7 +4,9 @@ import com.codeair.mhe.agent.team.blackboard.TeamBlackboard
 import com.codeair.mhe.agent.team.budget.TeamBudgetTracker
 import com.codeair.mhe.agent.team.comm.TeamCommunicationBus
 import com.codeair.mhe.agent.team.model.ArtifactType
+import com.codeair.mhe.agent.team.model.BuiltinAgentOverride
 import com.codeair.mhe.agent.team.model.ConflictDetectionResult
+import com.codeair.mhe.agent.team.model.CustomTeamAgent
 import com.codeair.mhe.agent.team.model.ReviewRecord
 import com.codeair.mhe.agent.team.model.ReviewVerdict
 import com.codeair.mhe.agent.team.model.RoleBudgetUsage
@@ -100,6 +102,26 @@ class AgentTeamOrchestrator(
     private val roleConfigs = ConcurrentHashMap<TeamRole, TeamRoleConfig>()
 
     /**
+     * Resolves custom agent ids to definitions. Set by MainViewModel from
+     * CustomTeamAgentStore; the dispatcher consults it per task.
+     */
+    var customAgentResolver: ((String) -> CustomTeamAgent?)? = null
+
+    /**
+     * Applies user customizations of built-in agents (instructions and
+     * permission overrides) on top of the default role configs.
+     */
+    fun applyBuiltinOverrides(overrides: Map<TeamRole, BuiltinAgentOverride>) {
+        overrides.forEach { (role, override) ->
+            val base = roleConfigs[role] ?: TeamRoleConfig(role)
+            roleConfigs[role] = base.copy(
+                systemPrompt = override.systemPrompt.ifBlank { base.systemPrompt },
+                permissions = override.permissions ?: base.permissions
+            )
+        }
+    }
+
+    /**
      * Live per-agent execution snapshots from the real executor (Antigravity-style
      * observability). Empty when no real executor is wired.
      */
@@ -150,6 +172,7 @@ class AgentTeamOrchestrator(
             roleAgents = roleInstances.toMap(),
             projectDir = projectDir,
             goal = _sessionState.value.activeGoal,
+            customAgentResolver = customAgentResolver,
             // Hardware baseline caps the configured maximum; dynamic pressure
             // throttles it further per stage inside the dispatcher.
             maxConcurrentAgents = minOf(
@@ -213,7 +236,15 @@ class AgentTeamOrchestrator(
     /**
      * Decomposes a user goal into an interconnected 10-role engineering DAG.
      */
-    fun planProject(userGoal: String): List<TeamTask> {
+    fun planProject(userGoal: String): List<TeamTask> =
+        planProject(userGoal, customAgents = emptyList())
+
+    /**
+     * Plans the project DAG, then appends one task per suggested custom agent.
+     * Custom agent tasks specialize their base role and run with the agent's
+     * own instructions and permissions.
+     */
+    fun planProject(userGoal: String, customAgents: List<CustomTeamAgent>): List<TeamTask> {
         blackboard.clear()
         commBus.clear()
         gatekeeper.clear()
@@ -324,6 +355,31 @@ class AgentTeamOrchestrator(
         )
 
         scheduler.setTasks(tasks)
+
+        val customTasks = customAgents.filter { it.isEnabled }.map { agent ->
+            TeamTask(
+                title = "${agent.name}: ${userGoal.take(60)}",
+                description = agent.description,
+                assignedRole = agent.baseRole,
+                assignedCustomAgentId = agent.id,
+                priority = TeamTaskPriority.MEDIUM,
+                dependencies = listOf(architectTaskId),
+                affectedFiles = emptyList()
+            )
+        }
+        if (customTasks.isNotEmpty()) {
+            scheduler.setTasks(tasks + customTasks)
+            customTasks.forEach { task ->
+                val agent = customAgents.first { it.id == task.assignedCustomAgentId }
+                commBus.sendMessage(
+                    fromRole = TeamRole.MANAGER,
+                    toRole = task.assignedRole,
+                    type = TeamMessageType.HANDOFF,
+                    content = "Custom agent '${agent.name}' added to this run (suggested for this goal).",
+                    taskId = task.id
+                )
+            }
+        }
 
         // Publish project blueprint into Shared Blackboard
         blackboard.publishArtifact(

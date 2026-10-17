@@ -70,6 +70,8 @@ class ConcurrentTeamDispatcher(
     private val projectDir: File? = null,
     private val goal: String = "",
     private val maxConcurrentAgents: Int = 3,
+    /** Resolves a custom agent id to its definition; null when custom agents are unavailable. */
+    private val customAgentResolver: ((String) -> com.codeair.mhe.agent.team.model.CustomTeamAgent?)? = null,
     /**
      * Adaptive resource-aware scheduler. When present, device pressure is
      * re-evaluated before every stage and every 30s during the run; the stage
@@ -208,12 +210,24 @@ class ConcurrentTeamDispatcher(
         val execResult = try {
             locks.forEach { it.lock() }
             try {
+                val customAgent = task.assignedCustomAgentId?.let { customAgentResolver?.invoke(it) }
+                val baseConfig = roleConfigs[task.assignedRole] ?: TeamRoleConfig(task.assignedRole)
+                val effectiveConfig = if (customAgent != null) {
+                    baseConfig.copy(
+                        systemPrompt = customAgent.systemPrompt.ifBlank { baseConfig.systemPrompt },
+                        permissions = customAgent.permissions,
+                        defaultAgentKind = customAgent.defaultAgentKind
+                    )
+                } else baseConfig
                 val context = TeamExecutionContext(
                     projectDir = projectDir,
                     goal = goal,
                     role = task.assignedRole,
-                    roleConfig = roleConfigs[task.assignedRole] ?: TeamRoleConfig(task.assignedRole),
-                    agentKind = roleAgents[task.assignedRole] ?: AgentKind.ANTIGRAVITY,
+                    roleConfig = effectiveConfig,
+                    customAgent = customAgent,
+                    agentKind = customAgent?.defaultAgentKind
+                        ?: roleAgents[task.assignedRole]
+                        ?: AgentKind.ANTIGRAVITY,
                     dependencyOutputs = dependencyOutputsOf(task),
                     blackboardSummary = summarizeBlackboard(),
                     timeoutMs = 20L * 60L * 1000L,

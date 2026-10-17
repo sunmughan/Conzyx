@@ -26,6 +26,8 @@ data class TeamExecutionContext(
     val role: TeamRole,
     /** Role configuration (permissions, agent kind, system prompt). */
     val roleConfig: TeamRoleConfig,
+    /** When the task runs as a user-created custom agent, its definition. */
+    val customAgent: com.codeair.mhe.agent.team.model.CustomTeamAgent? = null,
     /** Coding-agent engine this role is wired to. */
     val agentKind: AgentKind,
     /** Completed dependency outputs, keyed by task id, in dependency order. */

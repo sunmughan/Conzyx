@@ -543,6 +543,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val marketplaceInstallManager = com.codeair.mhe.marketplace.MarketplaceInstallManager(application)
     val marketplacePublishedItemsStore = com.codeair.mhe.marketplace.MarketplacePublishedItemsStore(application)
+    val customTeamAgentStore = com.codeair.mhe.data.CustomTeamAgentStore(application)
     val teamConcurrencyController = com.codeair.mhe.agent.team.runtime.AdaptiveConcurrencyController(application)
     val teamOrchestrator = com.codeair.mhe.agent.team.AgentTeamOrchestrator(
         teamExecutor = com.codeair.mhe.agent.team.runtime.RealTeamAgentExecutor(
@@ -594,7 +595,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isKillSwitchEngaged = { permissionPolicyEngine.isEmergencyKillSwitchEngaged() },
         ),
         concurrencyController = teamConcurrencyController,
-    )
+    ).also { orchestrator ->
+        orchestrator.customAgentResolver = { id -> customTeamAgentStore.getById(id) }
+        orchestrator.applyBuiltinOverrides(customTeamAgentStore.overrides.value)
+    }
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -800,6 +804,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // the retired custom OAuth implementation and discover the real CLI status.
         runCatching { vault.remove(LEGACY_GITHUB_TOKEN_KEY) }
         viewModelScope.launch { refreshGitHubConnection() }
+        viewModelScope.launch {
+            customTeamAgentStore.overrides.collect { overrides ->
+                teamOrchestrator.applyBuiltinOverrides(overrides)
+            }
+        }
         viewModelScope.launch {
             gitWorkflowEngine.state.collect { wfState ->
                 _state.update { it.copy(gitWorkflowState = wfState) }

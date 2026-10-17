@@ -443,6 +443,8 @@ fun PocketDevApp(
         BackHandler(onBack = { navigator.closeOverlay() })
         com.codeair.mhe.agent.team.ui.TeamStudioScreen(
             orchestrator = viewModel.teamOrchestrator,
+            agentStore = viewModel.customTeamAgentStore,
+            projects = viewModel.state.value.projects,
             onClose = { navigator.closeOverlay() }
         )
         return
