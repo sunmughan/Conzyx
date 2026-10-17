@@ -6,8 +6,8 @@ import com.codeair.mhe.operator.observation.UiObservation
 fun verifyTapPostcondition(before: UiObservation, after: UiObservation, nodeId: String): Boolean {
     if (!after.fresh) return false
     if (after.generation == before.generation) return false
-    val path = nodeId.substringAfter(":p", missingDelimiterValue = "")
-    if (nodeId.substringBefore(":p", missingDelimiterValue = "") == nodeId) return false
+    if (!nodeId.contains(":p")) return false
+    val path = nodeId.substringAfter(":p")
     val nodeBefore = findNodeByPath(before.root, path) ?: return false
     if (after.packageName != before.packageName) return true
     val nodeAfter = findNodeByPath(after.root, path) ?: return true
