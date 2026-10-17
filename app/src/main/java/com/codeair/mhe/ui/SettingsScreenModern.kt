@@ -41,6 +41,7 @@ import com.codeair.mhe.runtime.BackgroundProtectionHelper
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
@@ -200,6 +201,7 @@ fun SettingsScreen(
     onToggleAutoUpdateToolsAndSkills: (Boolean) -> Unit = {},
     onUpdateAllToolsAndSkills: () -> Unit = {},
     onOpenPrivacyPolicy: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     authViewModel: AuthViewModel? = null,
     onNavigateToAuth: () -> Unit = {},
     onBackupWorkspaces: () -> Unit = {},
@@ -1054,6 +1056,35 @@ fun SettingsScreen(
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "View privacy policy",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenDiagnostics() }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.BugReport,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnostics", fontWeight = FontWeight.Medium)
+                        Text(
+                            "Live app and sandbox error logs, copy or share",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open diagnostics",
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

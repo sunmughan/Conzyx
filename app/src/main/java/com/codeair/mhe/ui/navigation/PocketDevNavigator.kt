@@ -52,6 +52,10 @@ class PocketDevNavigator {
         openOverlay = OverlayScreen.PEN_TESTING
     }
 
+    fun openDiagnostics() {
+        openOverlay = OverlayScreen.DIAGNOSTICS
+    }
+
     fun closeOverlay() {
         openOverlay = null
     }
@@ -62,6 +66,7 @@ class PocketDevNavigator {
     val showCloudHybridScreen: Boolean get() = openOverlay == OverlayScreen.CLOUD_HYBRID
     val showMarketplaceScreen: Boolean get() = openOverlay == OverlayScreen.MARKETPLACE
     val showPenTestingScreen: Boolean get() = openOverlay == OverlayScreen.PEN_TESTING
+    val showDiagnosticsScreen: Boolean get() = openOverlay == OverlayScreen.DIAGNOSTICS
 }
 
 /** The full-screen overlay destinations reachable from PocketDev. */
@@ -71,4 +76,5 @@ enum class OverlayScreen {
     CLOUD_HYBRID,
     MARKETPLACE,
     PEN_TESTING,
+    DIAGNOSTICS,
 }

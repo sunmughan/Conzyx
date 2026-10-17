@@ -475,6 +475,14 @@ fun PocketDevApp(
         return
     }
 
+    if (navigator.showDiagnosticsScreen) {
+        BackHandler(onBack = { navigator.closeOverlay() })
+        com.codeair.mhe.diagnostics.ui.DiagnosticsLogScreen(
+            onBack = { navigator.closeOverlay() },
+        )
+        return
+    }
+
     when {
         state.startupStage == StartupStage.CHECKING -> StartupLoadingScreen(
             state = state,
@@ -2617,6 +2625,7 @@ private fun RootScreenHost(
                     onToggleAutoUpdateToolsAndSkills = viewModel::toggleAutoUpdateToolsAndSkills,
                     onUpdateAllToolsAndSkills = { viewModel.autoUpdateToolsAndSkills(force = true) },
                     onOpenPrivacyPolicy = { showPrivacyPolicy = true },
+                    onOpenDiagnostics = { navigator.openDiagnostics() },
                     authViewModel = authViewModel,
                     onNavigateToAuth = onNavigateToAuth,
                     onBackupWorkspaces = { viewModel.backupAllWorkspaces() },
