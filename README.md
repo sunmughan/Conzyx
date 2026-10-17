@@ -60,7 +60,7 @@ Both editions share the same application ID (`com.codeair.mhe`) and the same fea
 
 Want the full in-depth guide? Start here:
 
-- [**Complete Documentation (PDF, 171 pages)**](docs/Conzyx-Complete-Documentation.pdf) — every screen, every feature, every setting explained in depth: agent system, terminal, file manager, marketplace, skills, settings, build variants, permissions, troubleshooting, and FAQ.
+- [**Complete Documentation (PDF, 173 pages)**](docs/Conzyx-Complete-Documentation.pdf) — every screen, every feature, every setting explained in depth: agent system, terminal, file manager, marketplace, skills, settings, build variants, permissions, troubleshooting, and FAQ.
 - [**Pitch Deck (PDF)**](docs/Conzyx-Pitch-Deck.pdf) — the product story: what Conzyx is, who it is for, and why it exists.
 
 ---
