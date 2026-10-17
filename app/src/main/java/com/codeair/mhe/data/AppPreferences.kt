@@ -46,6 +46,10 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("cloud_hybrid_onboarding_seen", false)
         set(value) { preferences.edit().putBoolean("cloud_hybrid_onboarding_seen", value).commit() }
 
+    var penTestingOnboardingSeen: Boolean
+        get() = preferences.getBoolean("pen_testing_onboarding_seen", false)
+        set(value) { preferences.edit().putBoolean("pen_testing_onboarding_seen", value).commit() }
+
     var runtimeSetupComplete: Boolean
         get() = preferences.getBoolean("runtime_setup_complete", false)
         set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).commit() }

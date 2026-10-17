@@ -340,6 +340,7 @@ fun PocketDevApp(
             OverlayScreen.APP_FACTORY -> appPreferences.appFactoryOnboardingSeen
             OverlayScreen.TEAM_STUDIO -> appPreferences.teamStudioOnboardingSeen
             OverlayScreen.CLOUD_HYBRID -> appPreferences.cloudHybridOnboardingSeen
+            OverlayScreen.PEN_TESTING -> appPreferences.penTestingOnboardingSeen
             else -> true
         }
         if (seen) {
@@ -347,6 +348,7 @@ fun PocketDevApp(
                 OverlayScreen.APP_FACTORY -> navigator.openAppFactory()
                 OverlayScreen.TEAM_STUDIO -> navigator.openTeamStudio()
                 OverlayScreen.CLOUD_HYBRID -> navigator.openCloudHybrid()
+                OverlayScreen.PEN_TESTING -> navigator.openPenTesting()
                 else -> Unit
             }
         } else {
@@ -358,6 +360,7 @@ fun PocketDevApp(
             OverlayScreen.APP_FACTORY -> appPreferences.appFactoryOnboardingSeen = true
             OverlayScreen.TEAM_STUDIO -> appPreferences.teamStudioOnboardingSeen = true
             OverlayScreen.CLOUD_HYBRID -> appPreferences.cloudHybridOnboardingSeen = true
+            OverlayScreen.PEN_TESTING -> appPreferences.penTestingOnboardingSeen = true
             else -> Unit
         }
     }
@@ -641,7 +644,7 @@ fun PocketDevApp(
             onOpenAppFactory = { openStudio(OverlayScreen.APP_FACTORY) },
             onOpenTeamStudio = { openStudio(OverlayScreen.TEAM_STUDIO) },
             onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
-            onOpenPenTesting = { navigator.openPenTesting() },
+            onOpenPenTesting = { openStudio(OverlayScreen.PEN_TESTING) },
         )
     }
 }
@@ -3579,6 +3582,13 @@ private fun StudioOnboardingDialog(
             "Workers Fleet" to "Your cloud runners. Add your own workers to take the heavy jobs.",
             "Job Pipeline" to "Every job in one pipeline: running, completed, and where each one ran.",
             "Routing Policies" to "Rules that decide what runs on your phone and what goes to the cloud.",
+        )
+        OverlayScreen.PEN_TESTING -> listOf(
+            "Pen Testing" to "Pen Testing puts a full AI penetration testing lab on your phone: describe a target in plain words and a team of AI agents tests it and hands you a report.",
+            "One-Tap Setup" to "Tap Setup Pen Testing once. The backend downloads, installs its database, and starts itself, with live progress. First setup takes 10 to 15 minutes.",
+            "How It Works" to "You describe the target and the goal. AI agents plan the test and run professional security tools against it, all on your device.",
+            "Web UI" to "When ready, Open Web UI opens the testing interface in the app's own browser. Stop and Start control the backend anytime.",
+            "Good To Know" to "Needs the core Linux runtime installed first, and internet for the one-time download. Reinstall and logs are one tap away.",
         )
         else -> listOf("" to "")
     }
