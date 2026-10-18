@@ -5894,7 +5894,8 @@ private fun FilesTab(
                         IconButton(onClick = { showGitDialog = true }) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_git_logo),
-                                contentDescription = "Git operations"
+                                contentDescription = "Git operations",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         if (loading) {
