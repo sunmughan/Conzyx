@@ -501,7 +501,7 @@ fun GitOperationsDialog(
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Status", fontSize = 11.sp)
+                        Text("Status", fontSize = 11.sp, maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = {
@@ -513,7 +513,7 @@ fun GitOperationsDialog(
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Diff", fontSize = 11.sp)
+                        Text("Diff", fontSize = 11.sp, maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = {
@@ -525,7 +525,7 @@ fun GitOperationsDialog(
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Branches", fontSize = 11.sp)
+                        Text("Branches", fontSize = 11.sp, maxLines = 1)
                     }
                 }
 
@@ -541,7 +541,7 @@ fun GitOperationsDialog(
                         enabled = !loading,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Push", fontSize = 11.sp)
+                        Text("Push", fontSize = 11.sp, maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = {
@@ -554,7 +554,7 @@ fun GitOperationsDialog(
                         enabled = !loading,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Pull", fontSize = 11.sp)
+                        Text("Pull", fontSize = 11.sp, maxLines = 1)
                     }
                 }
 
@@ -563,7 +563,7 @@ fun GitOperationsDialog(
                         onClick = onOpenIssues,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("GitHub Issues & PRs", fontSize = 11.sp)
+                        Text("GitHub Issues & PRs", fontSize = 11.sp, maxLines = 1)
                     }
                 }
 

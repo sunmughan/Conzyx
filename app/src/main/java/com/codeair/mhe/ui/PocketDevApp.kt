@@ -5892,7 +5892,10 @@ private fun FilesTab(
                             IconButton(onClick = onExport) { Icon(Icons.Default.Download, "Export project as ZIP") }
                         }
                         IconButton(onClick = { showGitDialog = true }) {
-                            Icon(Icons.Default.Code, "Git operations")
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_git_logo),
+                                contentDescription = "Git operations"
+                            )
                         }
                         if (loading) {
                             CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
