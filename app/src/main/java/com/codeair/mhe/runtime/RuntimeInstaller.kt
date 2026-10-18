@@ -462,6 +462,65 @@ class RuntimeInstaller(private val context: Context) {
 
     fun penTestingBackendLog(): File = File(rootfs, "root/pentagi-data/backend.log")
 
+    data class AppFileEntry(
+        val name: String,
+        val isDirectory: Boolean,
+        val sizeBytes: Long,
+        val sizeDisplay: String,
+    )
+
+    suspend fun listAppFiles(relativePath: String): List<AppFileEntry> = withContext(Dispatchers.IO) {
+        val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+        val safePath = sanitizeGuestPath(relativePath) ?: return@withContext emptyList()
+        val output = runGuest(proot, "ls -la --time-style=long-iso " + shellEscape("/root/$safePath") + " 2>/dev/null")
+        parseLsOutput(output)
+    }
+
+    suspend fun deleteAppPath(relativePath: String): Boolean = withContext(Dispatchers.IO) {
+        val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+        val safePath = sanitizeGuestPath(relativePath) ?: return@withContext false
+        if (safePath.isEmpty()) return@withContext false
+        val exit = runGuestExitCode(proot, "rm -rf " + shellEscape("/root/$safePath"))
+        exit == 0
+    }
+
+    private fun sanitizeGuestPath(relativePath: String): String? {
+        val normalized = relativePath.trim().trim('/').replace(Regex("/+"), "/")
+        if (normalized.contains("..")) return null
+        if (normalized.isEmpty()) return ""
+        val parts = normalized.split("/")
+        if (parts.any { it.isEmpty() || it == "." || it == ".." }) return null
+        return parts.joinToString("/")
+    }
+
+    private fun shellEscape(path: String): String = "'" + path.replace("'", "'\\''") + "'"
+
+    private fun parseLsOutput(output: String): List<AppFileEntry> {
+        val entries = mutableListOf<AppFileEntry>()
+        for (line in output.lines()) {
+            if (line.isBlank() || line.startsWith("total ")) continue
+            val parts = line.trim().split(Regex("\\s+"))
+            if (parts.size < 9) continue
+            val perms = parts[0]
+            if (perms.length < 10) continue
+            val isDir = perms[0] == 'd'
+            val sizeBytes = parts[4].toLongOrNull() ?: 0L
+            val name = parts.subList(8, parts.size).joinToString(" ")
+            if (name == "." || name == "..") continue
+            entries.add(AppFileEntry(name, isDir, sizeBytes, formatBytes(sizeBytes)))
+        }
+        return entries.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return "%.1f KB".format(kb)
+        val mb = kb / 1024.0
+        if (mb < 1024) return "%.1f MB".format(mb)
+        return "%.2f GB".format(mb / 1024.0)
+    }
+
     fun cleanPenTestingInstall() {
         penTestingSetupDir().deleteRecursively()
         File(rootfs, "root/pgdata").deleteRecursively()
