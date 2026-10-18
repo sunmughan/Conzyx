@@ -8,7 +8,7 @@
 
 A platform that does not exist on mobile devices. Run a real Linux development environment, command multi-agent AI engineering teams, automate GitHub workflows, and build Android APKs, all from your phone. No root required.
 
-[![Release v3.4.0](https://img.shields.io/badge/Release-v3.4.0-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Conzyx/releases/tag/v3.4.0)
+[![Release v3.4.4](https://img.shields.io/badge/Release-v3.4.4-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Conzyx/releases/tag/v3.4.4)
 [![CI](https://img.shields.io/github/actions/workflow/status/sunmughan/Conzyx/android.yml?branch=v3&style=flat-square&label=CI)](https://github.com/sunmughan/Conzyx/actions)
 [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#-system-requirements)
 [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#-system-requirements)
@@ -16,8 +16,8 @@ A platform that does not exist on mobile devices. Run a real Linux development e
 
 <br/>
 
-[**Download Online APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.4.0/app-online-release.apk) &nbsp;·&nbsp;
-[**Download Offline APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.4.0/app-offline-release.apk)
+[**Download Online APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.4.4/app-online-release.apk) &nbsp;·&nbsp;
+[**Download Offline APK**](https://github.com/sunmughan/Conzyx/releases/download/v3.4.4/app-offline-release.apk)
 
 </div>
 
@@ -179,7 +179,7 @@ The app runs 100% in rootless userspace. No root, no custom ROM, no special perm
 
 ## 📲 Installation
 
-1. Go to the [v3.4.0 release page](https://github.com/sunmughan/Conzyx/releases/tag/v3.4.0).
+1. Go to the [v3.4.4 release page](https://github.com/sunmughan/Conzyx/releases/tag/v3.4.4).
 2. Download the edition you want:
    - `app-online-release.apk` - lightweight, downloads runtimes on demand
    - `app-offline-release.apk` - everything bundled, works offline after install
@@ -414,7 +414,7 @@ Conzyx/
 
 ```
 +-------------------------------------------------------------------+
-|              Conzyx (v3.4.0)                      |
+|              Conzyx (v3.4.4)                      |
 |                                                                    |
 |  +------------------+  +-----------------+  +------------------+   |
 |  | Mobile IDE       |  | Visual DevTools |  | Android App      |   |
