@@ -580,6 +580,21 @@ class RuntimeInstaller(private val context: Context) {
         )
     }
 
+    fun startPenTestingBackendOnly(outputFile: File): Process {
+        val runtime = installedRuntime()
+        return process(
+            proot = runtime.proot,
+            rootfs = runtime.rootfs,
+            workspace = File(runtime.rootfs, "root"),
+            environment = emptyMap(),
+            guestCommand = listOf(
+                "/usr/bin/env", "bash", "-lc",
+                "cd /root/pentagi-setup && chmod +x setup-and-boot.sh && ./setup-and-boot.sh --backend-only",
+            ),
+            outputFile = outputFile,
+        )
+    }
+
     suspend fun stopPenTestingBackend(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val runtime = installedRuntime()
