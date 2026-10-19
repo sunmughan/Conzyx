@@ -456,8 +456,12 @@ class RuntimeInstaller(private val context: Context) {
 
     fun isPenTestingInstalled(): Boolean {
         val dir = penTestingSetupDir()
-        return dir.resolve(".pocket-pentesting-version").readTextOrNull() == PENTESTING_BUNDLE_VERSION &&
+        return dir.resolve("setup-and-boot.sh").isFile &&
             File(dir, "pentagi-arm64-proot").canExecute()
+    }
+
+    fun isPenTestingBundleCurrent(): Boolean {
+        return penTestingSetupDir().resolve(".pocket-pentesting-version").readTextOrNull() == PENTESTING_BUNDLE_VERSION
     }
 
     fun penTestingBackendLog(): File = File(rootfs, "root/pentagi-data/backend.log")
@@ -3693,7 +3697,7 @@ main().catch((err) => {
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
         const val PENTESTING_BUNDLE_URL = "https://github.com/sunmughan/Conzyx/releases/download/pentagi-ondevice-1/pentagi-ondevice-test.tar.gz"
         private const val PENTESTING_BUNDLE_SHA256 = "aaec8ec09e8f5ff95b9982782541af12f820a257e41d07338f64af9e9ce1d501"
-        private const val PENTESTING_BUNDLE_VERSION = "8"
+        private const val PENTESTING_BUNDLE_VERSION = "9"
         const val PENTESTING_API_PORT = 18080
         const val PENTESTING_GUEST_SETUP_DIR = "/root/pentagi-setup"
         private const val LEGACY_README = "# Pocket Dev project\n\nThis project is managed locally on Android.\n"
