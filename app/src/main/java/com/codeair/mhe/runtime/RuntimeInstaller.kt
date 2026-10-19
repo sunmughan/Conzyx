@@ -632,7 +632,7 @@ class RuntimeInstaller(private val context: Context) {
 
     fun setPenTestingBackendProcess(proc: Process?) {
         penTestingBackendProcess?.let { old ->
-            try { if (old.isAlive) old.destroyForcibly() } catch (_) {}
+            try { if (old.isAlive) old.destroyForcibly() } catch (e: Exception) {}
         }
         penTestingBackendProcess = proc
     }
