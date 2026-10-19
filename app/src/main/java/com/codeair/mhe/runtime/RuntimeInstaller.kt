@@ -460,10 +460,6 @@ class RuntimeInstaller(private val context: Context) {
             File(dir, "pentagi-arm64-proot").canExecute()
     }
 
-    fun isPenTestingBundleCurrent(): Boolean {
-        return penTestingSetupDir().resolve(".pocket-pentesting-version").readTextOrNull() == PENTESTING_BUNDLE_VERSION
-    }
-
     fun penTestingBackendLog(): File = File(rootfs, "root/pentagi-data/backend.log")
 
     data class AppFileEntry(
