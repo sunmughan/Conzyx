@@ -595,6 +595,48 @@ class RuntimeInstaller(private val context: Context) {
         )
     }
 
+    /**
+     * Starts the PentAGI backend as a DIRECT child process (not via nohup).
+     * The returned Process IS the backend; the app must hold it to keep the
+     * backend alive. Using exec replaces the shell, so killing the Process
+     * kills the backend cleanly.
+     * Postgres must already be running (use --backend-only script first).
+     */
+    fun startPenTestingBackendDirect(outputFile: File): Process {
+        val runtime = installedRuntime()
+        return process(
+            proot = runtime.proot,
+            rootfs = runtime.rootfs,
+            workspace = File(runtime.rootfs, "root"),
+            environment = mapOf(
+                "PENTAGI_EXECUTOR" to "proot",
+                "PROOT_ROOTFS" to "/",
+                "PROOT_NO_SECCOMP" to "1",
+                "DATABASE_URL" to "postgres://pentagi:pentagi@127.0.0.1:5432/pentagi?sslmode=disable",
+                "DATA_DIR" to "/root/pentagi-data",
+                "SERVER_HOST" to "127.0.0.1",
+                "SERVER_PORT" to PENTESTING_API_PORT.toString(),
+                "STATIC_DIR" to "/root/pentagi-setup/fe",
+            ),
+            guestCommand = listOf(
+                "/usr/bin/env", "bash", "-lc",
+                "cd /root/pentagi-setup && chmod +x pentagi-arm64-proot && exec ./pentagi-arm64-proot",
+            ),
+            outputFile = outputFile,
+        )
+    }
+
+    /** Holds the direct backend process so it stays alive. */
+    var penTestingBackendProcess: Process? = null
+        private set
+
+    fun setPenTestingBackendProcess(proc: Process?) {
+        penTestingBackendProcess?.let { old ->
+            try { if (old.isAlive) old.destroyForcibly() } catch (_) {}
+        }
+        penTestingBackendProcess = proc
+    }
+
     suspend fun stopPenTestingBackend(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val runtime = installedRuntime()
