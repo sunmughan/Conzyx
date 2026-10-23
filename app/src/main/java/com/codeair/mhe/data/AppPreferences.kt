@@ -550,7 +550,7 @@ class AppPreferences(private val context: Context) {
         if (!file.exists()) return emptyList()
         return runCatching {
             val arr = JSONArray(file.readText())
-            (0 until arr.length()).map { i ->
+            val loaded = (0 until arr.length()).map { i ->
                 val obj = arr.getJSONObject(i)
                 ChatMessage(
                     id = obj.getString("id"),
@@ -628,14 +628,13 @@ class AppPreferences(private val context: Context) {
                                 }
                             } ?: emptyList(),
                         )
-                    } ?: if (!obj.optBoolean("fromUser", false) && obj.optString("text").isNotBlank()) {
-                        com.codeair.mhe.ui.RoadmapParser.parseFromText(
-                            obj.optString("text"),
-                            runCatching { ExecutionMode.valueOf(preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name) }.getOrDefault(ExecutionMode.UNIFIED),
-                        )
-                    } else null,
+                    },
                 )
             }
+            com.codeair.mhe.ui.RoadmapParser.attachParsedRoadmaps(
+                loaded,
+                runCatching { ExecutionMode.valueOf(preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name) }.getOrDefault(ExecutionMode.UNIFIED),
+            )
         // Crash fix (2026-10-13): a persisted transcript could contain two messages
         // with the same id (two "interrupted-<sessionId>" rows). The chat
         // LazyColumn keys by message id, and a duplicate key throws

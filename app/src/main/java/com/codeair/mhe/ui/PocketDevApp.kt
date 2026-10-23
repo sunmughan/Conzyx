@@ -6382,6 +6382,13 @@ private fun ChatTab(
             (orchestratorSnapshot == null ||
                 orchestratorSnapshot.state == com.codeair.mhe.session.EngineeringState.IDLE ||
                 orchestratorSnapshot.state == com.codeair.mhe.session.EngineeringState.ANALYZING)
+        val outcomeFinishedAtMillis = lastTaskOutcome?.finishedAtMillis
+        LaunchedEffect(bannerIsOutcome, outcomeFinishedAtMillis) {
+            if (bannerIsOutcome && lastTaskOutcome?.state == com.codeair.mhe.session.EngineeringState.COMPLETED) {
+                delay(3_000)
+                onDismissTaskOutcome()
+            }
+        }
         if (bannerSnapshot != null && bannerSnapshot.state != com.codeair.mhe.session.EngineeringState.IDLE) {
             Box(
                 modifier = Modifier

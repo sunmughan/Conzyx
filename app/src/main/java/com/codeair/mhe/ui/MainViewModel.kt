@@ -702,13 +702,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     } else {
         listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
-    }).map { msg ->
-        if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank()) {
-            val parsed = RoadmapParser.parseFromText(msg.text, ExecutionMode.fromStored(preferences.executionMode))
-            if (parsed != null) msg.copy(roadmap = parsed) else msg
-        } else {
-            msg
-        }
+    }).let { loaded ->
+        RoadmapParser.attachParsedRoadmaps(loaded, ExecutionMode.fromStored(preferences.executionMode))
     }
     private val initialActiveRoadmap = initialMessages.mapNotNull { it.roadmap }.lastOrNull()
     private val initialScratchpad = deriveScratchpadItems(initialActiveRoadmap, emptyList(), false)
@@ -2986,6 +2981,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val message = current.messages.firstOrNull { it.id == messageId } ?: return
         if (message.fromUser || message.roadmap != null || message.workItems.isNotEmpty()) return
         if (message.id == current.streamingMessageId || message.text.isBlank() || message.text.length > 30000) return
+        if (current.lastTaskOutcome != null) return
+        val messageIndex = current.messages.indexOfFirst { it.id == messageId }
+        if (messageIndex < 0 || RoadmapParser.segmentHasTerminalRoadmap(current.messages, messageIndex)) return
         val attemptKey = message.id + ":" + message.text.hashCode()
         if (roadmapParseAttempts.size > 4000) roadmapParseAttempts.clear()
         if (!roadmapParseAttempts.add(attemptKey)) return
@@ -4336,11 +4334,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     val compactedMessages = agentChatController.compactSystemMessageDumps(stateWithResponse.messages)
+                    val segmentStartIndex = compactedMessages.indexOfLast { it.fromUser }
+                    val allowFreshRoadmapParse = current.activeRoadmap?.isApproved != true
                     val messagesWithRoadmap = compactedMessages.mapIndexed { index, msg ->
                         val isRecent = index >= compactedMessages.size - 20
                         if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                             msg.copy(roadmap = completedActiveRoadmap)
-                        } else if (isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
+                        } else if (allowFreshRoadmapParse && index > segmentStartIndex && isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
                             msg.text.length <= 30000) {
                             val parsed = agentChatController.roadmapForMessage(msg.text, stateWithResponse.executionMode)
                             if (parsed != null) msg.copy(roadmap = parsed) else msg
@@ -4416,11 +4416,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                         val compactedMessages = agentChatController.compactSystemMessageDumps(segmentFinishedState.messages)
+                        val segmentStartIndex = compactedMessages.indexOfLast { it.fromUser }
+                        val allowFreshRoadmapParse = current.activeRoadmap?.isApproved != true
                         val messagesWithRoadmap = compactedMessages.mapIndexed { index, msg ->
                             val isRecent = index >= compactedMessages.size - 20
                             if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                                 msg.copy(roadmap = completedActiveRoadmap)
-                            } else if (isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
+                            } else if (allowFreshRoadmapParse && index > segmentStartIndex && isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
                                 msg.text.length <= 30000) {
                                 val parsed = agentChatController.roadmapForMessage(msg.text, segmentFinishedState.executionMode)
                                 if (parsed != null) msg.copy(roadmap = parsed) else msg

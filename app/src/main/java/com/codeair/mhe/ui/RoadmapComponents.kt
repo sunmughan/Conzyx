@@ -535,7 +535,7 @@ fun RoadmapCard(
                         color = PocketGreen,
                     )
                 }
-            } else {
+            } else if (!roadmap.isApproved) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -556,44 +556,22 @@ fun RoadmapCard(
                         Text("Add Note", fontSize = 11.sp, maxLines = 1)
                     }
 
-                    if (!roadmap.isApproved) {
-                        Button(
-                            onClick = onApproveAndBuild,
-                            modifier = Modifier.heightIn(min = 48.dp).weight(1f),
-                            contentPadding = PaddingValues(horizontal = 12.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text("Approve & Build", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = PocketGreen,
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Approved & Building",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = PocketGreen,
-                            )
-                        }
+                    Button(
+                        onClick = onApproveAndBuild,
+                        modifier = Modifier.heightIn(min = 48.dp).weight(1f),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Approve & Build", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }

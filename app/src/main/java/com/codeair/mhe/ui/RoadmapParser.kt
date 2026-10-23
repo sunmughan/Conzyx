@@ -1,6 +1,7 @@
 package com.codeair.mhe.ui
 
 import com.codeair.mhe.model.ActiveRoadmap
+import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ExecutionMode
 import com.codeair.mhe.model.RoadmapStep
 import com.codeair.mhe.model.StepStatus
@@ -165,6 +166,39 @@ object RoadmapParser {
             mode = mode,
             createdAtMillis = System.currentTimeMillis(),
         )
+    }
+
+    fun isTerminal(roadmap: ActiveRoadmap): Boolean =
+        roadmap.isApproved ||
+            (roadmap.steps.isNotEmpty() && roadmap.steps.all { it.status == StepStatus.COMPLETED })
+
+    fun segmentHasTerminalRoadmap(messages: List<ChatMessage>, targetIndex: Int): Boolean {
+        var index = minOf(targetIndex, messages.size) - 1
+        while (index >= 0) {
+            val message = messages[index]
+            if (message.fromUser) return false
+            val roadmap = message.roadmap
+            if (roadmap != null && isTerminal(roadmap)) return true
+            index--
+        }
+        return false
+    }
+
+    fun attachParsedRoadmaps(messages: List<ChatMessage>, mode: ExecutionMode): List<ChatMessage> {
+        val result = ArrayList<ChatMessage>(messages.size)
+        for (message in messages) {
+            if (message.fromUser || message.roadmap != null || message.text.isBlank()) {
+                result.add(message)
+                continue
+            }
+            if (segmentHasTerminalRoadmap(result, result.size)) {
+                result.add(message)
+                continue
+            }
+            val parsed = parseFromText(message.text, mode)
+            result.add(if (parsed != null) message.copy(roadmap = parsed) else message)
+        }
+        return result
     }
 
     private fun cleanTitle(raw: String): String {
