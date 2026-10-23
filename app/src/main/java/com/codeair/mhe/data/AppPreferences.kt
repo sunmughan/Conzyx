@@ -194,6 +194,16 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name
         set(value) { preferences.edit().putString("execution_mode", value).commit() }
 
+    /**
+     * Identity keys of completion-banner events the user (or the 3-second
+     * auto-dismiss) has already acknowledged. Persisted so a dismissed
+     * "Verified & Completed" banner can never reappear for the same finished
+     * task after an app restart. See completionEventKeys in ProjectSessionState.
+     */
+    var acknowledgedBannerEventKeys: Set<String>
+        get() = preferences.getStringSet("acknowledged_banner_event_keys", emptySet())?.toSet() ?: emptySet()
+        set(value) { preferences.edit().putStringSet("acknowledged_banner_event_keys", value).commit() }
+
     var agentBrowserDriveEnabled: Boolean
         get() = preferences.getBoolean("agent_browser_drive_enabled", true)
         set(value) { preferences.edit().putBoolean("agent_browser_drive_enabled", value).commit() }

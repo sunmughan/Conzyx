@@ -365,6 +365,7 @@ data class AppUiState(
     val scratchpadExpanded: Boolean = false,
     val orchestratorSnapshot: com.codeair.mhe.session.OrchestratorSnapshot? = null,
     val lastTaskOutcome: TaskOutcome? = null,
+    val acknowledgedBannerEventKeys: Set<String> = emptySet(),
     val emergencyKillSwitchActive: Boolean = false,
     val allowShellExec: Boolean = true,
     val allowNetworkAccess: Boolean = true,
@@ -738,6 +739,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             projectChats = initialChats,
             activeChatId = initialActiveChatId,
             messages = initialMessages,
+            acknowledgedBannerEventKeys = preferences.acknowledgedBannerEventKeys,
             activeRoadmap = initialActiveRoadmap,
             scratchpadItems = initialScratchpad,
             githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
@@ -3001,7 +3003,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissTaskOutcome() {
-        _state.update { it.copy(lastTaskOutcome = null) }
+        // Acknowledge EVERY identity key of the completion event currently on
+        // display (stored outcome, finish timestamp, latched live snapshot)
+        // and persist them. The banner is derived from state on every
+        // recomposition, and the orchestrator snapshot stays latched at its
+        // terminal state after a task finishes — clearing only the outcome
+        // (the v3.4.9 behaviour) let the same event resurface through the
+        // live snapshot forever. With all keys acknowledged and persisted,
+        // the event can never render again for this finished task.
+        val current = _state.value
+        val eventKeys = completionEventKeys(
+            current.orchestratorSnapshot,
+            current.lastTaskOutcome,
+            current.taskFinishedAtMillis,
+        )
+        if (eventKeys.isNotEmpty()) {
+            val acknowledged = (current.acknowledgedBannerEventKeys + eventKeys).toSet()
+            preferences.acknowledgedBannerEventKeys = acknowledged
+            _state.update { it.copy(lastTaskOutcome = null, acknowledgedBannerEventKeys = acknowledged) }
+        } else {
+            _state.update { it.copy(lastTaskOutcome = null) }
+        }
         val projectId = _state.value.activeProject?.id ?: return
         projectSessionStates.update { states ->
             val slice = states[projectId] ?: return@update states

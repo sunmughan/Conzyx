@@ -5456,6 +5456,7 @@ private fun WorkspaceScreen(
                     onEnsureMessageRoadmap = onEnsureMessageRoadmap,
                     orchestratorSnapshot = state.orchestratorSnapshot,
                     lastTaskOutcome = state.lastTaskOutcome,
+                    acknowledgedBannerEventKeys = state.acknowledgedBannerEventKeys,
                     onDismissTaskOutcome = onDismissTaskOutcome,
                     onRollbackToBaseline = onRollbackToBaseline,
                     emergencyKillSwitchActive = state.emergencyKillSwitchActive,
@@ -6221,6 +6222,7 @@ private fun ChatTab(
     onEnsureMessageRoadmap: (String) -> Unit = {},
     orchestratorSnapshot: com.codeair.mhe.session.OrchestratorSnapshot? = null,
     lastTaskOutcome: TaskOutcome? = null,
+    acknowledgedBannerEventKeys: Set<String> = emptySet(),
     onDismissTaskOutcome: () -> Unit = {},
     onRollbackToBaseline: () -> Unit = {},
     emergencyKillSwitchActive: Boolean = false,
@@ -6377,14 +6379,24 @@ private fun ChatTab(
                 }
             }
         }
-        val bannerSnapshot = bannerSnapshotFor(orchestratorSnapshot, lastTaskOutcome)
-        val bannerIsOutcome = bannerSnapshot != null && lastTaskOutcome != null &&
-            (orchestratorSnapshot == null ||
-                orchestratorSnapshot.state == com.codeair.mhe.session.EngineeringState.IDLE ||
-                orchestratorSnapshot.state == com.codeair.mhe.session.EngineeringState.ANALYZING)
-        val outcomeFinishedAtMillis = lastTaskOutcome?.finishedAtMillis
-        LaunchedEffect(bannerIsOutcome, outcomeFinishedAtMillis) {
-            if (bannerIsOutcome && lastTaskOutcome?.state == com.codeair.mhe.session.EngineeringState.COMPLETED) {
+        val bannerSnapshot = bannerSnapshotFor(
+            live = orchestratorSnapshot,
+            outcome = lastTaskOutcome,
+            taskFinishedAtMillis = taskFinishedAtMillis,
+            acknowledgedEventKeys = acknowledgedBannerEventKeys,
+        )
+        // The banner is a completion event whenever it renders a terminal
+        // state for a finished task — regardless of whether the snapshot came
+        // from the stored outcome or from the orchestrator snapshot latched
+        // at COMPLETED/FAILED. (v3.4.9 keyed this off the outcome only, and
+        // the latched live snapshot shadowed the outcome in exactly that
+        // case, so the timer and the dismiss button never applied to the
+        // banner the user actually saw — it stayed pinned forever.)
+        val bannerEventKeys = completionEventKeys(orchestratorSnapshot, lastTaskOutcome, taskFinishedAtMillis)
+        val bannerIsCompletion = bannerSnapshot != null && bannerEventKeys.isNotEmpty() &&
+            bannerSnapshot.state.isTerminalBannerState()
+        LaunchedEffect(bannerEventKeys) {
+            if (bannerIsCompletion && bannerSnapshot?.state == com.codeair.mhe.session.EngineeringState.COMPLETED) {
                 delay(3_000)
                 onDismissTaskOutcome()
             }
@@ -6397,8 +6409,10 @@ private fun ChatTab(
             ) {
                 EngineeringStateBanner(
                     snapshot = bannerSnapshot,
-                    onRollbackToBaseline = if (bannerIsOutcome) null else onRollbackToBaseline,
-                    onDismiss = if (bannerIsOutcome) onDismissTaskOutcome else null,
+                    onRollbackToBaseline = if (bannerIsCompletion &&
+                        bannerSnapshot.state != com.codeair.mhe.session.EngineeringState.FAILED
+                    ) null else onRollbackToBaseline,
+                    onDismiss = if (bannerIsCompletion) onDismissTaskOutcome else null,
                 )
             }
         }
@@ -6461,7 +6475,7 @@ private fun ChatTab(
                         )
                     }
                 }
-                itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { _, rawMessage ->
+                itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { messageIndex, rawMessage ->
                     val message = rawMessage
                     LaunchedEffect(rawMessage.id, rawMessage.text, rawMessage.roadmap) {
                         if (!rawMessage.fromUser && rawMessage.roadmap == null &&
@@ -6492,6 +6506,11 @@ private fun ChatTab(
                                 }
                             },
                             onOpenFileLink = onOpenFileByPath,
+                            roadmapActionsEnabled = RoadmapParser.roadmapActionsEnabled(
+                                messages,
+                                messageIndex,
+                                lastTaskOutcome?.finishedAtMillis,
+                            ),
                         )
                     }
                 }
@@ -7221,6 +7240,7 @@ private fun MessageBubble(
     onAddRoadmapComment: (stepId: String?) -> Unit = {},
     onApproveAndBuildRoadmap: () -> Unit = {},
     onOpenFileLink: (String) -> Unit = {},
+    roadmapActionsEnabled: Boolean = true,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -7352,6 +7372,7 @@ private fun MessageBubble(
                         onAddComment = onAddRoadmapComment,
                         onApproveAndBuild = onApproveAndBuildRoadmap,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        actionsEnabled = roadmapActionsEnabled,
                     )
                 }
                 if (message.attachments.isNotEmpty()) {

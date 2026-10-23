@@ -399,6 +399,7 @@ fun RoadmapCard(
     onAddComment: (stepId: String?) -> Unit,
     onApproveAndBuild: () -> Unit,
     modifier: Modifier = Modifier,
+    actionsEnabled: Boolean = true,
 ) {
     var isExpanded by remember { mutableStateOf(true) }
     val isAllCompleted = roadmap.steps.isNotEmpty() && roadmap.steps.all { it.status == StepStatus.COMPLETED }
@@ -535,7 +536,7 @@ fun RoadmapCard(
                         color = PocketGreen,
                     )
                 }
-            } else if (!roadmap.isApproved) {
+            } else if (!roadmap.isApproved && actionsEnabled) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

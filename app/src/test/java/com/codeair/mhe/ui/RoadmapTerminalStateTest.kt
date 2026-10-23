@@ -5,6 +5,7 @@ import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ExecutionMode
 import com.codeair.mhe.model.RoadmapStep
 import com.codeair.mhe.model.StepStatus
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -110,6 +111,59 @@ class RoadmapTerminalStateTest {
         assertNull(result[2].roadmap)
         assertNotNull(result[4].roadmap)
         assertFalse(result[4].roadmap!!.isApproved)
+    }
+
+    @Test
+    fun `roadmap actions stay enabled while its task is still open`() {
+        val pending = roadmap(false, StepStatus.PENDING, StepStatus.PENDING)
+        val messages = listOf(
+            user("Build the thing"),
+            assistant(planText, pending),
+        )
+        assertTrue(RoadmapParser.roadmapActionsEnabled(messages, 1, outcomeFinishedAtMillis = null))
+    }
+
+    @Test
+    fun `roadmap actions die when a newer user turn closes the segment`() {
+        val pending = roadmap(false, StepStatus.PENDING, StepStatus.PENDING)
+        val messages = listOf(
+            user("Build the thing"),
+            assistant(planText, pending),
+            assistant(summaryText),
+            user("Now do another thing"),
+        )
+        assertFalse(RoadmapParser.roadmapActionsEnabled(messages, 1, outcomeFinishedAtMillis = null))
+    }
+
+    @Test
+    fun `roadmap actions die once the producing task records an outcome`() {
+        // The finished-task resurfacing bug: the task completed, but its
+        // roadmap was never approved and its steps were not all marked
+        // completed, so the card kept offering Approve & Build forever.
+        val pending = roadmap(false, StepStatus.PENDING, StepStatus.PENDING)
+        val planMessage = ChatMessage(
+            fromUser = false,
+            text = planText,
+            createdAt = Instant.ofEpochMilli(1_000L),
+            roadmap = pending,
+        )
+        val messages = listOf(user("Build the thing"), planMessage, assistant(summaryText))
+        assertFalse(RoadmapParser.roadmapActionsEnabled(messages, 1, outcomeFinishedAtMillis = 2_000L))
+        // An outcome from an EARLIER task must not disable a newer plan.
+        assertTrue(RoadmapParser.roadmapActionsEnabled(messages, 1, outcomeFinishedAtMillis = 500L))
+    }
+
+    @Test
+    fun `terminal roadmaps never offer actions`() {
+        val approved = roadmap(true, StepStatus.PENDING)
+        val completed = roadmap(false, StepStatus.COMPLETED, StepStatus.COMPLETED)
+        val messages = listOf(
+            user("Build the thing"),
+            assistant(planText, approved),
+            assistant(planText, completed),
+        )
+        assertFalse(RoadmapParser.roadmapActionsEnabled(messages, 1, outcomeFinishedAtMillis = null))
+        assertFalse(RoadmapParser.roadmapActionsEnabled(messages, 2, outcomeFinishedAtMillis = null))
     }
 
     @Test

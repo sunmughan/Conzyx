@@ -184,6 +184,34 @@ object RoadmapParser {
         return false
     }
 
+    /**
+     * Whether the roadmap attached to messages[messageIndex] may still show
+     * its action buttons (Approve & Build / Add Note). A roadmap stops being
+     * actionable when its task is over:
+     * - the roadmap itself is terminal (approved, or every step completed);
+     * - a newer user message closed its segment (a later turn has begun);
+     * - the session recorded a task outcome at or after the roadmap message
+     *   was created (the task that produced it already finished).
+     * Without the last two checks the buttons resurface forever on the
+     * persisted transcript of a finished task.
+     */
+    fun roadmapActionsEnabled(
+        messages: List<ChatMessage>,
+        messageIndex: Int,
+        outcomeFinishedAtMillis: Long?,
+    ): Boolean {
+        val message = messages.getOrNull(messageIndex) ?: return false
+        val roadmap = message.roadmap ?: return false
+        if (isTerminal(roadmap)) return false
+        for (i in messageIndex + 1 until messages.size) {
+            if (messages[i].fromUser) return false
+        }
+        if (outcomeFinishedAtMillis != null &&
+            message.createdAt.toEpochMilli() <= outcomeFinishedAtMillis
+        ) return false
+        return true
+    }
+
     fun attachParsedRoadmaps(messages: List<ChatMessage>, mode: ExecutionMode): List<ChatMessage> {
         val result = ArrayList<ChatMessage>(messages.size)
         for (message in messages) {
