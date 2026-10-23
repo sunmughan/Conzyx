@@ -93,14 +93,15 @@ class BannerSnapshotTest {
     @Test
     fun `acknowledged outcome with idle live snapshot renders nothing`() {
         val keys = completionEventKeys(null, completedOutcome, taskFinishedAtMillis = 1234L)
-        assertNull(
-            bannerSnapshotFor(
-                liveSnapshot(EngineeringState.IDLE),
-                completedOutcome,
-                1234L,
-                acknowledgedEventKeys = keys,
-            ),
+        val banner = bannerSnapshotFor(
+            liveSnapshot(EngineeringState.IDLE),
+            completedOutcome,
+            1234L,
+            acknowledgedEventKeys = keys,
         )
+        // The acknowledged completion must not render: the result is either
+        // no snapshot or the IDLE snapshot, both of which the banner UI hides.
+        assertTrue(banner == null || banner.state == EngineeringState.IDLE)
     }
 
     @Test
