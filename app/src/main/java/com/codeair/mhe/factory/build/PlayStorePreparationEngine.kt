@@ -112,14 +112,18 @@ object PlayStorePreparationEngine {
                 details = "${meta.shortDescription.length}/80 chars"
             ),
             ComplianceAuditItem(
-                name = "Privacy policy reachable",
+                name = "Privacy policy URL set",
                 passed = meta.privacyPolicyUrl.startsWith("https://"),
-                details = meta.privacyPolicyUrl.ifBlank { "[TODO: add privacy policy URL]" }
+                details = meta.privacyPolicyUrl.ifBlank {
+                    "[TODO: add privacy policy URL — never auto-generated]"
+                }
             ),
             ComplianceAuditItem(
                 name = "Contact email present",
                 passed = meta.contactEmail.contains("@"),
-                details = meta.contactEmail.ifBlank { "[TODO: add contact email]" }
+                details = meta.contactEmail.ifBlank {
+                    "[TODO: add the developer's real contact email — never auto-generated]"
+                }
             ),
             ComplianceAuditItem(
                 name = "Package name valid",

@@ -142,7 +142,7 @@ fun AppFactoryScreen(
                             )
                         }
                         Text(
-                            text = "Prompt to native Android, Flutter & React Native with automated CI",
+                            text = "Describe an app — AI designs the blueprint, Conzyx scaffolds the code and builds it in the runtime",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -275,21 +275,19 @@ private fun BlueprintTab(
         }
 
         item {
-            Text("Pre-Built Archetypes", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Text("Archetype Hint (optional)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "A hint only — the AI designs the app from your description above. A hint never forces a template.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(6.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(AppFactoryBlueprintEngine.Archetype.entries.toTypedArray()) { arch ->
                     FilterChip(
                         selected = selectedArchetype == arch,
                         onClick = {
-                            if (selectedArchetype == arch) {
-                                selectedArchetype = null
-                            } else {
-                                selectedArchetype = arch
-                                if (promptText.isBlank()) {
-                                    promptText = "Build a ${arch.title.lowercase()} with complete features."
-                                }
-                            }
+                            selectedArchetype = if (selectedArchetype == arch) null else arch
                         },
                         label = { Text(arch.title, fontSize = 11.5.sp) }
                     )
@@ -363,7 +361,7 @@ private fun BlueprintTab(
                 onClick = {
                     onGenerate(promptText, selectedFramework, selectedBuildMode, selectedArchetype)
                 },
-                enabled = !isGenerating && (promptText.isNotBlank() || selectedArchetype != null),
+                enabled = !isGenerating && promptText.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
@@ -556,7 +554,8 @@ private fun BuildAutomationTab(
         item {
             Text("3. Build Automation (On-Device & GitHub CI)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Build on your Android device or offload compilation to free GitHub Actions runners.",
+                "On-Device runs Gradle inside the Conzyx runtime (needs the Android dev stack from Settings). " +
+                    "GitHub CI only writes the workflow file into the project — the build runs on GitHub after you push, nothing is compiled in the app.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -637,7 +636,11 @@ private fun BuildAutomationTab(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (buildResult.success) "Build Successful!" else "Build Failed",
+                                when {
+                                    buildResult.success -> "Build Successful!"
+                                    buildResult.ciWorkflowFile != null -> "CI Workflow Generated — Nothing Built Yet"
+                                    else -> "Build Failed"
+                                },
                                 fontWeight = FontWeight.Bold,
                                 color = if (buildResult.success) {
                                     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF81C784) else Color(0xFF2E7D32)
@@ -665,7 +668,11 @@ private fun BuildAutomationTab(
                         if (buildResult.ciWorkflowFile != null) {
                             Spacer(Modifier.height(8.dp))
                             Text("Generated Workflow: ${buildResult.ciWorkflowFile.name}", fontWeight = FontWeight.Medium, fontSize = 12.5.sp)
-                            Text("Push repo to trigger cloud build on GitHub Actions.", fontSize = 11.sp)
+                            Text(
+                                buildResult.errorMessage
+                                    ?: "Nothing was built in the app. Push this project to GitHub and download the artifact from the Actions run.",
+                                fontSize = 11.sp
+                            )
                         }
                     }
                 }
@@ -854,7 +861,16 @@ private fun PlayStoreTab(
                         Text("Title: ${blueprint.playStoreMetadata.title} (${blueprint.playStoreMetadata.title.length}/30)", fontSize = 12.sp)
                         Text("Short Description: ${blueprint.playStoreMetadata.shortDescription} (${blueprint.playStoreMetadata.shortDescription.length}/80)", fontSize = 12.sp)
                         Text("Category: ${blueprint.playStoreMetadata.category}", fontSize = 12.sp)
-                        Text("Contact: ${blueprint.playStoreMetadata.contactEmail}", fontSize = 12.sp)
+                        Text(
+                            "Contact: " + blueprint.playStoreMetadata.contactEmail
+                                .ifBlank { "[TODO: add the developer's real contact email]" },
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            "Privacy Policy: " + blueprint.playStoreMetadata.privacyPolicyUrl
+                                .ifBlank { "[TODO: publish a privacy policy and set its URL]" },
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
@@ -866,21 +882,28 @@ private fun PlayStoreTab(
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Policy & Target SDK Compliance", fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Target SDK 35 (Meets Android 14/15 minimum of 34)", fontSize = 12.sp)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("GDPR/CCPA Privacy Policy Generated", fontSize = 12.sp)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = adaptiveCheckGreen(), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("64-bit Native Architectures Enabled", fontSize = 12.sp)
-                        }
+                        Text(
+                            "Evaluated live against this blueprint — failing items stay failing until they are really fixed.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        com.codeair.mhe.factory.build.PlayStorePreparationEngine
+                            .runComplianceAudit(blueprint)
+                            .forEach { auditItem ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (auditItem.passed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = if (auditItem.passed) adaptiveCheckGreen() else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "${auditItem.name}: ${auditItem.details}",
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
                     }
                 }
             }

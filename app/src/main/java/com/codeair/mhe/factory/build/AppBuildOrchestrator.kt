@@ -2,111 +2,123 @@ package com.codeair.mhe.factory.build
 
 import android.content.Context
 import com.codeair.mhe.factory.model.AppBlueprint
+import com.codeair.mhe.factory.model.AppFramework
 import com.codeair.mhe.factory.model.BuildArtifactType
 import com.codeair.mhe.factory.model.BuildMode
 import com.codeair.mhe.factory.model.BuildResult
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
- * Real build orchestration for App Factory scaffolded projects (v3).
+ * Real build orchestration for App Factory scaffolded projects.
  *
- * [runBuild] actually executes Gradle inside [projectDir] and reports the
- * genuine outcome — no simulated success. [installApk] uses the platform
- * [PackageInstaller] API to install a real APK file.
+ * On-device builds run Gradle inside the app's Linux runtime through a
+ * [GuestBuildSession] (JDK + Gradle + Android SDK from the Android dev
+ * stack) and report the genuine exit code — the previous implementation
+ * spawned the scaffold's stub `gradlew` in the Android app process, where
+ * no Gradle exists, so every build died with exit 127. [installApk] uses
+ * the platform [PackageInstaller] API to install a real APK file.
+ *
+ * The GitHub Actions mode generates the CI workflow file into the project
+ * and says so; it does not claim a build happened — the build runs on
+ * GitHub after the user pushes the project.
  */
 object AppBuildOrchestrator {
 
-    fun runBuild(
+    private const val BUILD_TIMEOUT_MS = 30 * 60 * 1000L
+
+    suspend fun runBuild(
         projectDir: File,
         blueprint: AppBlueprint,
         artifactType: BuildArtifactType,
-        buildMode: BuildMode
+        buildMode: BuildMode,
+        session: GuestBuildSession? = null,
+        guestProjectPath: String = "/workspace",
     ): BuildResult {
         val startedAt = System.currentTimeMillis()
         val logs = mutableListOf<String>()
         logs += "Building ${blueprint.name} (${artifactType.displayName}) via ${buildMode.displayName}..."
 
+        fun failure(message: String, ciWorkflowFile: File? = null) = BuildResult(
+            success = false,
+            artifactType = artifactType,
+            buildMode = buildMode,
+            ciWorkflowFile = ciWorkflowFile,
+            logs = logs.apply { this += "ERROR: $message" },
+            durationMs = System.currentTimeMillis() - startedAt,
+            errorMessage = message
+        )
+
+        if (blueprint.framework != AppFramework.ANDROID_COMPOSE) {
+            return failure(
+                "Builds currently target Android (Jetpack Compose) projects only. " +
+                    "This blueprint is ${blueprint.framework.displayName}; switch the framework " +
+                    "to Android in the Blueprint tab to build it here."
+            )
+        }
+
         if (buildMode == BuildMode.GITHUB_ACTIONS) {
-            val msg = "GitHub Actions CI build is not wired yet — push the project to a repo " +
-                "with the Conzyx CI workflow, or use On-Device build."
-            logs += "ERROR: $msg"
+            val workflow = try {
+                generateGitHubActionsWorkflow(projectDir, blueprint, artifactType)
+            } catch (e: Exception) {
+                return failure("Could not write the CI workflow: ${e.message}")
+            }
+            val msg = "CI workflow written to .github/workflows/${workflow.name}. Nothing was built " +
+                "in the app — push this project to GitHub to run the build there, then download " +
+                "the ${artifactType.extension.uppercase()} from the Actions run's artifacts."
+            logs += msg
             return BuildResult(
                 success = false,
                 artifactType = artifactType,
                 buildMode = buildMode,
+                ciWorkflowFile = workflow,
                 logs = logs,
                 durationMs = System.currentTimeMillis() - startedAt,
                 errorMessage = msg
             )
         }
 
-        val gradleTask = when (artifactType) {
-            BuildArtifactType.APK_DEBUG -> "assembleDebug"
-            BuildArtifactType.APK_RELEASE -> "assembleRelease"
-            BuildArtifactType.AAB_BUNDLE -> "bundleRelease"
-        }
-
-        val gradlew = File(projectDir, "gradlew")
-        if (!gradlew.isFile) {
-            val msg = "No Gradle wrapper found in ${projectDir.absolutePath} — scaffold the project first."
-            logs += "ERROR: $msg"
-            return BuildResult(
-                success = false,
-                artifactType = artifactType,
-                buildMode = buildMode,
-                logs = logs,
-                durationMs = System.currentTimeMillis() - startedAt,
-                errorMessage = msg
+        if (session == null) {
+            return failure(
+                "The on-device build session is unavailable, so no build was run. " +
+                    "Builds run inside the Conzyx runtime; reopen App Factory and try again."
             )
         }
 
-        return try {
-            gradlew.setExecutable(true)
-            val process = ProcessBuilder("sh", gradlew.absolutePath, gradleTask, "--stacktrace")
-                .directory(projectDir)
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().readText()
-            val finished = process.waitFor(30, TimeUnit.MINUTES)
-            logs += output.lines().takeLast(120)
-            if (!finished) {
-                process.destroyForcibly()
-                val msg = "Gradle build timed out after 30 minutes."
-                logs += "ERROR: $msg"
-                return BuildResult(
-                    success = false, artifactType = artifactType, buildMode = buildMode,
-                    logs = logs, durationMs = System.currentTimeMillis() - startedAt,
-                    errorMessage = msg
-                )
-            }
-            val exitCode = process.exitValue()
-            val artifact = findBuiltArtifact(projectDir, artifactType)
-            if (exitCode == 0 && artifact != null) {
-                logs += "Build succeeded: ${artifact.absolutePath}"
-                BuildResult(
-                    success = true, artifactType = artifactType, buildMode = buildMode,
-                    outputFile = artifact, logs = logs,
-                    durationMs = System.currentTimeMillis() - startedAt
-                )
-            } else {
-                val msg = if (exitCode != 0) "Gradle exited with code $exitCode."
-                else "Gradle succeeded but no ${artifactType.extension.uppercase()} artifact was produced."
-                logs += "ERROR: $msg"
-                BuildResult(
-                    success = false, artifactType = artifactType, buildMode = buildMode,
-                    logs = logs, durationMs = System.currentTimeMillis() - startedAt,
-                    errorMessage = msg
-                )
-            }
+        val hasSettings = File(projectDir, "settings.gradle.kts").isFile ||
+            File(projectDir, "settings.gradle").isFile
+        if (!hasSettings) {
+            return failure(
+                "No Gradle project found in ${projectDir.absolutePath} — scaffold the project first (Code & DB tab)."
+            )
+        }
+
+        val command = GradleBuildCommand.command(guestProjectPath, artifactType, session.buildToolsVersion)
+        logs += "Runtime command: $command"
+        val result = try {
+            session.run(command, BUILD_TIMEOUT_MS)
         } catch (e: Exception) {
-            val msg = "Build failed to start: ${e.message}"
-            logs += "ERROR: $msg"
+            return failure("Build failed to start in the runtime: ${e.message}")
+        }
+        logs += result.output.lines().map { it.trimEnd() }.filter { it.isNotBlank() }.takeLast(120)
+
+        if (result.timedOut) {
+            return failure("Gradle build timed out after 30 minutes.")
+        }
+        val artifact = findBuiltArtifact(projectDir, artifactType)
+        return if (result.exitCode == 0 && artifact != null) {
+            logs += "Build succeeded: ${artifact.absolutePath}"
             BuildResult(
-                success = false, artifactType = artifactType, buildMode = buildMode,
-                logs = logs, durationMs = System.currentTimeMillis() - startedAt,
-                errorMessage = msg
+                success = true, artifactType = artifactType, buildMode = buildMode,
+                outputFile = artifact, logs = logs,
+                durationMs = System.currentTimeMillis() - startedAt
             )
+        } else {
+            val msg = if (result.exitCode != 0) {
+                "Gradle exited with code ${result.exitCode} inside the runtime. See the console log for the failing task."
+            } else {
+                "Gradle finished but no ${artifactType.extension.uppercase()} artifact was produced."
+            }
+            failure(msg)
         }
     }
 

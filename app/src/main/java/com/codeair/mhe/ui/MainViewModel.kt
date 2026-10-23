@@ -1030,6 +1030,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             host = coordinatorHost,
             workspaceRootFor = { project -> projectWorkspaceRoot(project) },
             refreshProjectFiles = { refreshProjectFiles() },
+            buildSessionFactory =
+                com.codeair.mhe.factory.build.RuntimeGuestBuildSessionFactory(installer),
         )
     private val gitCoordinator =
         com.codeair.mhe.ui.coordinators.GitCoordinator(

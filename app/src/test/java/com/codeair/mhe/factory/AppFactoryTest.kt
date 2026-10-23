@@ -1,6 +1,6 @@
 package com.codeair.mhe.factory
 
-import com.codeair.mhe.factory.blueprint.AppFactoryBlueprintEngine
+import com.codeair.mhe.factory.blueprint.BlueprintJsonParser
 import com.codeair.mhe.factory.build.AppBuildOrchestrator
 import com.codeair.mhe.factory.build.PlayStorePreparationEngine
 import com.codeair.mhe.factory.build.SigningAndVersionManager
@@ -20,15 +20,114 @@ import org.junit.Test
 import java.io.File
 import java.nio.file.Files
 
+/**
+ * Generator/engine coverage. Blueprints come from [BlueprintJsonParser]
+ * (the same path production synthesis uses) over representative model
+ * replies — the old archetype template engine is gone.
+ */
 class AppFactoryTest {
 
+    companion object {
+        private fun blueprintFromJson(
+            json: String,
+            prompt: String,
+            framework: AppFramework = AppFramework.ANDROID_COMPOSE,
+            buildMode: BuildMode = BuildMode.ON_DEVICE,
+        ): AppBlueprint = BlueprintJsonParser.parse(json, prompt, framework, buildMode)
+
+        val FOOD_JSON = """
+            {"appName": "BiteDash", "tagline": "Order food from nearby restaurants",
+             "category": "Food & Drink",
+             "entities": [
+               {"name": "Restaurant", "tableName": "restaurants", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "name", "type": "String"}, {"name": "cuisine", "type": "String"},
+                 {"name": "rating", "type": "Double"}]},
+               {"name": "MenuItem", "tableName": "menu_items", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "name", "type": "String"}, {"name": "price", "type": "Double"},
+                 {"name": "restaurantId", "type": "String"}]},
+               {"name": "Order", "tableName": "orders", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "status", "type": "String"}, {"name": "total", "type": "Double"}]}],
+             "endpoints": [
+               {"method": "GET", "path": "/api/restaurants", "summary": "List restaurants", "responseModel": "List<Restaurant>"},
+               {"method": "POST", "path": "/api/orders", "summary": "Place an order", "requestBodyModel": "Order", "responseModel": "Order"}],
+             "screens": [
+               {"name": "ExploreScreen", "route": "explore", "title": "Explore", "description": "Browse restaurants"},
+               {"name": "RestaurantDetailScreen", "route": "restaurant_detail", "title": "Restaurant", "description": "Menu and reviews"},
+               {"name": "CartScreen", "route": "cart", "title": "Cart", "description": "Your order"}]}
+        """.trimIndent()
+
+        val SHOP_JSON = """
+            {"appName": "StyleKart", "tagline": "Shop clothes with cart and orders",
+             "category": "Shopping",
+             "entities": [
+               {"name": "Product", "tableName": "products", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "name", "type": "String"}, {"name": "price", "type": "Double"}]},
+               {"name": "CartItem", "tableName": "cart_items", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "productId", "type": "String"}, {"name": "quantity", "type": "Int"}]}],
+             "endpoints": [
+               {"method": "GET", "path": "/api/products", "summary": "List products", "responseModel": "List<Product>"}],
+             "screens": [
+               {"name": "CatalogScreen", "route": "catalog", "title": "Catalog", "description": "All products"},
+               {"name": "CartScreen", "route": "cart", "title": "Cart", "description": "Your cart"}]}
+        """.trimIndent()
+
+        val CHAT_JSON = """
+            {"appName": "PingChat", "tagline": "Chat with friends in real time",
+             "category": "Social",
+             "entities": [
+               {"name": "Message", "tableName": "messages", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "text", "type": "String"}, {"name": "senderId", "type": "String"},
+                 {"name": "sentAt", "type": "Long"}]},
+               {"name": "Conversation", "tableName": "conversations", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "title", "type": "String"}]}],
+             "endpoints": [
+               {"method": "GET", "path": "/api/messages", "summary": "List messages", "responseModel": "List<Message>"}],
+             "screens": [
+               {"name": "ConversationsScreen", "route": "conversations", "title": "Chats", "description": "All conversations"},
+               {"name": "ChatRoomScreen", "route": "chat_room", "title": "Chat", "description": "One conversation"}]}
+        """.trimIndent()
+
+        val NOTES_JSON = """
+            {"appName": "NoteVault", "tagline": "Notes and knowledge vault",
+             "entities": [
+               {"name": "Note", "tableName": "notes", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "title", "type": "String"}, {"name": "body", "type": "String"}]}],
+             "endpoints": [
+               {"method": "GET", "path": "/api/notes", "summary": "List notes", "responseModel": "List<Note>"},
+               {"method": "POST", "path": "/api/notes", "summary": "Create a note", "requestBodyModel": "Note", "responseModel": "Note"}],
+             "screens": [
+               {"name": "NotesScreen", "route": "notes", "title": "Notes", "description": "All notes"},
+               {"name": "NoteEditorScreen", "route": "note_editor", "title": "Editor", "description": "Edit a note"}]}
+        """.trimIndent()
+
+        val FINANCE_JSON = """
+            {"appName": "MoneyTrail", "tagline": "Personal finance and budget tracking",
+             "category": "Finance",
+             "entities": [
+               {"name": "Transaction", "tableName": "transactions", "fields": [
+                 {"name": "id", "type": "String", "primaryKey": true},
+                 {"name": "title", "type": "String"}, {"name": "amount", "type": "Double"},
+                 {"name": "type", "type": "String"}, {"name": "timestamp", "type": "Long"}]}],
+             "endpoints": [
+               {"method": "GET", "path": "/api/transactions", "summary": "List transactions", "responseModel": "List<Transaction>"}],
+             "screens": [
+               {"name": "DashboardScreen", "route": "dashboard", "title": "Dashboard", "description": "Money overview"},
+               {"name": "TransactionsScreen", "route": "transactions", "title": "Transactions", "description": "All transactions"}]}
+        """.trimIndent()
+    }
+
     @Test
-    fun testBlueprintArchetypeDetectionAndSynthesis() {
-        // 1. Food Delivery Detection
-        val foodBlueprint = AppFactoryBlueprintEngine.createBlueprint(
-            prompt = "I need an app for ordering food and restaurant meals",
-            framework = AppFramework.ANDROID_COMPOSE,
-            buildMode = BuildMode.ON_DEVICE
+    fun testParsedBlueprintsCarryThePromptsDomain() {
+        val foodBlueprint = blueprintFromJson(
+            FOOD_JSON, "I need an app for ordering food and restaurant meals"
         )
         assertEquals("Android Jetpack Compose", foodBlueprint.framework.displayName)
         assertTrue("Expected Restaurant entity", foodBlueprint.entities.any { it.name == "Restaurant" })
@@ -38,11 +137,9 @@ class AppFactoryTest {
         assertTrue("Expected valid package name", foodBlueprint.packageName.startsWith("com.pocketdev."))
         assertEquals(35, foodBlueprint.buildConfig.targetSdk)
 
-        // 2. E-Commerce Detection
-        val shopBlueprint = AppFactoryBlueprintEngine.createBlueprint(
-            prompt = "Build a modern shopping store for clothes with cart and orders",
-            framework = AppFramework.FLUTTER,
-            buildMode = BuildMode.GITHUB_ACTIONS
+        val shopBlueprint = blueprintFromJson(
+            SHOP_JSON, "Build a modern shopping store for clothes with cart and orders",
+            framework = AppFramework.FLUTTER, buildMode = BuildMode.GITHUB_ACTIONS
         )
         assertEquals(AppFramework.FLUTTER, shopBlueprint.framework)
         assertEquals(BuildMode.GITHUB_ACTIONS, shopBlueprint.buildMode)
@@ -50,9 +147,8 @@ class AppFactoryTest {
         assertTrue(shopBlueprint.entities.any { it.name == "CartItem" })
         assertTrue(shopBlueprint.screens.any { it.name == "CatalogScreen" })
 
-        // 3. Chat / Social Detection
-        val chatBlueprint = AppFactoryBlueprintEngine.createBlueprint(
-            prompt = "A chat messenger application with real-time messages and conversations",
+        val chatBlueprint = blueprintFromJson(
+            CHAT_JSON, "A chat messenger application with real-time messages and conversations",
             framework = AppFramework.REACT_NATIVE
         )
         assertTrue(chatBlueprint.entities.any { it.name == "Message" })
@@ -63,15 +159,14 @@ class AppFactoryTest {
     fun testAndroidComposeGenerator() {
         val tempDir = Files.createTempDirectory("android_factory_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "Task manager productivity app with todo lists",
-                framework = AppFramework.ANDROID_COMPOSE
+            val blueprint = blueprintFromJson(
+                BlueprintSynthesisTest.LEAD_JSON,
+                BlueprintSynthesisTest.LEAD_PROMPT
             )
 
             val generatedFiles = AndroidComposeGenerator.generateProject(tempDir, blueprint)
             assertTrue("Expected multiple generated files", generatedFiles.size >= 12)
 
-            // Check Gradle and manifest structure
             assertTrue(File(tempDir, "settings.gradle.kts").exists())
             assertTrue(File(tempDir, "build.gradle.kts").exists())
             assertTrue(File(tempDir, "gradlew").exists())
@@ -87,7 +182,6 @@ class AppFactoryTest {
             assertTrue(manifestContent.contains("android.permission.INTERNET"))
             assertTrue(manifestContent.contains(".MainActivity"))
 
-            // Verify Kotlin source files
             val packagePath = blueprint.packageName.replace('.', '/')
             val javaDir = File(tempDir, "app/src/main/java/$packagePath")
             assertTrue(File(javaDir, "MainActivity.kt").exists())
@@ -103,9 +197,8 @@ class AppFactoryTest {
     fun testFlutterAppGenerator() {
         val tempDir = Files.createTempDirectory("flutter_factory_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "Fitness and workout tracker app",
-                framework = AppFramework.FLUTTER
+            val blueprint = blueprintFromJson(
+                SHOP_JSON, "Shopping store app", framework = AppFramework.FLUTTER
             )
 
             val files = FlutterAppGenerator.generateProject(tempDir, blueprint)
@@ -131,9 +224,8 @@ class AppFactoryTest {
     fun testReactNativeAppGenerator() {
         val tempDir = Files.createTempDirectory("rn_factory_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "Ride booking cab sharing app",
-                framework = AppFramework.REACT_NATIVE
+            val blueprint = blueprintFromJson(
+                CHAT_JSON, "Chat messenger", framework = AppFramework.REACT_NATIVE
             )
 
             val files = ReactNativeAppGenerator.generateProject(tempDir, blueprint)
@@ -160,12 +252,11 @@ class AppFactoryTest {
         val nodeDir = Files.createTempDirectory("node_backend_test").toFile()
         val pythonDir = Files.createTempDirectory("python_backend_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "Note taking and knowledge vault app",
+            val blueprint = blueprintFromJson(
+                NOTES_JSON, "Note taking and knowledge vault app",
                 framework = AppFramework.FULLSTACK_BACKEND
             )
 
-            // 1. Node.js Express backend
             val nodeFiles = BackendServiceGenerator.generateProject(
                 nodeDir,
                 blueprint,
@@ -178,7 +269,6 @@ class AppFactoryTest {
             assertTrue(serverJsContent.contains("CREATE TABLE IF NOT EXISTS"))
             assertTrue(serverJsContent.contains("app.get('/api/notes'"))
 
-            // 2. Python FastAPI backend
             val pyFiles = BackendServiceGenerator.generateProject(
                 pythonDir,
                 blueprint,
@@ -197,7 +287,7 @@ class AppFactoryTest {
     fun testDatabaseSetupEngine() {
         val tempDir = Files.createTempDirectory("db_setup_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint("Personal finance expense budget app")
+            val blueprint = blueprintFromJson(FINANCE_JSON, "Personal finance expense budget app")
             val files = DatabaseSetupEngine.generateDatabaseBundle(tempDir, blueprint)
 
             assertTrue("Expected database schema files", files.isNotEmpty())
@@ -223,17 +313,13 @@ class AppFactoryTest {
     fun testApiIntegrationGenerator() {
         val tempDir = Files.createTempDirectory("api_integration_test").toFile()
         try {
-            val androidBp = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "E-Commerce store",
-                framework = AppFramework.ANDROID_COMPOSE
-            )
+            val androidBp = blueprintFromJson(FOOD_JSON, "E-Commerce store")
             val androidApiFiles = ApiIntegrationGenerator.generateApiClientBundle(tempDir, androidBp)
             assertTrue(androidApiFiles.any { it.name == "ApiClient.kt" })
             assertTrue(androidApiFiles.any { it.name == "NetworkResult.kt" })
 
-            val flutterBp = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "Chat messenger",
-                framework = AppFramework.FLUTTER
+            val flutterBp = blueprintFromJson(
+                CHAT_JSON, "Chat messenger", framework = AppFramework.FLUTTER
             )
             val flutterApiFiles = ApiIntegrationGenerator.generateApiClientBundle(tempDir, flutterBp)
             assertTrue(flutterApiFiles.any { it.name == "api_client.dart" })
@@ -246,9 +332,8 @@ class AppFactoryTest {
     fun testGitHubActionsWorkflowGeneration() {
         val tempDir = Files.createTempDirectory("ci_workflow_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint(
-                prompt = "Modern app",
-                buildMode = BuildMode.GITHUB_ACTIONS
+            val blueprint = blueprintFromJson(
+                FOOD_JSON, "Modern app", buildMode = BuildMode.GITHUB_ACTIONS
             )
 
             val workflowFile = AppBuildOrchestrator.generateGitHubActionsWorkflow(
@@ -296,7 +381,6 @@ class AppFactoryTest {
     fun testSigningAndVersionManager() {
         val tempDir = Files.createTempDirectory("signing_version_test").toFile()
         try {
-            // Test keystore creation
             val keystoreConfig = SigningAndVersionManager.createKeystore(
                 projectDir = tempDir,
                 keyAlias = "testAlias",
@@ -307,8 +391,9 @@ class AppFactoryTest {
             assertTrue(File(tempDir, "keystore.properties").exists())
             val propsContent = File(tempDir, "keystore.properties").readText()
             assertTrue(propsContent.contains("keyAlias=testAlias"))
+            // storeFile is project-relative so guest Gradle builds resolve it.
+            assertTrue(propsContent.contains("storeFile=release.keystore"))
 
-            // Test signing config injection
             val appDir = File(tempDir, "app").apply { mkdirs() }
             val gradleFile = File(appDir, "build.gradle.kts")
             gradleFile.writeText("""
@@ -329,7 +414,6 @@ class AppFactoryTest {
             assertTrue(updatedGradle.contains("signingConfigs"))
             assertTrue(updatedGradle.contains("keystore.properties"))
 
-            // Test version bumping
             val gradleWithVersion = File(appDir, "build.gradle.kts")
             gradleWithVersion.writeText("""
                 android {
@@ -340,17 +424,14 @@ class AppFactoryTest {
                 }
             """.trimIndent())
 
-            // 1. Bump Patch
             val (code1, name1) = SigningAndVersionManager.bumpVersion(tempDir, VersionBumpType.PATCH)
             assertEquals(2, code1)
             assertEquals("1.0.1", name1)
 
-            // 2. Bump Minor
             val (code2, name2) = SigningAndVersionManager.bumpVersion(tempDir, VersionBumpType.MINOR)
             assertEquals(3, code2)
             assertEquals("1.1.0", name2)
 
-            // 3. Bump Major
             val (code3, name3) = SigningAndVersionManager.bumpVersion(tempDir, VersionBumpType.MAJOR)
             assertEquals(4, code3)
             assertEquals("2.0.0", name3)
@@ -363,7 +444,7 @@ class AppFactoryTest {
     fun testPlayStorePreparationEngine() {
         val tempDir = Files.createTempDirectory("play_store_test").toFile()
         try {
-            val blueprint = AppFactoryBlueprintEngine.createBlueprint("Food delivery app named BiteDash")
+            val blueprint = blueprintFromJson(FOOD_JSON, "Food delivery app named BiteDash")
             val bundle = PlayStorePreparationEngine.prepareListingBundle(tempDir, blueprint)
 
             assertTrue(bundle.titleFile.exists())
@@ -379,14 +460,29 @@ class AppFactoryTest {
             val privacyPolicy = bundle.privacyPolicyFile.readText()
             assertTrue(privacyPolicy.contains("Privacy Policy for BiteDash"))
             assertTrue(privacyPolicy.contains("Contact Us"))
+            // No fabricated contact details leak into the policy.
+            assertFalse(privacyPolicy.contains("support@bitedash.app"))
+            assertTrue(privacyPolicy.contains("[TODO: add support email]"))
 
             assertTrue(bundle.complianceReportFile.exists())
             val report = bundle.complianceReportFile.readText()
             assertTrue(report.contains("Target SDK 34+"))
             assertTrue(report.contains("PASS"))
 
+            // The synthesized blueprint leaves contact/privacy blank, so the
+            // audit must FAIL those items — never rubber-stamp them.
             val auditItems = PlayStorePreparationEngine.runComplianceAudit(blueprint)
-            assertTrue(auditItems.all { it.passed })
+            assertFalse(auditItems.first { it.name == "Contact email present" }.passed)
+            assertFalse(auditItems.first { it.name == "Privacy policy URL set" }.passed)
+
+            // With the developer's real details supplied, everything passes.
+            val complete = blueprint.copy(
+                playStoreMetadata = blueprint.playStoreMetadata.copy(
+                    contactEmail = "support@bitedash.example",
+                    privacyPolicyUrl = "https://bitedash.example/privacy"
+                )
+            )
+            assertTrue(PlayStorePreparationEngine.runComplianceAudit(complete).all { it.passed })
         } finally {
             tempDir.deleteRecursively()
         }

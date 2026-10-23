@@ -119,6 +119,60 @@ class GeminiApiClient {
         }
     }
 
+    /**
+     * One-shot, non-streaming text completion (system + user prompt in,
+     * model text out). Used by features that need a single structured answer
+     * rather than an agent session — e.g. App Factory blueprint synthesis.
+     * Throws with the same honest error text as the streaming path.
+     */
+    suspend fun generateText(
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+    ): String = withContext(Dispatchers.IO) {
+        val connection = openConnection(model, apiKey, streaming = false)
+        try {
+            val body = JSONObject()
+                .put(
+                    "contents",
+                    JSONArray().put(
+                        JSONObject()
+                            .put("role", "user")
+                            .put(
+                                "parts",
+                                JSONArray().put(JSONObject().put("text", userPrompt)),
+                            ),
+                    ),
+                )
+                .put(
+                    "system_instruction",
+                    JSONObject().put(
+                        "parts",
+                        JSONArray().put(JSONObject().put("text", systemPrompt)),
+                    ),
+                )
+                .put(
+                    "generationConfig",
+                    JSONObject().put("temperature", 0.4).put("maxOutputTokens", 8192),
+                )
+                .toString()
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val errorBody = runCatching {
+                    connection.errorStream?.bufferedReader()?.readText().orEmpty()
+                }.getOrDefault("")
+                throw IllegalStateException(geminiApiErrorMessage(code, errorBody))
+            }
+            val response = connection.inputStream.bufferedReader().readText()
+            parseGeminiStreamLine(response)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalStateException("Gemini returned an empty response. Try again.")
+        } finally {
+            runCatching { connection.disconnect() }
+        }
+    }
+
     suspend fun probe(apiKey: String, model: String): String = withContext(Dispatchers.IO) {
         val connection = openConnection(model, apiKey, streaming = false)
         try {

@@ -4,7 +4,7 @@ import com.codeair.mhe.factory.model.KeystoreConfig
 import com.codeair.mhe.factory.model.VersionBumpType
 import java.io.File
 import java.util.Properties
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Real signing and versioning helpers for App Factory projects (v3).
@@ -21,7 +21,9 @@ object SigningAndVersionManager {
         projectDir: File,
         keyAlias: String,
         storePassword: String,
-        keyPassword: String
+        keyPassword: String,
+        commandRunner: CommandRunner = ProcessBuilderCommandRunner(),
+        keystoreCommandPath: String? = null
     ): KeystoreConfig {
         require(keyAlias.isNotBlank()) { "Key alias must not be blank." }
         require(storePassword.isNotBlank() && keyPassword.isNotBlank()) {
@@ -35,7 +37,7 @@ object SigningAndVersionManager {
         val keystoreFile = File(projectDir, "release.keystore")
         val cmd = listOf(
             "keytool", "-genkeypair",
-            "-keystore", keystoreFile.absolutePath,
+            "-keystore", keystoreCommandPath ?: keystoreFile.absolutePath,
             "-storetype", "JKS",
             "-storepass", storePassword,
             "-keypass", keyPassword,
@@ -45,25 +47,21 @@ object SigningAndVersionManager {
             "-validity", "10000",
             "-dname", "CN=Conzyx, OU=App Factory, O=Codeair Software Solutions"
         )
-        try {
-            val process = ProcessBuilder(cmd)
-                .directory(projectDir)
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().readText()
-            val finished = process.waitFor(2, TimeUnit.MINUTES)
-            if (!finished) {
-                process.destroyForcibly()
-                throw IllegalStateException("keytool timed out while generating the keystore.")
-            }
-            if (process.exitValue() != 0 || !keystoreFile.isFile) {
-                throw IllegalStateException("keytool failed (exit ${process.exitValue()}): $output")
-            }
+        // The command runs through the injected runner: on a real device
+        // that is the runtime guest (which has a JDK); the Android app
+        // process itself has no keytool and could only ever fail.
+        val result = try {
+            commandRunner.run(cmd, projectDir, 2.minutes)
         } catch (e: Exception) {
-            if (e is IllegalStateException) throw e
             throw IllegalStateException(
                 "Could not run keytool — is a JDK installed in this environment? Cause: ${e.message}", e
             )
+        }
+        if (result.timedOut) {
+            throw IllegalStateException("keytool timed out while generating the keystore.")
+        }
+        if (!result.success || !keystoreFile.isFile) {
+            throw IllegalStateException("keytool failed (exit ${result.exitCode}): ${result.output}")
         }
         return KeystoreConfig(
             keystoreFile = keystoreFile,
@@ -73,8 +71,10 @@ object SigningAndVersionManager {
             validityDays = 10000
         ).also {
             // Persisted so injectSigningConfig() and Gradle can reference it.
+            // storeFile stays project-relative so the path resolves both on
+            // the host and inside the runtime guest.
             File(projectDir, "keystore.properties").writeText(
-                "storeFile=${keystoreFile.absolutePath}\n" +
+                "storeFile=${keystoreFile.name}\n" +
                     "storePassword=$storePassword\n" +
                     "keyAlias=$keyAlias\n" +
                     "keyPassword=$keyPassword\n"

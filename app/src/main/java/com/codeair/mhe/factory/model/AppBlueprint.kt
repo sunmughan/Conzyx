@@ -103,8 +103,10 @@ data class PlayStoreMetadataSpec(
     val shortDescription: String,
     val fullDescription: String,
     val category: String = "Productivity",
-    val contactEmail: String = "developer@pocketdev.app",
-    val privacyPolicyUrl: String = "https://pocketdev.app/privacy",
+    // Blank by default on purpose: the developer's real contact email and
+    // privacy policy URL are never invented by the factory.
+    val contactEmail: String = "",
+    val privacyPolicyUrl: String = "",
     val targetSdkCompliant: Boolean = true,
     val contentRating: String = "Everyone"
 )

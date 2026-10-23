@@ -19,10 +19,11 @@ object AndroidComposeGenerator {
         createdFiles += writeFile(targetDir, "build.gradle.kts", generateRootBuildGradle())
         createdFiles += writeFile(targetDir, "gradle.properties", generateGradleProperties())
 
-        // 2. Gradle Wrapper
+        // 2. Gradle Wrapper (properties only — the runtime provides the
+        // Gradle distribution; gradlew locates it, see generateGradlewScript)
         val wrapperDir = File(targetDir, "gradle/wrapper").apply { mkdirs() }
         createdFiles += writeFile(wrapperDir, "gradle-wrapper.properties", generateGradleWrapperProperties())
-        createdFiles += writeFile(targetDir, "gradlew", "#!/bin/sh\nexec gradle \"$@\"\n").apply { setExecutable(true) }
+        createdFiles += writeFile(targetDir, "gradlew", generateGradlewScript()).apply { setExecutable(true) }
 
         // 3. App Module Build & Manifest
         val appDir = File(targetDir, "app").apply { mkdirs() }
@@ -35,7 +36,7 @@ object AndroidComposeGenerator {
         val resValuesDir = File(mainDir, "res/values").apply { mkdirs() }
         createdFiles += writeFile(resValuesDir, "strings.xml", generateStringsXml(blueprint))
         createdFiles += writeFile(resValuesDir, "colors.xml", generateColorsXml())
-        createdFiles += writeFile(resValuesDir, "themes.xml", generateThemesXml())
+        createdFiles += writeFile(resValuesDir, "themes.xml", generateThemesXml(blueprint))
 
         // 5. Kotlin Sources
         val packagePath = blueprint.packageName.replace('.', '/')
@@ -57,7 +58,10 @@ object AndroidComposeGenerator {
         }
         createdFiles += writeFile(dataLocalDir, "AppDatabase.kt", generateDatabaseKt(blueprint.packageName, blueprint.entities))
 
-        // Remote API
+        // Remote API (service + DTOs mirroring the blueprint's entities)
+        for (entity in blueprint.entities) {
+            createdFiles += writeFile(dataRemoteDir, "${entity.name}Dto.kt", generateDtoKt(blueprint.packageName, entity))
+        }
         createdFiles += writeFile(dataRemoteDir, "ApiService.kt", generateApiServiceKt(blueprint))
 
         // Screens & ViewModels
@@ -110,6 +114,33 @@ object AndroidComposeGenerator {
         android.useAndroidX=true
         android.nonTransitiveRClass=true
         kotlin.code.style=official
+    """
+
+    /**
+     * The scaffolded project intentionally ships no gradle-wrapper.jar:
+     * builds run inside the Conzyx runtime, whose Android stack installs a
+     * real Gradle under /opt/gradle (and on PATH). This launcher finds that
+     * toolchain — a bare `exec gradle "$@"` died with "gradle: inaccessible
+     * or not found" wherever PATH lacked it.
+     */
+    private fun generateGradlewScript(): String = """
+        #!/bin/sh
+        # Finds the Gradle installed by the Conzyx runtime Android stack
+        # (on PATH or under the standard install roots) and delegates to it.
+        if command -v gradle >/dev/null 2>&1; then
+            exec gradle "${'$'}@"
+        fi
+        for base in /opt/gradle /root/gradle /usr/local/gradle; do
+            if [ -d "${'$'}base" ]; then
+                for candidate in "${'$'}base"/gradle-*/bin/gradle; do
+                    if [ -x "${'$'}candidate" ]; then
+                        exec "${'$'}candidate" "${'$'}@"
+                    fi
+                done
+            fi
+        done
+        echo "gradlew: no Gradle installation found. Builds run inside the Conzyx runtime — install the Android development stack (Settings, Development stacks) and build from the App Factory screen." >&2
+        exit 127
     """
 
     private fun generateGradleWrapperProperties(): String = """
@@ -246,9 +277,9 @@ object AndroidComposeGenerator {
         </resources>
     """
 
-    private fun generateThemesXml(): String = """
+    private fun generateThemesXml(blueprint: AppBlueprint): String = """
         <resources>
-            <style name="Theme.App" parent="android:Theme.Material.Light.NoActionBar" />
+            <style name="Theme.${blueprint.name.replace(" ", "")}" parent="android:Theme.Material.Light.NoActionBar" />
         </resources>
     """
 
@@ -412,18 +443,73 @@ object AndroidComposeGenerator {
         """
     }
 
+    private fun generateDtoKt(pkg: String, entity: DataEntitySpec): String {
+        val fields = entity.fields.joinToString(",\n    ") { f ->
+            val baseType = when (f.type) {
+                "Int" -> "Int"
+                "Long" -> "Long"
+                "Double" -> "Double"
+                "Boolean" -> "Boolean"
+                else -> "String"
+            }
+            val type = if (f.nullable) "$baseType?" else baseType
+            val default = f.defaultValue ?: when {
+                f.nullable -> "null"
+                baseType == "String" -> "\"\""
+                baseType == "Int" -> "0"
+                baseType == "Long" -> "0L"
+                baseType == "Double" -> "0.0"
+                else -> "false"
+            }
+            "val ${f.name}: $type = $default"
+        }
+        return """
+            package $pkg.data.remote
+
+            /** Wire model for ${entity.name}, mirroring the local ${entity.name}Entity fields. */
+            data class ${entity.name}Dto(
+                $fields
+            )
+        """
+    }
+
     private fun generateApiServiceKt(blueprint: AppBlueprint): String {
-        val methods = blueprint.endpoints.joinToString("\n    ") { ep ->
+        val pathParamRegex = Regex("\\{(\\w+)\\}")
+        val methods = blueprint.endpoints.joinToString("\n\n    ") { ep ->
             val httpMethod = ep.method.uppercase()
             val cleanPath = ep.path.removePrefix("/api/")
+                .replace(pathParamRegex, "")
+            val pathTitle = cleanPath.replace(Regex("[^a-zA-Z0-9]"), " ")
+                .trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+                .joinToString("") { it.replaceFirstChar { c -> c.uppercase() } }
             val funName = when (httpMethod) {
-                "GET" -> "get${cleanPath.replace(Regex("[^a-zA-Z0-9]"), "").replaceFirstChar { it.uppercase() }}"
-                "POST" -> "post${cleanPath.replace(Regex("[^a-zA-Z0-9]"), "").replaceFirstChar { it.uppercase() }}"
-                "PUT" -> "update${cleanPath.replace(Regex("[^a-zA-Z0-9]"), "").replaceFirstChar { it.uppercase() }}"
-                "DELETE" -> "delete${cleanPath.replace(Regex("[^a-zA-Z0-9]"), "").replaceFirstChar { it.uppercase() }}"
-                else -> "call${cleanPath.replace(Regex("[^a-zA-Z0-9]"), "")}"
+                "GET" -> "get$pathTitle"
+                "POST" -> "create$pathTitle"
+                "PUT", "PATCH" -> "update$pathTitle"
+                "DELETE" -> "delete$pathTitle"
+                else -> "call$pathTitle"
+            }.ifBlank { "callApi" }
+            val params = mutableListOf<String>()
+            pathParamRegex.findAll(ep.path).forEach { match ->
+                params += "@Path(\"${match.groupValues[1]}\") ${match.groupValues[1]}: String"
             }
-            "// ${ep.summary}\n    @$httpMethod(\"${ep.path}\")\n    suspend fun $funName(): retrofit2.Response<Any>"
+            val bodyModel = ep.requestBodyModel
+            if (bodyModel != null && httpMethod in setOf("POST", "PUT", "PATCH")) {
+                params += "@Body body: ${bodyModel}Dto"
+            }
+            val responseType = when {
+                ep.responseModel?.startsWith("List<") == true ->
+                    "List<" + ep.responseModel.removePrefix("List<").removeSuffix(">") + "Dto>"
+                ep.responseModel != null -> ep.responseModel + "Dto"
+                bodyModel != null -> bodyModel + "Dto"
+                else -> "com.google.gson.JsonElement"
+            }
+            val signature = if (params.isEmpty()) {
+                "suspend fun $funName(): retrofit2.Response<$responseType>"
+            } else {
+                "suspend fun $funName(\n        ${params.joinToString(",\n        ")}\n    ): retrofit2.Response<$responseType>"
+            }
+            "// ${ep.summary}\n    @$httpMethod(\"${ep.path}\")\n    $signature"
         }
 
         return """
@@ -431,15 +517,21 @@ object AndroidComposeGenerator {
 
             import retrofit2.Retrofit
             import retrofit2.converter.gson.GsonConverterFactory
+            import retrofit2.http.Body
+            import retrofit2.http.DELETE
             import retrofit2.http.GET
+            import retrofit2.http.PATCH
             import retrofit2.http.POST
             import retrofit2.http.PUT
-            import retrofit2.http.DELETE
+            import retrofit2.http.Path
 
             interface ApiService {
                 $methods
 
                 companion object {
+                    // TODO: point this at the real backend for ${blueprint.name} before
+                    // shipping. The placeholder host does not exist; the app stores
+                    // data locally in Room until a backend is wired up.
                     private const val BASE_URL = "https://api.example.com/"
 
                     fun create(): ApiService {
@@ -455,16 +547,34 @@ object AndroidComposeGenerator {
     }
 
     private fun generateScreenKt(pkg: String, screen: ScreenSpec, blueprint: AppBlueprint): String {
-        val componentsUi = screen.components.joinToString("\n            ") { comp ->
+        // Bind the screen to real data: the entity whose name the screen
+        // references, else the blueprint's primary (first) entity.
+        val entity = blueprint.entities.firstOrNull { candidate ->
+            screen.name.contains(candidate.name, ignoreCase = true) ||
+                screen.route.contains(candidate.tableName, ignoreCase = true) ||
+                screen.title.contains(candidate.name, ignoreCase = true)
+        } ?: blueprint.entities.first()
+        val daoAccessor = "${entity.name.lowercase()}Dao()"
+        val titleField = entity.fields.firstOrNull { !it.primaryKey && it.type == "String" }
+            ?: entity.fields.first()
+        val detailFields = entity.fields.filter { it.name != titleField.name }
+        val detailLines = detailFields.joinToString("\n                                ") { field ->
+            val label = field.name.replace(Regex("([a-z0-9])([A-Z])"), "$1 $2")
+                .replaceFirstChar { it.uppercase() }
+            "Text(text = \"$label: \${item.${field.name}}\", style = MaterialTheme.typography.bodySmall)"
+        }
+        val componentCards = screen.components.joinToString("\n                    ") { comp ->
             """
             Card(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(text = "$comp", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Text(text = "Interactive component ready for domain binding.", style = MaterialTheme.typography.bodySmall)
-                }
+                Text(
+                    text = "$comp",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    modifier = Modifier.padding(16.dp)
+                )
             }
             """.trimIndent()
         }
@@ -481,18 +591,27 @@ object AndroidComposeGenerator {
             import androidx.compose.foundation.layout.height
             import androidx.compose.foundation.layout.padding
             import androidx.compose.foundation.lazy.LazyColumn
+            import androidx.compose.foundation.lazy.items
             import androidx.compose.material3.Card
             import androidx.compose.material3.MaterialTheme
-            import androidx.compose.material3.Scaffold
             import androidx.compose.material3.Text
             import androidx.compose.runtime.Composable
+            import androidx.compose.runtime.collectAsState
+            import androidx.compose.runtime.getValue
+            import androidx.compose.runtime.remember
             import androidx.compose.ui.Modifier
+            import androidx.compose.ui.platform.LocalContext
             import androidx.compose.ui.unit.dp
+            import $pkg.data.local.AppDatabase
 
             @Composable
             fun ${screen.name}(
                 paddingValues: PaddingValues = PaddingValues(0.dp)
             ) {
+                val context = LocalContext.current
+                val database = remember { AppDatabase.getDatabase(context) }
+                val records by database.$daoAccessor.getAll().collectAsState(initial = emptyList())
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -513,8 +632,33 @@ object AndroidComposeGenerator {
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                     }
+                    if (records.isEmpty()) {
+                        item {
+                            Text(
+                                text = "No ${entity.name.lowercase()} records yet. New records will appear here.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        items(records) { item ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = item.${titleField.name}.toString(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                    )
+                                    $detailLines
+                                }
+                            }
+                        }
+                    }
                     item {
-                        $componentsUi
+                        $componentCards
                     }
                 }
             }

@@ -47,9 +47,42 @@ class FakeCommandRunner(
 }
 
 private fun testBlueprint(framework: AppFramework = AppFramework.ANDROID_COMPOSE): AppBlueprint =
-    AppFactoryBlueprintEngine.createBlueprint(
-        prompt = "A simple notes app with a list screen",
+    AppBlueprint(
+        id = "test-blueprint",
+        name = "Notes App",
+        packageName = "com.pocketdev.notesapp",
+        description = "A simple notes app with a list screen",
         framework = framework,
+        buildMode = BuildMode.ON_DEVICE,
+        entities = listOf(
+            com.codeair.mhe.factory.model.DataEntitySpec(
+                name = "Note",
+                tableName = "notes",
+                fields = listOf(
+                    com.codeair.mhe.factory.model.DataEntityField("id", "String", primaryKey = true),
+                    com.codeair.mhe.factory.model.DataEntityField("title", "String"),
+                    com.codeair.mhe.factory.model.DataEntityField("body", "String"),
+                ),
+            )
+        ),
+        endpoints = listOf(
+            com.codeair.mhe.factory.model.ApiEndpointSpec("GET", "/api/notes", "List notes", responseModel = "List<Note>"),
+        ),
+        screens = listOf(
+            com.codeair.mhe.factory.model.ScreenSpec("NotesScreen", "notes", "Notes", "All notes"),
+            com.codeair.mhe.factory.model.ScreenSpec("NoteEditorScreen", "note_editor", "Editor", "Edit a note"),
+        ),
+        buildConfig = com.codeair.mhe.factory.model.BuildConfigSpec(
+            applicationId = "com.pocketdev.notesapp",
+            appName = "Notes App",
+        ),
+        playStoreMetadata = com.codeair.mhe.factory.model.PlayStoreMetadataSpec(
+            title = "Notes App",
+            shortDescription = "A simple notes app",
+            fullDescription = "A simple notes app with a list screen.",
+            contactEmail = "dev@example.com",
+            privacyPolicyUrl = "https://example.com/privacy",
+        ),
     )
 
 private fun fakeApk(tempDir: File): File =

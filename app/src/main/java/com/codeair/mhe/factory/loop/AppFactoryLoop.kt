@@ -76,7 +76,7 @@ data class FactoryPipelineResult(
  */
 class AppFactoryLoop(
     private val scaffolder: (projectDir: File, blueprint: AppBlueprint) -> List<File> = AppFactoryLoop::defaultScaffold,
-    private val buildRunner: (projectDir: File, blueprint: AppBlueprint, artifactType: BuildArtifactType, buildMode: BuildMode) -> BuildResult = AppBuildOrchestrator::runBuild,
+    private val buildRunner: (projectDir: File, blueprint: AppBlueprint, artifactType: BuildArtifactType, buildMode: BuildMode) -> BuildResult = AppFactoryLoop::noSessionBuildRunner,
     private val testRunner: CommandRunner = ProcessBuilderCommandRunner(),
     private val signingInjector: (projectDir: File) -> Boolean = AppFactoryLoop::defaultInjectSigning,
     private val signatureVerifier: (artifact: File, artifactType: BuildArtifactType) -> SignatureVerificationResult = AppFactoryLoop::defaultVerifySignature,
@@ -358,6 +358,31 @@ class AppFactoryLoop(
     }
 
     companion object {
+        /**
+         * The loop has no runtime build session of its own: on-device
+         * Gradle builds need the proot guest session that only the App
+         * Factory screen wires up (see AppFactoryCoordinator). Reporting a
+         * build here without one would be a fabrication, so the default
+         * runner fails honestly and points at the real build path.
+         */
+        fun noSessionBuildRunner(
+            projectDir: File,
+            blueprint: AppBlueprint,
+            artifactType: BuildArtifactType,
+            buildMode: BuildMode,
+        ): BuildResult {
+            val message = "This pipeline run has no runtime build session, so no build was " +
+                "executed. Use Build & CI in the App Factory screen, which runs Gradle inside " +
+                "the Conzyx runtime."
+            return BuildResult(
+                success = false,
+                artifactType = artifactType,
+                buildMode = buildMode,
+                logs = listOf("ERROR: $message"),
+                errorMessage = message,
+            )
+        }
+
         /** Picks the real code generator for the blueprint's framework. */
         fun defaultScaffold(projectDir: File, blueprint: AppBlueprint): List<File> =
             when (blueprint.framework) {

@@ -136,6 +136,130 @@ class ProviderApiClient {
         }
     }
 
+    /**
+     * One-shot text completion against the configured provider (system +
+     * user prompt in, model text out) — the non-agent counterpart of the
+     * chat bridges, for features like App Factory blueprint synthesis that
+     * need a single structured answer. Throws IllegalStateException with a
+     * user-readable reason on any failure; never fabricates a reply.
+     */
+    suspend fun complete(
+        baseUrl: String,
+        model: String,
+        apiKey: String,
+        protocol: ProviderProtocol,
+        systemPrompt: String,
+        userPrompt: String,
+        openRouterProviderOrder: String = "",
+        openRouterAllowFallbacks: Boolean = true,
+    ): String = withContext(Dispatchers.IO) {
+        require(baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()) {
+            "Base URL, model, and API key are required."
+        }
+        require(protocol != ProviderProtocol.CLAUDE_LOGIN) {
+            "Subscription login providers do not expose a completion API."
+        }
+        val endpoint = messagesEndpoint(baseUrl, protocol)
+        val body = completionBody(model, protocol, systemPrompt, userPrompt, openRouterProviderOrder, openRouterAllowFallbacks)
+        val response = request(endpoint, "POST", apiKey, body, protocol, connectTimeoutMs = 15_000, readTimeoutMs = 120_000)
+        when {
+            response.code in 200..299 -> parseCompletionText(response.body, protocol)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalStateException("The provider returned an empty response. Try again.")
+            response.code == 401 || response.code == 403 ->
+                throw IllegalStateException("The provider rejected the saved API key. Check it in Settings.")
+            response.code == 429 ->
+                throw IllegalStateException("Provider rate limit reached. Wait a moment and try again.")
+            response.code > 0 -> throw IllegalStateException(
+                "Provider request failed (HTTP ${response.code})." +
+                    (providerErrorMessage(response.body)?.let { " $it" } ?: "")
+            )
+            else -> throw IllegalStateException(
+                "Could not reach the provider. ${response.error ?: "Check your internet connection."}"
+            )
+        }
+    }
+
+    internal fun completionBody(
+        model: String,
+        protocol: ProviderProtocol,
+        systemPrompt: String,
+        userPrompt: String,
+        openRouterProviderOrder: String = "",
+        openRouterAllowFallbacks: Boolean = true,
+    ): String = when (protocol) {
+        ProviderProtocol.OPENAI_CHAT -> JSONObject()
+            .put("model", model)
+            .put("temperature", 0.4)
+            .put(
+                "messages",
+                JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    .put(JSONObject().put("role", "user").put("content", userPrompt)),
+            )
+            .toString()
+        ProviderProtocol.OPENAI_RESPONSES -> JSONObject()
+            .put("model", model)
+            .put("instructions", systemPrompt)
+            .put("input", userPrompt)
+            .toString()
+        else -> JSONObject()
+            .put("model", model)
+            .put("max_tokens", 8192)
+            .put("system", systemPrompt)
+            .put(
+                "messages",
+                JSONArray().put(JSONObject().put("role", "user").put("content", userPrompt)),
+            )
+            .also { body ->
+                val providers = openRouterProviderOrder.split(',')
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                if (protocol == ProviderProtocol.OPENROUTER && providers.isNotEmpty()) {
+                    body.put(
+                        "provider",
+                        JSONObject()
+                            .put("order", JSONArray(providers))
+                            .put("allow_fallbacks", openRouterAllowFallbacks),
+                    )
+                }
+            }
+            .toString()
+    }
+
+    /** Extracts the assistant text from a completion response per [protocol]. */
+    internal fun parseCompletionText(body: String, protocol: ProviderProtocol): String? = runCatching {
+        val root = JSONObject(body)
+        when (protocol) {
+            ProviderProtocol.OPENAI_CHAT -> root.optJSONArray("choices")
+                ?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+            ProviderProtocol.OPENAI_RESPONSES -> {
+                root.optString("output_text").takeIf { it.isNotBlank() } ?: run {
+                    val out = StringBuilder()
+                    val output = root.optJSONArray("output") ?: return@run null
+                    for (i in 0 until output.length()) {
+                        val content = output.optJSONObject(i)?.optJSONArray("content") ?: continue
+                        for (j in 0 until content.length()) {
+                            content.optJSONObject(j)?.optString("text")?.let { out.append(it) }
+                        }
+                    }
+                    out.toString().takeIf { it.isNotEmpty() }
+                }
+            }
+            else -> {
+                val out = StringBuilder()
+                val content = root.optJSONArray("content") ?: return@runCatching null
+                for (i in 0 until content.length()) {
+                    val part = content.optJSONObject(i) ?: continue
+                    if (part.optString("type") == "text" || part.has("text")) {
+                        out.append(part.optString("text"))
+                    }
+                }
+                out.toString().takeIf { it.isNotEmpty() }
+            }
+        }
+    }.getOrNull()
+
     private fun request(
         endpoint: String,
         method: String,
