@@ -1,6 +1,6 @@
 package com.codeair.mhe.factory.build
 
-import com.codeair.mhe.runtime.DevStack
+import com.codeair.mhe.model.DevStack
 import com.codeair.mhe.runtime.NativeSpawnProcess
 import com.codeair.mhe.runtime.RuntimeInstaller
 import com.codeair.mhe.runtime.readTailText
