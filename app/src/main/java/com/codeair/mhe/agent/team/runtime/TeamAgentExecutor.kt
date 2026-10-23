@@ -8,7 +8,21 @@ import com.codeair.mhe.agent.team.model.TeamRoleConfig
 import com.codeair.mhe.agent.team.model.TeamTask
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.model.AgentKind
+import com.codeair.mhe.model.ProjectKind
 import java.io.File
+
+/**
+ * Identity of an existing app project a team run is bound to. When present,
+ * role agents execute inside that project's real workspace (its id/slug are
+ * handed to the runtime bridge exactly like a normal project session);
+ * when absent, the run works in a synthetic per-goal team workspace.
+ */
+data class TeamProjectBinding(
+    val projectId: String,
+    val projectSlug: String,
+    val projectName: String,
+    val projectKind: ProjectKind = ProjectKind.PROJECT,
+)
 
 /**
  * Context handed to a real per-role agent executor (Milestone 10).
@@ -20,6 +34,8 @@ import java.io.File
 data class TeamExecutionContext(
     /** Project directory the agent works in; null when the run has no project bound. */
     val projectDir: File?,
+    /** Existing project this run is bound to; null for a synthetic team workspace. */
+    val projectBinding: TeamProjectBinding? = null,
     /** The high-level goal this team run serves. */
     val goal: String,
     /** The role executing this task. */

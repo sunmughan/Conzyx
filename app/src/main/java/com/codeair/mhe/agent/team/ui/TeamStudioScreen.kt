@@ -134,6 +134,7 @@ fun TeamStudioScreen(
         agentStore?.agents ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<com.codeair.mhe.agent.team.model.CustomTeamAgent>())
     }.collectAsState()
     var suggestedAgentIds by remember { mutableStateOf(setOf<String>()) }
+    var boundProjectId by remember { mutableStateOf<String?>(null) }
     val suggestedAgents = remember(inputGoal, customAgents) {
         if (inputGoal.isBlank() || customAgents.isEmpty()) emptyList()
         else customAgents.filter { com.codeair.mhe.agent.team.model.customAgentMatchesGoal(it, inputGoal) }
@@ -246,6 +247,43 @@ fun TeamStudioScreen(
                     shape = RoundedCornerShape(8.dp)
                 )
                 Spacer(Modifier.height(8.dp))
+                if (projects.isNotEmpty()) {
+                    Text(
+                        text = "Run in:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = boundProjectId == null,
+                            onClick = { boundProjectId = null },
+                            label = { Text("New team workspace", fontSize = 12.sp) },
+                            leadingIcon = if (boundProjectId == null) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null
+                        )
+                        projects.forEach { project ->
+                            val selected = boundProjectId == project.id
+                            FilterChip(
+                                selected = selected,
+                                onClick = { boundProjectId = if (selected) null else project.id },
+                                label = { Text(project.name, fontSize = 12.sp) },
+                                leadingIcon = if (selected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                } else null
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 if (suggestedAgents.isNotEmpty()) {
                     Text(
                         text = "Suggested agents for this goal:",
@@ -291,6 +329,12 @@ fun TeamStudioScreen(
                                 scope.launch {
                                     if (sessionState.isRunning) orchestrator.cancelRealRun()
                                     val chosen = customAgents.filter { suggestedAgentIds.contains(it.id) }
+                                    val chosenProject = projects.firstOrNull { it.id == boundProjectId }
+                                    orchestrator.bindProject(
+                                        chosenProject?.let {
+                                            com.codeair.mhe.agent.team.runtime.TeamProjectBinding(it.id, it.slug, it.name, it.kind)
+                                        }
+                                    )
                                     orchestrator.planProject(inputGoal, chosen)
                                     runCatching { orchestrator.autoRunAllReal() }
                                         .onFailure { orchestrator.reportError(it.message ?: "Plan run failed.") }

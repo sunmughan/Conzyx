@@ -68,6 +68,7 @@ class ConcurrentTeamDispatcher(
     private val roleConfigs: Map<TeamRole, TeamRoleConfig> = emptyMap(),
     private val roleAgents: Map<TeamRole, AgentKind> = emptyMap(),
     private val projectDir: File? = null,
+    private val projectBinding: TeamProjectBinding? = null,
     private val goal: String = "",
     private val maxConcurrentAgents: Int = 3,
     /** Resolves a custom agent id to its definition; null when custom agents are unavailable. */
@@ -221,6 +222,7 @@ class ConcurrentTeamDispatcher(
                 } else baseConfig
                 val context = TeamExecutionContext(
                     projectDir = projectDir,
+                    projectBinding = projectBinding,
                     goal = goal,
                     role = task.assignedRole,
                     roleConfig = effectiveConfig,

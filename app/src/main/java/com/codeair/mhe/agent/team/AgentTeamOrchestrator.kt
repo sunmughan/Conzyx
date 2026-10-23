@@ -108,6 +108,19 @@ class AgentTeamOrchestrator(
     var customAgentResolver: ((String) -> CustomTeamAgent?)? = null
 
     /**
+     * Existing project the next runs are bound to; null means runs work in a
+     * synthetic per-goal team workspace. Set via [bindProject] before planning.
+     */
+    @Volatile
+    var boundProject: com.codeair.mhe.agent.team.runtime.TeamProjectBinding? = null
+        private set
+
+    /** Binds subsequent runs to an existing project (null unbinds). */
+    fun bindProject(binding: com.codeair.mhe.agent.team.runtime.TeamProjectBinding?) {
+        boundProject = binding
+    }
+
+    /**
      * Applies user customizations of built-in agents (instructions and
      * permission overrides) on top of the default role configs.
      */
@@ -149,38 +162,52 @@ class AgentTeamOrchestrator(
     fun shutdown() {
         observerScope.cancel()
         (teamExecutor as? RealTeamAgentExecutor)?.shutdown()
-        if (realDispatcherLazy.isInitialized()) {
-            realDispatcherLazy.value?.shutdown()
-        }
+        synchronized(dispatcherLock) { dispatcherCache?.second }?.shutdown()
     }
 
+    private val dispatcherLock = Any()
+    private var dispatcherCache: Pair<Pair<com.codeair.mhe.agent.team.runtime.TeamProjectBinding?, String>, ConcurrentTeamDispatcher>? = null
+
     /**
-     * Lazily-built real dispatcher (Milestone 10). Null until a [teamExecutor]
-     * is wired; [requireRealExecution] guarantees real mode never runs without it.
+     * Real dispatcher (Milestone 10), rebuilt whenever the bound project or
+     * the active goal changes so a run never inherits a previous run's
+     * binding or goal. Null until a [teamExecutor] is wired;
+     * [requireRealExecution] guarantees real mode never runs without it.
      */
-    private val realDispatcherLazy = lazy {
-        val executor = teamExecutor ?: return@lazy null
-        ConcurrentTeamDispatcher(
-            scheduler = scheduler,
-            blackboard = blackboard,
-            commBus = commBus,
-            gatekeeper = gatekeeper,
-            budgetTracker = budgetTracker,
-            executor = executor,
-            validator = teamValidator,
-            roleConfigs = roleConfigs.toMap(),
-            roleAgents = roleInstances.toMap(),
-            projectDir = projectDir,
-            goal = _sessionState.value.activeGoal,
-            customAgentResolver = customAgentResolver,
-            // Hardware baseline caps the configured maximum; dynamic pressure
-            // throttles it further per stage inside the dispatcher.
-            maxConcurrentAgents = minOf(
-                maxConcurrentAgents,
-                concurrencyController?.baselineMaxAgents ?: maxConcurrentAgents
-            ),
-            concurrencyController = concurrencyController,
-        )
+    private fun realDispatcher(): ConcurrentTeamDispatcher? {
+        val executor = teamExecutor ?: return null
+        val key = boundProject to _sessionState.value.activeGoal
+        return synchronized(dispatcherLock) {
+            val cached = dispatcherCache
+            if (cached != null && cached.first == key) {
+                cached.second
+            } else {
+                val built = ConcurrentTeamDispatcher(
+                    scheduler = scheduler,
+                    blackboard = blackboard,
+                    commBus = commBus,
+                    gatekeeper = gatekeeper,
+                    budgetTracker = budgetTracker,
+                    executor = executor,
+                    validator = teamValidator,
+                    roleConfigs = roleConfigs.toMap(),
+                    roleAgents = roleInstances.toMap(),
+                    projectDir = projectDir,
+                    projectBinding = key.first,
+                    goal = key.second,
+                    customAgentResolver = customAgentResolver,
+                    // Hardware baseline caps the configured maximum; dynamic pressure
+                    // throttles it further per stage inside the dispatcher.
+                    maxConcurrentAgents = minOf(
+                        maxConcurrentAgents,
+                        concurrencyController?.baselineMaxAgents ?: maxConcurrentAgents
+                    ),
+                    concurrencyController = concurrencyController,
+                )
+                dispatcherCache = key to built
+                built
+            }
+        }
     }
 
     /**
@@ -415,7 +442,7 @@ class AgentTeamOrchestrator(
      */
     suspend fun executeNextReadyTask(): TeamTask? {
         requireRealExecution()
-        val dispatcher = realDispatcherLazy.value
+        val dispatcher = realDispatcher()
             ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
         if (budgetTracker.isQuotaExceeded()) {
             commBus.escalateToManager(
@@ -457,7 +484,7 @@ class AgentTeamOrchestrator(
      */
     suspend fun autoRunAllReal(): TeamRunReport {
         requireRealExecution()
-        val dispatcher = realDispatcherLazy.value
+        val dispatcher = realDispatcher()
             ?: throw IllegalStateException("Real dispatcher unavailable without a TeamAgentExecutor.")
         _sessionState.update { it.copy(isRunning = true) }
         val report = dispatcher.runAll()
@@ -503,7 +530,7 @@ class AgentTeamOrchestrator(
 
     /** Requests cancellation of a real run; in-flight agent runs finish rather than being killed. */
     fun cancelRealRun() {
-        realDispatcherLazy.value?.cancel()
+        synchronized(dispatcherLock) { dispatcherCache?.second }?.cancel()
         _sessionState.value = _sessionState.value.copy(isRunning = false, activeRole = null)
     }
 
