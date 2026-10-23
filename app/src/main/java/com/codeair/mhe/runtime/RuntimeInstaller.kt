@@ -590,38 +590,10 @@ class RuntimeInstaller(private val context: Context) {
             proot = runtime.proot,
             rootfs = runtime.rootfs,
             workspace = File(runtime.rootfs, "root"),
-            environment = mapOf(
-                "PENTAGI_EXECUTOR" to "proot",
-                "PROOT_ROOTFS" to "/",
-                "PROOT_NO_SECCOMP" to "1",
-                "DATABASE_URL" to "postgres://pentagiuser:pentagipass@127.0.0.1:5432/pentagidb?sslmode=disable",
-                "DATA_DIR" to "/root/pentagi-data",
-                "SERVER_HOST" to "127.0.0.1",
-                "SERVER_PORT" to PENTESTING_API_PORT.toString(),
-                "STATIC_DIR" to "/root/pentagi-setup/fe",
-            ),
+            environment = PenTestingStackSpec.environment(PENTESTING_API_PORT),
             guestCommand = listOf(
                 "/usr/bin/env", "bash", "-lc",
-                """
-                cd /root/pentagi-setup && chmod +x pentagi-arm64-proot
-                PGDATA_DIR="${'$'}HOME/pgdata"
-                PGCTL_BIN="${'$'}(ls /usr/lib/postgresql/*/bin/pg_ctl 2>/dev/null | sort -t/ -k4 -n | tail -1)"
-                if [ -n "${'$'}PGCTL_BIN" ]; then
-                  if su postgres -c "${'$'}PGCTL_BIN -D ${'$'}PGDATA_DIR status" >/dev/null 2>&1 || "${'$'}PGCTL_BIN" -D "${'$'}PGDATA_DIR" status >/dev/null 2>&1; then
-                    echo "postgres already running"
-                  else
-                    echo "starting postgres..."
-                    su postgres -c "${'$'}PGCTL_BIN -D ${'$'}PGDATA_DIR -l ${'$'}PGDATA_DIR/logfile start" || "${'$'}PGCTL_BIN" -D "${'$'}PGDATA_DIR" -l "${'$'}PGDATA_DIR/logfile" start || true
-                  fi
-                  PG_ISREADY="${'$'}(dirname "${'$'}PGCTL_BIN")/pg_isready"
-                  for i in ${'$'}(seq 1 30); do
-                    "${'$'}PG_ISREADY" -h 127.0.0.1 -p 5432 >/dev/null 2>&1 && break
-                    sleep 2
-                  done
-                fi
-                if [ -f ./proot ]; then cp ./proot /usr/local/bin/proot && chmod +x /usr/local/bin/proot; fi
-                exec ./pentagi-arm64-proot
-                """.trimIndent(),
+                PenTestingStackSpec.guestScript(),
             ),
             outputFile = outputFile,
         )
