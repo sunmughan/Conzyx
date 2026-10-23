@@ -460,7 +460,11 @@ class RuntimeInstaller(private val context: Context) {
             File(dir, "pentagi-arm64-proot").canExecute()
     }
 
-    fun penTestingBackendLog(): File = File(rootfs, "root/pentagi-data/backend.log")
+    fun penTestingBackendLog(): File {
+        val direct = File(rootfs, "root/pentagi-data/backend-direct.log")
+        val script = File(rootfs, "root/pentagi-data/backend.log")
+        return if (direct.isFile && (!script.isFile || direct.lastModified() >= script.lastModified())) direct else script
+    }
 
     data class AppFileEntry(
         val name: String,
@@ -580,29 +584,7 @@ class RuntimeInstaller(private val context: Context) {
         )
     }
 
-    fun startPenTestingBackendOnly(outputFile: File): Process {
-        val runtime = installedRuntime()
-        return process(
-            proot = runtime.proot,
-            rootfs = runtime.rootfs,
-            workspace = File(runtime.rootfs, "root"),
-            environment = emptyMap(),
-            guestCommand = listOf(
-                "/usr/bin/env", "bash", "-lc",
-                "cd /root/pentagi-setup && chmod +x setup-and-boot.sh && ./setup-and-boot.sh --backend-only",
-            ),
-            outputFile = outputFile,
-        )
-    }
-
-    /**
-     * Starts the PentAGI backend as a DIRECT child process (not via nohup).
-     * The returned Process IS the backend; the app must hold it to keep the
-     * backend alive. Using exec replaces the shell, so killing the Process
-     * kills the backend cleanly.
-     * Postgres must already be running (use --backend-only script first).
-     */
-    fun startPenTestingBackendDirect(outputFile: File): Process {
+    fun startPenTestingStack(outputFile: File): Process {
         val runtime = installedRuntime()
         return process(
             proot = runtime.proot,
@@ -612,7 +594,7 @@ class RuntimeInstaller(private val context: Context) {
                 "PENTAGI_EXECUTOR" to "proot",
                 "PROOT_ROOTFS" to "/",
                 "PROOT_NO_SECCOMP" to "1",
-                "DATABASE_URL" to "postgres://pentagi:pentagi@127.0.0.1:5432/pentagi?sslmode=disable",
+                "DATABASE_URL" to "postgres://pentagiuser:pentagipass@127.0.0.1:5432/pentagidb?sslmode=disable",
                 "DATA_DIR" to "/root/pentagi-data",
                 "SERVER_HOST" to "127.0.0.1",
                 "SERVER_PORT" to PENTESTING_API_PORT.toString(),
@@ -620,21 +602,62 @@ class RuntimeInstaller(private val context: Context) {
             ),
             guestCommand = listOf(
                 "/usr/bin/env", "bash", "-lc",
-                "cd /root/pentagi-setup && chmod +x pentagi-arm64-proot && exec ./pentagi-arm64-proot",
+                """
+                cd /root/pentagi-setup && chmod +x pentagi-arm64-proot
+                PGDATA_DIR="${'$'}HOME/pgdata"
+                PGCTL_BIN="${'$'}(ls /usr/lib/postgresql/*/bin/pg_ctl 2>/dev/null | sort -t/ -k4 -n | tail -1)"
+                if [ -n "${'$'}PGCTL_BIN" ]; then
+                  if su postgres -c "${'$'}PGCTL_BIN -D ${'$'}PGDATA_DIR status" >/dev/null 2>&1 || "${'$'}PGCTL_BIN" -D "${'$'}PGDATA_DIR" status >/dev/null 2>&1; then
+                    echo "postgres already running"
+                  else
+                    echo "starting postgres..."
+                    su postgres -c "${'$'}PGCTL_BIN -D ${'$'}PGDATA_DIR -l ${'$'}PGDATA_DIR/logfile start" || "${'$'}PGCTL_BIN" -D "${'$'}PGDATA_DIR" -l "${'$'}PGDATA_DIR/logfile" start || true
+                  fi
+                  PG_ISREADY="${'$'}(dirname "${'$'}PGCTL_BIN")/pg_isready"
+                  for i in ${'$'}(seq 1 30); do
+                    "${'$'}PG_ISREADY" -h 127.0.0.1 -p 5432 >/dev/null 2>&1 && break
+                    sleep 2
+                  done
+                fi
+                if [ -f ./proot ]; then cp ./proot /usr/local/bin/proot && chmod +x /usr/local/bin/proot; fi
+                exec ./pentagi-arm64-proot
+                """.trimIndent(),
             ),
             outputFile = outputFile,
         )
     }
 
-    /** Holds the direct backend process so it stays alive. */
-    var penTestingBackendProcess: Process? = null
-        private set
+    var penTestingBackendProcess: Process?
+        get() = sharedPenTestingProcess
+        private set(value) {
+            sharedPenTestingProcess = value
+        }
 
     fun setPenTestingBackendProcess(proc: Process?) {
-        penTestingBackendProcess?.let { old ->
+        val old = sharedPenTestingProcess
+        if (old != null && old !== proc) {
             try { if (old.isAlive) old.destroyForcibly() } catch (e: Exception) {}
         }
-        penTestingBackendProcess = proc
+        sharedPenTestingProcess = proc
+    }
+
+    suspend fun stopPenTestingStack(): Boolean = withContext(Dispatchers.IO) {
+        val proc = sharedPenTestingProcess
+        if (proc != null) {
+            try {
+                if (proc.isAlive) {
+                    proc.destroy()
+                    val deadline = System.currentTimeMillis() + 10_000L
+                    while (proc.isAlive && System.currentTimeMillis() < deadline) {
+                        Thread.sleep(200)
+                    }
+                    if (proc.isAlive) proc.destroyForcibly()
+                }
+            } catch (e: Exception) {}
+            sharedPenTestingProcess = null
+        }
+        stopPenTestingBackend()
+        !isPenTestingApiUp()
     }
 
     suspend fun stopPenTestingBackend(): Boolean = withContext(Dispatchers.IO) {
@@ -3734,7 +3757,10 @@ main().catch((err) => {
         private const val GITHUB_CLI_RELEASE_URL = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz"
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
         const val PENTESTING_BUNDLE_URL = "https://github.com/sunmughan/Conzyx/releases/download/pentagi-ondevice-1/pentagi-ondevice-test.tar.gz"
-        private const val PENTESTING_BUNDLE_SHA256 = "aaec8ec09e8f5ff95b9982782541af12f820a257e41d07338f64af9e9ce1d501"
+        private const val PENTESTING_BUNDLE_SHA256 = "1011bcc1f81969d97626a2334b510586c28589b878711d89207a77eaa88c6f5e"
+
+        @Volatile
+        private var sharedPenTestingProcess: Process? = null
         private const val PENTESTING_BUNDLE_VERSION = "9"
         const val PENTESTING_API_PORT = 18080
         const val PENTESTING_GUEST_SETUP_DIR = "/root/pentagi-setup"
