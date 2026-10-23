@@ -17,7 +17,7 @@
 
 ## Provider access
 
-The current release has no first-party Mobile Harness Extended account. AI features require an Anthropic-compatible provider credential. Before review, place a time-limited, low-quota test credential and its exact base URL/model in Play Console **App access** instructions. Never include that credential in the APK, repository, screenshots, or this document.
+Account sign-in inside the app is optional (a guest mode is offered). AI features require either a provider credential (an Anthropic-compatible endpoint, a DeepSeek or OpenAI-compatible key, or another supported provider) or a signed-in Antigravity session. Before review, place a time-limited, low-quota test credential and its exact base URL/model in Play Console **App access** instructions. Never include that credential in the APK, repository, screenshots, or this document.
 
 ## Suggested review flow
 

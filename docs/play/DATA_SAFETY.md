@@ -5,10 +5,10 @@ Use this worksheet when completing the Play Console Data safety form. Recheck it
 ## High-level answers
 
 - The app does not contain ads or advertising SDKs.
-- The app does not include analytics or crash-reporting SDKs in the current release.
+- The online release (the Play build) includes Firebase Crashlytics, Firebase Cloud Messaging, and Firebase Authentication. The answers below cover them; earlier drafts of this worksheet that denied any crash-reporting SDK were wrong.
 - Data is encrypted in transit when communicating with external services.
 - Users can delete local projects and chats in the app; uninstalling removes app-private data.
-- Mobile Harness Extended does not operate a first-party account system in the current release.
+- Accounts are optional: the app offers Firebase Authentication sign-in (email/password, Google, GitHub) and a guest mode. Account deletion is available inside the app (AuthRepository.deleteAccount, exposed in the auth UI).
 
 ## Data sent off device
 
@@ -23,6 +23,19 @@ When the user configures and uses an AI provider, the following may be sent to t
 
 The app itself does not send projects or conversations to the Mobile Harness Extended developer unless a user deliberately shares them through a separate support channel.
 
+## Data handled by Firebase services (online release)
+
+Google/Firebase processes the following as a service provider. In Play Data safety terms this is data **collected** by the app through these SDKs, not sold and not used for advertising.
+
+| Play category | Examples | When | Required | Handling |
+| --- | --- | --- | --- | --- |
+| Crash logs (App info and performance) | Exception type, message, stack trace, with pattern-based redaction of API keys, tokens, passwords, and private keys before upload (AppCrashLogger) | On crash or recorded non-fatal error | Collected by default; can be disabled via the crash-reporting flag | Sent to Firebase Crashlytics; Google retention policy applies |
+| Diagnostics (App info and performance) | App version and variant, Android version/API level, device manufacturer and model, CPU architectures, memory statistics | Sent with crash reports | With crash reports | Sent to Firebase Crashlytics |
+| Device or other IDs | Firebase Cloud Messaging registration token; Crashlytics installation ID | FCM token on registration/refresh; install ID with crash reports | Required for remote event delivery and crash reporting | Held by Firebase; token rotates |
+| Name, Email address, User IDs (Personal info) | Email, display name, Firebase user ID, sign-in provider | Only when the user creates or signs in to an account (email/password, Google, or GitHub) | Optional — guest mode works without an account | Held by Firebase Authentication; user can delete the account in-app |
+
+Firebase Cloud Messaging is used only as a remote event transport (agent/session completion events); see `docs/FCM_REMOTE_EVENTS.md`. Message content is limited to event title/body and an in-app route string.
+
 ## Other network recipients
 
 During setup and maintenance, Ubuntu, Anthropic, Node.js, Composer, and configured package repositories may receive ordinary request metadata such as IP address, requested resource, request time, and user agent. These transfers are needed for **App functionality** and software downloads.
@@ -33,7 +46,7 @@ Projects, conversations, attachments, terminal history, checkpoints, preferences
 
 ## Verification before submission
 
-- Confirm no analytics, advertising, telemetry, or crash-reporting SDK was added.
+- Confirm the Firebase set in the release is exactly Crashlytics + Messaging + Authentication; if an analytics SDK is added, this worksheet and the Console form must gain an analytics declaration first.
 - Confirm every configured AI gateway is covered by the public privacy policy.
 - Confirm the release contains no test keys or default private endpoints.
-- Update this worksheet if cloud backup, first-party accounts, subscriptions, or diagnostics upload are introduced.
+- Update this worksheet if cloud backup, subscriptions, or additional diagnostics upload are introduced.

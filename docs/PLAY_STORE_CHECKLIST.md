@@ -32,16 +32,16 @@ This checklist covers the Play-facing work for package `com.codeair.mhe`. It doe
 - [x] Create a 512×512 Play icon and 1024×500 feature graphic
 - [ ] Review phone screenshots against the final release build
 - [ ] Add a public support email (the public repository and Issues page are already available)
-- [x] Prepare Data safety answers, including data sent to configured AI providers
+- [x] Prepare Data safety answers, including data sent to configured AI providers and the Firebase Crashlytics, Messaging, and Authentication data in the online release
 - [x] Prepare content rating, target audience, ads, app access, and privacy answers
-- [x] Prepare both `specialUse` foreground-service declarations
+- [x] Prepare all three `specialUse` foreground-service declarations (setup, execution, keep-alive)
 - [ ] Record a reviewer-accessible video showing how each foreground service is started, displayed, and stopped
 - [x] Provide reviewer instructions for setup and provider authentication
 - [ ] Run Play pre-launch reports on all supported Android versions
 - [ ] Complete Anthropic branding, authentication, licensing, and redistribution review
 - [ ] Resolve or obtain approval for the local executable-runtime architecture
 
-Account-deletion and Play Billing requirements apply only if Mobile Harness Extended later introduces first-party accounts or sells digital subscriptions in the app.
+Account deletion applies to this release: optional Firebase Authentication accounts exist, in-app account deletion is implemented, and a public web deletion-request URL still has to be published and entered in Play Console. Play Billing requirements apply only if Mobile Harness Extended later sells digital subscriptions in the app. The exact remaining Console steps are listed in `docs/play/PLAY_CONSOLE_REMAINING.md`.
 
 ## Build configuration
 
@@ -61,7 +61,7 @@ Create and validate the Play bundle:
   -PplayBuild=true \
   -PappVersionCode=1 \
   -PappVersionName=1.0.0 \
-  -PprivacyPolicyUrl=https://github.com/techjarves/Mobile-Harness/blob/main/PRIVACY.md \
+  -PprivacyPolicyUrl=https://github.com/sunmughan/Conzyx/blob/main/PRIVACY.md \
   playReadinessCheck bundleRelease
 ```
 

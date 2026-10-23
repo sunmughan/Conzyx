@@ -15,13 +15,21 @@ Mobile Harness Extended may handle information you choose to provide or generate
 - Build and runtime information needed to operate the local development environment, such as Android version, processor architecture, memory, storage, and installed runtime/agent versions
 - Information required to download, install, update, and verify runtime components and app updates
 
+## Accounts (optional)
+
+Signing in is optional; a guest mode covers local use. If you create or sign in to an account, Firebase Authentication stores your email address, display name, and sign-in provider identifiers so the app can authenticate you. You can delete your account inside the app, which removes the Firebase Authentication account; data already stored locally on your device is unaffected and can be removed by clearing app data or uninstalling.
+
+## Remote event delivery
+
+The online build uses Firebase Cloud Messaging only as a transport for app events (for example, a background agent session finishing). Firebase issues the device a registration token for this delivery; event payloads are limited to a short title, body, and an in-app route string. Firebase's own privacy policy governs the token and delivery metadata it processes.
+
 ## Local storage
 
 Projects, conversations, attachments, imported repositories, editor content, terminal history, checkpoints, runtime files, and diagnostics are stored in the app's private storage on your device unless you explicitly use a feature that sends information elsewhere.
 
 Provider credentials are protected using Android Keystore-backed encryption before they are persisted.
 
-Mobile Harness Extended does not include advertising SDKs and does not operate a first-party user account system. It does include Firebase Crashlytics for crash reporting, described below.
+Mobile Harness Extended does not include advertising SDKs. It offers an optional account (Firebase Authentication sign-in with email/password, Google, or GitHub) alongside a guest mode, and it includes Firebase Crashlytics for crash reporting and Firebase Cloud Messaging for remote event delivery, described below.
 
 ## Code, projects, and AI requests
 
