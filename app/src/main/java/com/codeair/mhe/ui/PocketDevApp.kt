@@ -6525,7 +6525,12 @@ private fun ChatTab(
                         )
                     }
                 }
-                approval?.let { request -> item { ApprovalCard(request, onApproval, onApprovalWithLevel) } }
+                // A recorded task outcome means the task is finished: a stale
+                // approval left over from that run must never render its
+                // Approve/Deny actions on a completed task.
+                approval?.takeIf { lastTaskOutcome == null }?.let { request ->
+                    item { ApprovalCard(request, onApproval, onApprovalWithLevel) }
+                }
             }
         }
         if (readOnly) {
@@ -7247,47 +7252,30 @@ private fun MessageBubble(
     var copied by remember { mutableStateOf(false) }
 
     val uriHandler = LocalUriHandler.current
+    // Every chat link routes through classifyChatLink: workspace files open
+    // in the in-app editor, only real web links leave for the browser. The
+    // old handler received URLs already mangled by normalizeMarkdownUrl
+    // (https:// prepended to file paths), matched nothing, and handed the
+    // raw file:// path to Chrome.
     val fileLinkHandler: (String) -> Unit = remember(onOpenFileLink, uriHandler, context) {
         { rawUrl: String ->
-            val path = when {
-                rawUrl.startsWith("file://") -> rawUrl.removePrefix("file://")
-                rawUrl.startsWith("/workspace/") || rawUrl.startsWith("/root/") -> rawUrl
-                else -> null
-            }
-            if (path != null) {
-                val lower = path.lowercase()
-                val isArchive = lower.endsWith(".zip") || lower.endsWith(".apk") ||
-                    lower.endsWith(".tar") || lower.endsWith(".gz") ||
-                    lower.endsWith(".rar") || lower.endsWith(".7z") ||
-                    lower.endsWith(".txc")
-                val isCodeFile = !isArchive && (lower.endsWith(".php") ||
-                    lower.endsWith(".js") || lower.endsWith(".jsx") ||
-                    lower.endsWith(".ts") || lower.endsWith(".tsx") ||
-                    lower.endsWith(".kt") || lower.endsWith(".java") ||
-                    lower.endsWith(".py") || lower.endsWith(".css") ||
-                    lower.endsWith(".html") || lower.endsWith(".htm") ||
-                    lower.endsWith(".json") || lower.endsWith(".xml") ||
-                    lower.endsWith(".md") || lower.endsWith(".txt") ||
-                    lower.endsWith(".yml") || lower.endsWith(".yaml") ||
-                    lower.endsWith(".sh") || lower.endsWith(".sql") ||
-                    lower.endsWith(".vue") || lower.endsWith(".c") ||
-                    lower.endsWith(".cpp") || lower.endsWith(".h") ||
-                    lower.endsWith(".go") || lower.endsWith(".rs") ||
-                    lower.endsWith(".rb") || lower.endsWith(".swift"))
-                when {
-                    isCodeFile -> try { onOpenFileLink(path) } catch (_: Throwable) { }
-                    isArchive -> { }
-                    else -> { }
+            when (val target = classifyChatLink(rawUrl)) {
+                is ChatLinkTarget.WorkspaceFile -> {
+                    if (!target.isArchive) {
+                        try { onOpenFileLink(target.relativePath) } catch (_: Throwable) { }
+                    }
                 }
-            } else {
-                try { uriHandler.openUri(rawUrl) } catch (_: Throwable) {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                    } catch (_: Throwable) { }
+                is ChatLinkTarget.Web -> {
+                    try { uriHandler.openUri(target.url) } catch (_: Throwable) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target.url)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Throwable) { }
+                    }
                 }
+                ChatLinkTarget.Ignored -> Unit
             }
         }
     }

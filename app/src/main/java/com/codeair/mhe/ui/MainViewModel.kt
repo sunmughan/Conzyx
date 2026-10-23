@@ -3722,6 +3722,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 workSegmentStartedAtMillis = startedAt,
                 currentTaskRequest = requestText,
                 lastTaskOutcome = null,
+                pendingApproval = null,
             )
         }
         val activeProj = state.value.activeProject
@@ -4390,6 +4391,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isRunning = false,
                         streamingMessageId = null,
                         activeSessionId = null,
+                        pendingApproval = null,
                         activeRoadmap = latestRoadmap,
                         scratchpadItems = scratchpad,
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +
@@ -4463,6 +4465,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             isRunning = false,
                             streamingMessageId = null,
                             activeSessionId = null,
+                            pendingApproval = null,
                             activeRoadmap = latestRoadmap,
                             scratchpadItems = scratchpad,
                             activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +

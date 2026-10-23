@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -256,17 +257,31 @@ private fun TableBlock(
     val hiddenColumns = (table.headers.size - MAX_TABLE_COLUMNS).coerceAtLeast(0)
     val visibleRows = table.rows.take(MAX_TABLE_ROWS)
     val hiddenRows = (table.rows.size - MAX_TABLE_ROWS).coerceAtLeast(0)
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
     ) {
+        val columnCount = visibleHeaders.size.coerceAtLeast(1)
+        val fitColumnWidth = maxWidth / columnCount
+        // When every column can hold a readable share of the screen, lay the
+        // table out at exactly screen width and let cell text wrap, so no
+        // column or value is ever cut off. Genuinely wide tables keep
+        // horizontal scrolling with wider cells.
+        val fitsOnScreen = fitColumnWidth >= 84.dp
+        val cellWidthModifier = if (fitsOnScreen) {
+            Modifier.width((fitColumnWidth - 16.dp).coerceAtLeast(40.dp))
+        } else {
+            Modifier.widthIn(min = 96.dp, max = 240.dp)
+        }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(
-            modifier = Modifier
-                .horizontalScroll(scrollState)
+            modifier = (if (fitsOnScreen) Modifier.fillMaxWidth() else Modifier.horizontalScroll(scrollState))
                 .padding(8.dp),
         ) {
             Row(
@@ -280,8 +295,7 @@ private fun TableBlock(
             ) {
                 visibleHeaders.forEach { header ->
                     Box(
-                        modifier = Modifier
-                            .widthIn(min = 90.dp, max = 220.dp)
+                        modifier = cellWidthModifier
                             .padding(horizontal = 8.dp),
                     ) {
                         Text(
@@ -313,8 +327,7 @@ private fun TableBlock(
                     visibleHeaders.indices.forEach { colIndex ->
                         val cellText = row.getOrNull(colIndex) ?: ""
                         Box(
-                            modifier = Modifier
-                                .widthIn(min = 90.dp, max = 220.dp)
+                            modifier = cellWidthModifier
                                 .padding(horizontal = 8.dp),
                         ) {
                             Text(
@@ -341,6 +354,7 @@ private fun TableBlock(
                 )
             }
         }
+    }
     }
 }
 
@@ -654,6 +668,23 @@ internal fun buildMarkdownAnnotatedString(
                         i++
                     }
                 }
+                // Bare web domain: krithikasalon.in, www.example.com/pricing.
+                // Without this branch a scheme-less domain rendered as plain
+                // text and tapping it did nothing at all.
+                bareDomainEnd(text, i) != -1 -> {
+                    val end = bareDomainEnd(text, i)
+                    val rawUrl = text.substring(i, end)
+                    withLink(
+                        LinkAnnotation.Url(
+                            url = "https://$rawUrl",
+                            styles = linkStyles,
+                            linkInteractionListener = linkListener,
+                        ),
+                    ) {
+                        append(rawUrl)
+                    }
+                    i = end
+                }
                 else -> {
                     append(text[i])
                     i++
@@ -669,8 +700,146 @@ internal fun normalizeMarkdownUrl(raw: String): String {
         trimmed.startsWith("http://", ignoreCase = true) ||
         trimmed.startsWith("https://", ignoreCase = true) ||
         trimmed.startsWith("mailto:", ignoreCase = true) ||
-        trimmed.startsWith("tel:", ignoreCase = true) -> trimmed
+        trimmed.startsWith("tel:", ignoreCase = true) ||
+        // Filesystem references must survive untouched: prepending https://
+        // here used to turn file:// and /workspace/ links into garbage web
+        // URLs that escaped to Chrome and failed with a DNS error.
+        trimmed.startsWith("file://", ignoreCase = true) ||
+        trimmed.startsWith("/") -> trimmed
         else -> "https://$trimmed"
+    }
+}
+
+private val WEB_TOP_LEVEL_DOMAINS = setOf(
+    "com", "net", "org", "io", "co", "in", "ai", "dev", "app", "tech", "me",
+    "site", "online", "store", "shop", "xyz", "info", "biz", "us", "uk", "ca",
+    "au", "de", "fr", "jp", "cn", "br", "gg", "tv", "cc", "so", "to", "fm",
+    "am", "pro", "agency", "solutions", "digital", "marketing", "studio",
+    "design", "cloud", "host", "page", "link", "world", "today", "live",
+    "news", "blog", "guru", "mobi", "name", "asia", "travel", "jobs", "gov",
+    "edu", "mil", "int", "org", "academy", "company", "group", "network",
+    "systems", "software", "tools", "guide", "help", "zone", "space", "club",
+    "global", "international", "consulting", "services", "support",
+)
+
+internal fun isWebDomainHost(host: String): Boolean {
+    if (!host.contains('.')) return false
+    val labels = host.split('.')
+    if (labels.any { label -> label.isBlank() || !label.all { it.isLetterOrDigit() || it == '-' } }) {
+        return false
+    }
+    val tld = labels.last().lowercase()
+    return tld.length >= 2 && tld.all { it.isLetter() } && tld in WEB_TOP_LEVEL_DOMAINS
+}
+
+/**
+ * If a bare web domain (krithikasalon.in, www.example.com/pricing) starts at
+ * [start] in [text], returns the index just past the domain (including an
+ * optional path suffix), or -1 when there is no bare domain there. File
+ * names such as services.blade.php never match: their final extension is
+ * not a web TLD.
+ */
+internal fun bareDomainEnd(text: String, start: Int): Int {
+    if (start > 0) {
+        val prev = text[start - 1]
+        if (prev.isLetterOrDigit() || prev in setOf('.', '-', '/', '@', '_', '#', ':', '=')) {
+            return -1
+        }
+    }
+    var hostEnd = start
+    while (hostEnd < text.length &&
+        (text[hostEnd].isLetterOrDigit() || text[hostEnd] == '-' || text[hostEnd] == '.')
+    ) {
+        hostEnd++
+    }
+    if (hostEnd == start) return -1
+    val host = text.substring(start, hostEnd).trimEnd('.')
+    if (host.isEmpty() || !isWebDomainHost(host)) return -1
+    var end = start + host.length
+    if (end < text.length && text[end] == '/') {
+        var k = end
+        while (k < text.length && !text[k].isWhitespace() &&
+            text[k] !in setOf('"', '\'', '`', '<', '>', '[', ']', '(', ')', '|')
+        ) {
+            k++
+        }
+        end = k
+    }
+    while (end > start && text[end - 1] in setOf(',', ';', ':', '!', '?')) {
+        end--
+    }
+    return if (end > start) end else -1
+}
+
+internal sealed interface ChatLinkTarget {
+    data class WorkspaceFile(val relativePath: String, val isArchive: Boolean) : ChatLinkTarget
+    data class Web(val url: String) : ChatLinkTarget
+    object Ignored : ChatLinkTarget
+}
+
+private val ARCHIVE_FILE_EXTENSIONS = setOf("zip", "apk", "tar", "gz", "rar", "7z", "txc", "bz2", "xz")
+
+private val EDITABLE_FILE_EXTENSIONS = setOf(
+    "php", "js", "jsx", "ts", "tsx", "kt", "kts", "java", "py", "css", "scss",
+    "html", "htm", "json", "xml", "md", "txt", "yml", "yaml", "sh", "sql",
+    "vue", "c", "h", "cpp", "hpp", "go", "rs", "rb", "swift", "env", "ini",
+    "toml", "gradle", "properties", "lock",
+)
+
+private fun isArchivePath(path: String): Boolean {
+    val lower = path.lowercase()
+    if (lower.endsWith(".tar.gz") || lower.endsWith(".tar.bz2") || lower.endsWith(".tar.xz")) {
+        return true
+    }
+    return lower.substringAfterLast('.', "") in ARCHIVE_FILE_EXTENSIONS
+}
+
+/**
+ * Routes a tapped chat link. Workspace file references (file:// URLs,
+ * /workspace/ absolute paths, bare file names, project-relative paths) open
+ * inside the app; only real web references go to the browser. Before this
+ * existed, file references were handed to Chrome as web URLs and died with
+ * DNS_PROBE_FINISHED_NXDOMAIN.
+ */
+internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
+    val trimmed = rawUrl.trim()
+    if (trimmed.isBlank()) return ChatLinkTarget.Ignored
+    val lower = trimmed.lowercase()
+    if (lower.startsWith("http://") || lower.startsWith("https://") ||
+        lower.startsWith("mailto:") || lower.startsWith("tel:")
+    ) {
+        return ChatLinkTarget.Web(trimmed)
+    }
+    val absolutePath: String? = when {
+        lower.startsWith("file://") -> {
+            var rest = trimmed.substring("file://".length)
+            if (rest.startsWith("localhost/", ignoreCase = true)) {
+                rest = rest.substring("localhost/".length)
+            }
+            if (rest.startsWith("/")) rest else "/$rest"
+        }
+        trimmed.startsWith("/") -> trimmed
+        else -> null
+    }
+    if (absolutePath != null) {
+        val relative = when {
+            absolutePath.startsWith("/workspace/") -> absolutePath.removePrefix("/workspace/")
+            absolutePath.contains("/workspace/") -> absolutePath.substringAfterLast("/workspace/")
+            else -> absolutePath.removePrefix("/")
+        }.trim()
+        if (relative.isBlank() || relative == "workspace") return ChatLinkTarget.Ignored
+        return ChatLinkTarget.WorkspaceFile(relative, isArchivePath(relative))
+    }
+    val host = trimmed.substringBefore('/')
+    if (isWebDomainHost(host)) return ChatLinkTarget.Web("https://$trimmed")
+    val fileName = trimmed.substringAfterLast('/')
+    val extension = fileName.substringAfterLast('.', "").lowercase()
+    return if ('/' in trimmed || extension in EDITABLE_FILE_EXTENSIONS ||
+        extension in ARCHIVE_FILE_EXTENSIONS || fileName.contains('.')
+    ) {
+        ChatLinkTarget.WorkspaceFile(trimmed, isArchivePath(trimmed))
+    } else {
+        ChatLinkTarget.Web("https://$trimmed")
     }
 }
 
