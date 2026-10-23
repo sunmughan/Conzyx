@@ -364,6 +364,7 @@ data class AppUiState(
     val scratchpadItems: List<ScratchpadItem> = emptyList(),
     val scratchpadExpanded: Boolean = false,
     val orchestratorSnapshot: com.codeair.mhe.session.OrchestratorSnapshot? = null,
+    val lastTaskOutcome: TaskOutcome? = null,
     val emergencyKillSwitchActive: Boolean = false,
     val allowShellExec: Boolean = true,
     val allowNetworkAccess: Boolean = true,
@@ -609,6 +610,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private data class SessionRecoveryState(var job: Job? = null, var attempt: Int = 0, var startedAtMillis: Long? = null)
     private val sessionRecoveryStates = ConcurrentHashMap<String, SessionRecoveryState>()
     private val pendingAssistantDeltas = ConcurrentHashMap<String, StringBuilder>()
+    private val roadmapParseAttempts = ConcurrentHashMap.newKeySet<String>()
     private val assistantDeltaFlushJobs = ConcurrentHashMap<String, Job>()
     private val lastAssistantDeltaPersistAtMillis = ConcurrentHashMap<String, Long>()
     private data class QueuedSessionStart(val projectId: String, val prompt: String, val attachments: List<ChatAttachment>)
@@ -693,7 +695,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         (initialChats.firstOrNull { it.id == lastChatId } ?: initialChats.firstOrNull())?.id
     }
     private val initialMessages = (if (initialActiveProject != null && initialActiveChatId != null) {
-        preferences.loadMessages(initialActiveProject.id, initialActiveChatId).ifEmpty {
+        agentChatController.compactSystemMessageDumps(
+            preferences.loadMessages(initialActiveProject.id, initialActiveChatId),
+        ).ifEmpty {
             listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
         }
     } else {
@@ -2055,7 +2059,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val activeChat = chats.firstOrNull { it.id == lastChatId } ?: chats.first()
         preferences.setLastActiveChatId(project.id, activeChat.id)
         val saved = preferences.loadMessages(project.id, activeChat.id)
-        val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
+        val msgs = agentChatController.compactSystemMessageDumps(saved)
+            .ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
         val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
         val slice = projectSessionStates.value[project.id]
@@ -2089,6 +2094,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runtimeRecoveryStatus = slice?.runtimeRecoveryStatus,
                 runtimeRecoveryAttempt = slice?.runtimeRecoveryAttempt ?: 0,
                 runtimeRecoveryCanResume = slice?.runtimeRecoveryCanResume ?: false,
+                lastTaskOutcome = slice?.lastTaskOutcome,
                 workspaceFiles = emptyList(),
                 androidProjectDetected = false,
                 filesLoading = true,
@@ -2975,6 +2981,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendPrompt(prompt)
     }
 
+    fun ensureMessageRoadmap(messageId: String) {
+        val current = _state.value
+        val message = current.messages.firstOrNull { it.id == messageId } ?: return
+        if (message.fromUser || message.roadmap != null || message.workItems.isNotEmpty()) return
+        if (message.id == current.streamingMessageId || message.text.isBlank() || message.text.length > 30000) return
+        val attemptKey = message.id + ":" + message.text.hashCode()
+        if (roadmapParseAttempts.size > 4000) roadmapParseAttempts.clear()
+        if (!roadmapParseAttempts.add(attemptKey)) return
+        val parsed = agentChatController.roadmapForMessage(message.text, current.executionMode) ?: return
+        _state.update { state ->
+            val target = state.messages.firstOrNull { it.id == messageId } ?: return@update state
+            if (target.roadmap != null || target.text != message.text) return@update state
+            state.copy(
+                messages = state.messages.map { msg ->
+                    if (msg.id == messageId) msg.copy(roadmap = parsed) else msg
+                },
+            )
+        }
+        persistMessages()
+    }
+
+    fun dismissTaskOutcome() {
+        _state.update { it.copy(lastTaskOutcome = null) }
+        val projectId = _state.value.activeProject?.id ?: return
+        projectSessionStates.update { states ->
+            val slice = states[projectId] ?: return@update states
+            if (slice.lastTaskOutcome == null) states else states + (projectId to slice.copy(lastTaskOutcome = null))
+        }
+    }
+
     fun rollbackToBaseline(): Boolean {
         val proj = state.value.activeProject ?: return false
         val workspaceDir = File(getApplication<Application>().filesDir, "projects/${proj.id}")
@@ -3665,6 +3701,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 taskFinishedAtMillis = null,
                 workSegmentStartedAtMillis = startedAt,
                 currentTaskRequest = requestText,
+                lastTaskOutcome = null,
             )
         }
         val activeProj = state.value.activeProject
@@ -3688,7 +3725,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         touchProject(project.id)
         persistMessages()
-        val history = state.value.messages
+        val history = agentChatController.compactSystemMessageDumps(state.value.messages)
         val runtimePrompt = agentChatController.buildEnrichedPrompt(
             requestText = requestText,
             modeInstruction = modeInstruction,
@@ -3968,6 +4005,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runtimeRecoveryCanResume = slice.runtimeRecoveryCanResume,
         activeRoadmap = slice.activeRoadmap,
         scratchpadItems = slice.scratchpadItems,
+        lastTaskOutcome = slice.lastTaskOutcome,
     )
 
     private fun sliceFromState(
@@ -4001,6 +4039,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         activeRoadmap = state.activeRoadmap,
         scratchpadItems = state.scratchpadItems,
         pendingOrchestratorTransition = previous?.pendingOrchestratorTransition,
+        lastTaskOutcome = state.lastTaskOutcome,
     )
 
     private fun sessionScopeFor(projectId: String): AppUiState {
@@ -4296,13 +4335,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             rm
                         }
                     }
-                    val messagesWithRoadmap = stateWithResponse.messages.mapIndexed { index, msg ->
-                        val isRecent = index >= stateWithResponse.messages.size - 20
+                    val compactedMessages = agentChatController.compactSystemMessageDumps(stateWithResponse.messages)
+                    val messagesWithRoadmap = compactedMessages.mapIndexed { index, msg ->
+                        val isRecent = index >= compactedMessages.size - 20
                         if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                             msg.copy(roadmap = completedActiveRoadmap)
                         } else if (isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
-                            msg.text.length <= 30000 && current.executionMode != ExecutionMode.BUILD) {
-                            val parsed = RoadmapParser.parseFromText(msg.text, stateWithResponse.executionMode)
+                            msg.text.length <= 30000) {
+                            val parsed = agentChatController.roadmapForMessage(msg.text, stateWithResponse.executionMode)
                             if (parsed != null) msg.copy(roadmap = parsed) else msg
                         } else {
                             msg
@@ -4337,6 +4377,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         runtimeRecoveryStatus = null,
                         runtimeRecoveryAttempt = 0,
                         runtimeRecoveryCanResume = false,
+                        lastTaskOutcome = TaskOutcome(
+                            state = com.codeair.mhe.session.EngineeringState.COMPLETED,
+                            title = "Task completed successfully",
+                            finishedAtMillis = finishedAt,
+                        ),
                     )
                 }
                 is RuntimeEvent.SessionFailed -> {
@@ -4370,13 +4415,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 rm
                             }
                         }
-                        val messagesWithRoadmap = segmentFinishedState.messages.mapIndexed { index, msg ->
-                            val isRecent = index >= segmentFinishedState.messages.size - 20
+                        val compactedMessages = agentChatController.compactSystemMessageDumps(segmentFinishedState.messages)
+                        val messagesWithRoadmap = compactedMessages.mapIndexed { index, msg ->
+                            val isRecent = index >= compactedMessages.size - 20
                             if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                                 msg.copy(roadmap = completedActiveRoadmap)
                             } else if (isRecent && !msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
-                                msg.text.length <= 30000 && current.executionMode != ExecutionMode.BUILD) {
-                                val parsed = RoadmapParser.parseFromText(msg.text, segmentFinishedState.executionMode)
+                                msg.text.length <= 30000) {
+                                val parsed = agentChatController.roadmapForMessage(msg.text, segmentFinishedState.executionMode)
                                 if (parsed != null) msg.copy(roadmap = parsed) else msg
                             } else {
                                 msg
@@ -4402,18 +4448,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             runtimeRecoveryStatus = null,
                             runtimeRecoveryAttempt = 0,
                             runtimeRecoveryCanResume = false,
+                            lastTaskOutcome = TaskOutcome(
+                                state = com.codeair.mhe.session.EngineeringState.COMPLETED,
+                                title = "Task completed successfully",
+                                finishedAtMillis = finishedAt,
+                            ),
                         )
                     } else {
                         val finishedAt = System.currentTimeMillis()
                         sessionRecoveryStates.remove(event.sessionId)
                         val scratchpad = deriveScratchpadItems(current.activeRoadmap, emptyList(), false)
-                        attachTaskDuration(
+                        val failedBase = attachTaskDuration(
                             finishWorkSegment(
                                 appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
                                 finishedAt,
                             ),
                             finishedAt,
-                        ).copy(
+                        )
+                        failedBase.copy(
+                            messages = agentChatController.compactSystemMessageDumps(failedBase.messages),
                             isRunning = false,
                             streamingMessageId = null,
                             activeSessionId = null,
@@ -4426,6 +4479,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             runtimeRecoveryStatus = null,
                             runtimeRecoveryAttempt = 0,
                             runtimeRecoveryCanResume = false,
+                            lastTaskOutcome = TaskOutcome(
+                                state = com.codeair.mhe.session.EngineeringState.FAILED,
+                                title = "Task failed",
+                                finishedAtMillis = finishedAt,
+                            ),
                         )
                     }
                 }
@@ -4607,9 +4665,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (resumePrompt.isBlank()) return
 
         // Strip trailing stopped/error messages so chat resumes cleanly
-        val cleanedMessages = current.messages.filterNot { msg ->
-            !msg.fromUser && msg.text.contains("Task stopped", ignoreCase = true)
-        }
+        val cleanedMessages = agentChatController.compactSystemMessageDumps(
+            current.messages.filterNot { msg ->
+                !msg.fromUser && msg.text.contains("Task stopped", ignoreCase = true)
+            },
+        )
 
         val targetRoadmap = roadmap ?: current.activeRoadmap
         val isRoadmapBuild = targetRoadmap != null && targetRoadmap.isApproved &&
@@ -4664,6 +4724,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 taskFinishedAtMillis = null,
                 workSegmentStartedAtMillis = startedAt,
                 currentTaskRequest = effectivePrompt,
+                lastTaskOutcome = null,
                 activity = listOf(ActivityItem("Resuming task", "Reconnecting and continuing work…", false)) + state.activity,
             )
         }

@@ -624,6 +624,8 @@ fun PocketDevApp(
             onToggleScratchpad = viewModel::toggleScratchpadExpanded,
             onAddRoadmapComment = viewModel::addRoadmapComment,
             onApproveAndBuildRoadmap = viewModel::approveAndBuildRoadmap,
+            onEnsureMessageRoadmap = viewModel::ensureMessageRoadmap,
+            onDismissTaskOutcome = viewModel::dismissTaskOutcome,
             onBindFolder = viewModel::bindFolderToActiveProject,
             onSetProjectRootDirectory = viewModel::setProjectRootDirectory,
             onSelectTab = viewModel::selectEditorTab,
@@ -4912,6 +4914,8 @@ private fun WorkspaceScreen(
     onToggleScratchpad: () -> Unit = {},
     onAddRoadmapComment: (roadmapId: String, text: String, stepId: String?) -> Unit = { _, _, _ -> },
     onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
+    onEnsureMessageRoadmap: (String) -> Unit = {},
+    onDismissTaskOutcome: () -> Unit = {},
     onBindFolder: (Uri) -> Unit = {},
     onSetProjectRootDirectory: (String) -> Unit = {},
     onSelectTab: (String) -> Unit = {},
@@ -5449,7 +5453,10 @@ private fun WorkspaceScreen(
                     onToggleScratchpad = onToggleScratchpad,
                     onAddRoadmapComment = onAddRoadmapComment,
                     onApproveAndBuildRoadmap = onApproveAndBuildRoadmap,
+                    onEnsureMessageRoadmap = onEnsureMessageRoadmap,
                     orchestratorSnapshot = state.orchestratorSnapshot,
+                    lastTaskOutcome = state.lastTaskOutcome,
+                    onDismissTaskOutcome = onDismissTaskOutcome,
                     onRollbackToBaseline = onRollbackToBaseline,
                     emergencyKillSwitchActive = state.emergencyKillSwitchActive,
                     onResetEmergencyKillSwitch = onResetEmergencyKillSwitch,
@@ -6211,7 +6218,10 @@ private fun ChatTab(
     onToggleScratchpad: () -> Unit = {},
     onAddRoadmapComment: (roadmapId: String, text: String, stepId: String?) -> Unit = { _, _, _ -> },
     onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
+    onEnsureMessageRoadmap: (String) -> Unit = {},
     orchestratorSnapshot: com.codeair.mhe.session.OrchestratorSnapshot? = null,
+    lastTaskOutcome: TaskOutcome? = null,
+    onDismissTaskOutcome: () -> Unit = {},
     onRollbackToBaseline: () -> Unit = {},
     emergencyKillSwitchActive: Boolean = false,
     onResetEmergencyKillSwitch: () -> Unit = {},
@@ -6367,15 +6377,21 @@ private fun ChatTab(
                 }
             }
         }
-        if (orchestratorSnapshot != null && orchestratorSnapshot.state != com.codeair.mhe.session.EngineeringState.IDLE) {
+        val bannerSnapshot = bannerSnapshotFor(orchestratorSnapshot, lastTaskOutcome)
+        val bannerIsOutcome = bannerSnapshot != null && lastTaskOutcome != null &&
+            (orchestratorSnapshot == null ||
+                orchestratorSnapshot.state == com.codeair.mhe.session.EngineeringState.IDLE ||
+                orchestratorSnapshot.state == com.codeair.mhe.session.EngineeringState.ANALYZING)
+        if (bannerSnapshot != null && bannerSnapshot.state != com.codeair.mhe.session.EngineeringState.IDLE) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 2.dp),
             ) {
                 EngineeringStateBanner(
-                    snapshot = orchestratorSnapshot,
-                    onRollbackToBaseline = onRollbackToBaseline,
+                    snapshot = bannerSnapshot,
+                    onRollbackToBaseline = if (bannerIsOutcome) null else onRollbackToBaseline,
+                    onDismiss = if (bannerIsOutcome) onDismissTaskOutcome else null,
                 )
             }
         }
@@ -6439,12 +6455,13 @@ private fun ChatTab(
                     }
                 }
                 itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { _, rawMessage ->
-                    val message = remember(rawMessage.id, rawMessage.text) {
-                        if (!isRunning && rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.length <= 30000 && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
-                            val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
-                            if (parsed != null) rawMessage.copy(roadmap = parsed) else rawMessage
-                        } else {
-                            rawMessage
+                    val message = rawMessage
+                    LaunchedEffect(rawMessage.id, rawMessage.text, rawMessage.roadmap) {
+                        if (!rawMessage.fromUser && rawMessage.roadmap == null &&
+                            rawMessage.id != streamingMessageId && rawMessage.workItems.isEmpty() &&
+                            rawMessage.text.isNotBlank() && rawMessage.text.length <= 30000
+                        ) {
+                            onEnsureMessageRoadmap(rawMessage.id)
                         }
                     }
                     if (message.workItems.isNotEmpty()) {

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Error
@@ -803,6 +804,7 @@ fun EngineeringStateBanner(
     snapshot: OrchestratorSnapshot?,
     onRollbackToBaseline: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onDismiss: (() -> Unit)? = null,
 ) {
     // The Analyzing status pill is removed by user order: no "Analyzing Requirements"
     // banner while the agent is analyzing. Other states (plan, build, fix, failure)
@@ -863,6 +865,20 @@ fun EngineeringStateBanner(
                         modifier = Modifier
                             .background(PocketOrange.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
                             .padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+
+            if (onDismiss != null) {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

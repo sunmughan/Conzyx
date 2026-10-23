@@ -173,6 +173,110 @@ class AgentChatControllerTest {
     }
 
     @Test
+    fun `compactSystemMessageText collapses a huge successful task dump to one bounded line`() {
+        val hugeOutput = "<section class=\"featured-services-showcase\">" + "x".repeat(50_000) + "</section>"
+        val dump = """
+            SYSTEM_MESSAGE
+            [Message]
+            timestamp=2026-10-23T09:06:51Z
+            sender=5a52af17-ba48-4e36-a1cd-e20f6bcd1066/task-9326
+            priority=MESSAGE_PRIORITY_HIGH
+            content=Task id "5a52af17-ba48-4e36-a1cd-e20f6bcd1066/task-9326" finished with result: Command exited with code 0.
+
+            Command output:
+            $hugeOutput
+        """.trimIndent()
+
+        val compacted = controller.compactSystemMessageText(dump)
+
+        assertEquals("Background task task-9326 finished (exit code 0).", compacted)
+        assertTrue(compacted.length < 200)
+        assertFalse(compacted.contains("featured-services-showcase"))
+        assertFalse(compacted.contains("sender="))
+        assertFalse(compacted.contains("priority="))
+    }
+
+    @Test
+    fun `compactSystemMessageText keeps only a bounded tail excerpt for a failed task`() {
+        val hugeOutput = "head-marker " + "y".repeat(50_000) + " tail-marker"
+        val dump = """
+            [Message]
+            timestamp=2026-10-23T09:06:51Z
+            sender=abcd1234-0000-1111-2222-333344445555/task-77
+            priority=MESSAGE_PRIORITY_HIGH
+            content=Task id "abcd1234-0000-1111-2222-333344445555/task-77" finished with result: Command exited with code 1.
+
+            Command output:
+            $hugeOutput
+        """.trimIndent()
+
+        val compacted = controller.compactSystemMessageText(dump)
+
+        assertTrue(compacted.startsWith("Background task task-77 failed (exit code 1)."))
+        assertTrue(compacted.endsWith("tail-marker"))
+        assertFalse(compacted.contains("head-marker"))
+        assertTrue(compacted.length <= 200 + AgentChatController.MAX_FAILURE_OUTPUT_CHARS + 64)
+    }
+
+    @Test
+    fun `compactSystemMessageText leaves ordinary assistant text untouched`() {
+        val normal = "The Task id field is documented in the API guide. Command output: none here."
+        assertEquals(normal, controller.compactSystemMessageText(normal))
+        val partial = "Task id \"x\" finished with result: all good."
+        assertEquals(partial, controller.compactSystemMessageText(partial))
+    }
+
+    @Test
+    fun `compactSystemMessageText preserves surrounding prose and compacts every block`() {
+        val block = """
+            [Message]
+            timestamp=2026-10-23T09:06:51Z
+            sender=abcd/task-5
+            priority=MESSAGE_PRIORITY_HIGH
+            content=Task id "abcd/task-5" finished with result: Command exited with code 0.
+
+            Command output:
+            done
+        """.trimIndent()
+        val text = "Working on it.\n\n$block\n\n$block"
+
+        val compacted = controller.compactSystemMessageText(text)
+
+        assertTrue(compacted.startsWith("Working on it."))
+        assertEquals(2, compacted.split("Background task task-5 finished (exit code 0).").size - 1)
+        assertFalse(compacted.contains("[Message]"))
+    }
+
+    @Test
+    fun `roadmapForMessage binds approval roadmaps and skips build checklists`() {
+        val roadmapText = """
+            Here is the plan.
+
+            ### Implementation Roadmap
+            1. [ ] Create the module
+               - Description: Build the core module
+               - Files: `src/Module.kt`
+            2. [ ] Wire the UI
+               - Description: Connect the screens
+
+            Please review the roadmap, add any comments/adjustments, or click 'Approve & Build' to proceed.
+        """.trimIndent()
+
+        val unified = controller.roadmapForMessage(roadmapText, ExecutionMode.UNIFIED)
+        assertTrue(unified != null)
+        assertEquals(2, unified!!.steps.size)
+        assertFalse(unified.isApproved)
+
+        val buildChecklist = """
+            Progress so far:
+            1. [x] Created the module
+            2. [ ] Wiring the UI
+        """.trimIndent()
+        assertEquals(null, controller.roadmapForMessage(buildChecklist, ExecutionMode.BUILD))
+        assertTrue(controller.roadmapForMessage(roadmapText, ExecutionMode.BUILD) != null)
+    }
+
+    @Test
     fun `resolveMentionedWorkspacePaths extracts existing workspace files and blocks traversal`() {
         val workspace = tempFolder.newFolder("project")
         val file1 = File(workspace, "file1.kt").apply { writeText("// 1") }
