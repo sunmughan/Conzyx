@@ -601,17 +601,13 @@ class RuntimeInstaller(private val context: Context) {
 
     var penTestingBackendProcess: Process?
         get() = sharedPenTestingProcess
-        private set(value) {
+        set(value) {
+            val old = sharedPenTestingProcess
+            if (old != null && old !== value) {
+                try { if (old.isAlive) old.destroyForcibly() } catch (e: Exception) {}
+            }
             sharedPenTestingProcess = value
         }
-
-    fun setPenTestingBackendProcess(proc: Process?) {
-        val old = sharedPenTestingProcess
-        if (old != null && old !== proc) {
-            try { if (old.isAlive) old.destroyForcibly() } catch (e: Exception) {}
-        }
-        sharedPenTestingProcess = proc
-    }
 
     suspend fun stopPenTestingStack(): Boolean = withContext(Dispatchers.IO) {
         val proc = sharedPenTestingProcess
