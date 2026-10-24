@@ -27,7 +27,7 @@ val hasUploadSigning = listOf(
     uploadKeyAlias,
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
-val appVersionName = providers.gradleProperty("appVersionName").orNull ?: "3.5.6"
+val appVersionName = providers.gradleProperty("appVersionName").orNull ?: "3.5.7"
 val runtimeReleaseBaseUrl =
     "https://github.com/sunmughan/Conzyx/releases/download/v$appVersionName"
 val appUpdateManifestUrl =
