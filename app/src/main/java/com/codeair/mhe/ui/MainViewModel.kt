@@ -3532,8 +3532,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadFileContent(project: Project, path: String) {
         viewModelScope.launch {
-            val content = withContext(Dispatchers.IO) {
-                val file = File(projectWorkspaceRoot(project), path)
+            // Same normalization as the editor coordinator: a restored tab
+            // may carry a #L fragment or a stale folder prefix, and a
+            // missing file must never load its error text as content.
+            val cleanPath = editorCoordinator.resolveEditorPath(project, path)
+            if (cleanPath == null) {
+                _state.update {
+                    it.copy(
+                        openedFilePath = if (it.openedFilePath == path) null else it.openedFilePath,
+                        openedFileContent = if (it.openedFilePath == path) null else it.openedFileContent,
+                        fileContentLoading = if (it.openedFilePath == path) false else it.fileContentLoading,
+                        toastMessage = "File not found: ${path.substringBefore('#').substringAfterLast('/')}",
+                    )
+                }
+                return@launch
+            }
+            val result = withContext(Dispatchers.IO) {
+                val file = File(projectWorkspaceRoot(project), cleanPath)
                 runCatching {
                     if (file.length() > 512_000L) {
                         file.inputStream().use { stream ->
@@ -3544,10 +3559,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         file.readText()
                     }
-                }.getOrElse { "Could not read file: ${it.message}" }
+                }
             }
-            if (_state.value.openedFilePath == path) {
-                _state.update { it.copy(openedFileContent = content, fileContentLoading = false) }
+            result.onSuccess { text ->
+                if (_state.value.openedFilePath == path || _state.value.openedFilePath == cleanPath) {
+                    _state.update {
+                        it.copy(
+                            openedFilePath = cleanPath,
+                            openEditorTabs = if (path in it.openEditorTabs && cleanPath != path) {
+                                if (cleanPath in it.openEditorTabs) it.openEditorTabs.filter { tab -> tab != path }
+                                else it.openEditorTabs.map { tab -> if (tab == path) cleanPath else tab }
+                            } else it.openEditorTabs,
+                            openedFileContent = text,
+                            fileContentLoading = false,
+                        )
+                    }
+                }
+            }.onFailure {
+                _state.update {
+                    val isActive = it.openedFilePath == path || it.openedFilePath == cleanPath
+                    it.copy(
+                        openedFilePath = if (isActive) null else it.openedFilePath,
+                        openedFileContent = if (isActive) null else it.openedFileContent,
+                        fileContentLoading = if (isActive) false else it.fileContentLoading,
+                        toastMessage = "Could not open ${cleanPath.substringAfterLast('/')}",
+                    )
+                }
             }
         }
     }

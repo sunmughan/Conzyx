@@ -810,15 +810,23 @@ internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
     ) {
         return ChatLinkTarget.Web(trimmed)
     }
+    // Chat file links may carry a GitHub-style line fragment
+    // (path#L12-L34). It marks a view position, never part of the file
+    // name: without stripping, the editor opens a literal "file#L..."
+    // path and fails with ENOENT. Web URLs above keep their fragment;
+    // only workspace paths are stripped here.
+    val pathText = trimmed.substringBefore('#')
+    if (pathText.isBlank()) return ChatLinkTarget.Ignored
+    val pathLower = pathText.lowercase()
     val absolutePath: String? = when {
-        lower.startsWith("file://") -> {
-            var rest = trimmed.substring("file://".length)
+        pathLower.startsWith("file://") -> {
+            var rest = pathText.substring("file://".length)
             if (rest.startsWith("localhost/", ignoreCase = true)) {
                 rest = rest.substring("localhost/".length)
             }
             if (rest.startsWith("/")) rest else "/$rest"
         }
-        trimmed.startsWith("/") -> trimmed
+        pathText.startsWith("/") -> pathText
         else -> null
     }
     if (absolutePath != null) {
@@ -830,16 +838,16 @@ internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
         if (relative.isBlank() || relative == "workspace") return ChatLinkTarget.Ignored
         return ChatLinkTarget.WorkspaceFile(relative, isArchivePath(relative))
     }
-    val host = trimmed.substringBefore('/')
-    if (isWebDomainHost(host)) return ChatLinkTarget.Web("https://$trimmed")
-    val fileName = trimmed.substringAfterLast('/')
+    val host = pathText.substringBefore('/')
+    if (isWebDomainHost(host)) return ChatLinkTarget.Web("https://$pathText")
+    val fileName = pathText.substringAfterLast('/')
     val extension = fileName.substringAfterLast('.', "").lowercase()
-    return if ('/' in trimmed || extension in EDITABLE_FILE_EXTENSIONS ||
+    return if ('/' in pathText || extension in EDITABLE_FILE_EXTENSIONS ||
         extension in ARCHIVE_FILE_EXTENSIONS || fileName.contains('.')
     ) {
-        ChatLinkTarget.WorkspaceFile(trimmed, isArchivePath(trimmed))
+        ChatLinkTarget.WorkspaceFile(pathText, isArchivePath(pathText))
     } else {
-        ChatLinkTarget.Web("https://$trimmed")
+        ChatLinkTarget.Web("https://$pathText")
     }
 }
 
