@@ -4307,6 +4307,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun trimMessages(messages: List<ChatMessage>): List<ChatMessage> =
         if (messages.size > maxInMemoryMessages) messages.takeLast(maxInMemoryMessages) else messages
 
+    /**
+     * Roadmap completion on task finish (roadmap-status fix).
+     *
+     * The badge in RoadmapCard shows "Completed" only when every step is
+     * COMPLETED. Previously the SessionCompleted/SessionFailed paths marked
+     * steps COMPLETED only when the roadmap was already approved
+     * (rm.isApproved), so a roadmap that a finished session actually
+     * executed stayed "Awaiting Approval" forever whenever the displayed
+     * roadmap was a fresh parse of the execution report (its steps are
+     * unchecked, isApproved=false) rather than the approved plan itself.
+     * The card renders message.roadmap, so the stale badge sat on the final
+     * message even though the work was done.
+     *
+     * A roadmap counts as executed when the finishing segment either ran
+     * under an approved plan (the user approved the build) or changed
+     * workspace files (a "Files changed" entry in this segment's live
+     * process — FilesChanged events only fire when files really change, and
+     * liveProcess is per-segment, cleared by finishWorkSegment). A
+     * proposal-only segment changes no files and carries no approval, so
+     * genuinely unapproved/unbuilt roadmaps keep showing "Awaiting
+     * Approval". SKIPPED steps are never forced to COMPLETED, and
+     * isApproved is never touched: completion is derived from step
+     * statuses alone, so no approval gate is bypassed. Returns the same
+     * instance when nothing changes.
+     */
+    private fun completeExecutedRoadmap(
+        roadmap: ActiveRoadmap?,
+        wasApproved: Boolean,
+        liveProcess: List<ActivityItem>,
+    ): ActiveRoadmap? {
+        if (roadmap == null || roadmap.steps.isEmpty()) return roadmap
+        if (!wasApproved && liveProcess.none { it.title == "Files changed" }) return roadmap
+        if (roadmap.steps.all { it.status == StepStatus.COMPLETED || it.status == StepStatus.SKIPPED }) return roadmap
+        return roadmap.copy(
+            steps = roadmap.steps.map { step ->
+                if (step.status != StepStatus.SKIPPED) step.copy(status = StepStatus.COMPLETED) else step
+            },
+        )
+    }
+
     private fun processRuntimeEvent(projectId: String, event: RuntimeEvent) {
         val eventChatId = sessionChatIdFor(event.sessionId)
         val scoped = sessionScopeFor(projectId, eventChatId)
@@ -4522,7 +4562,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         completedActiveRoadmap ?: newlyParsedRoadmap ?: current.activeRoadmap
                     }
-                    val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
+                    // Roadmap-status fix: the displayed roadmap may be a fresh
+                    // parse of this segment's execution report (unchecked
+                    // steps, unapproved) rather than the approved plan. When
+                    // this segment executed the work, mark it COMPLETED so
+                    // the card stops saying "Awaiting Approval". The card
+                    // renders message.roadmap, so rewrite the carrying
+                    // messages too, not just activeRoadmap.
+                    val executedRoadmap = completeExecutedRoadmap(
+                        latestRoadmap,
+                        wasApproved = current.activeRoadmap?.isApproved == true,
+                        liveProcess = current.liveProcess,
+                    )
+                    val completedMessages = if (executedRoadmap != null && executedRoadmap !== latestRoadmap && latestRoadmap != null) {
+                        messagesWithRoadmap.map { msg ->
+                            if (msg.roadmap?.id == latestRoadmap.id) msg.copy(roadmap = executedRoadmap) else msg
+                        }
+                    } else {
+                        messagesWithRoadmap
+                    }
+                    val scratchpad = deriveScratchpadItems(executedRoadmap, emptyList(), false)
                     agentSessionController.completeSession(event.sessionId, "Task completed successfully")
                     if (isActiveProject) {
                         agentOrchestrator.transition(com.codeair.mhe.session.EngineeringState.COMPLETED, "Task completed successfully")
@@ -4532,12 +4591,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             "Task completed successfully",
                         )
                     }
-                    attachTaskDuration(stateWithResponse.copy(messages = trimMessages(messagesWithRoadmap)), finishedAt).copy(
+                    attachTaskDuration(stateWithResponse.copy(messages = trimMessages(completedMessages)), finishedAt).copy(
                         isRunning = false,
                         streamingMessageId = null,
                         activeSessionId = null,
                         pendingApproval = null,
-                        activeRoadmap = latestRoadmap,
+                        activeRoadmap = executedRoadmap,
                         scratchpadItems = scratchpad,
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
@@ -4605,13 +4664,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             completedActiveRoadmap ?: failedNewlyParsedRoadmap ?: current.activeRoadmap
                         }
-                        val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
-                        attachTaskDuration(segmentFinishedState.copy(messages = trimMessages(messagesWithRoadmap)), finishedAt).copy(
+                        // Roadmap-status fix, mirrored from SessionCompleted:
+                        // a trailing failure after the response was already
+                        // delivered is still a finished task, so its
+                        // executed roadmap must not stay "Awaiting Approval".
+                        val executedRoadmap = completeExecutedRoadmap(
+                            latestRoadmap,
+                            wasApproved = current.activeRoadmap?.isApproved == true,
+                            liveProcess = current.liveProcess,
+                        )
+                        val completedMessages = if (executedRoadmap != null && executedRoadmap !== latestRoadmap && latestRoadmap != null) {
+                            messagesWithRoadmap.map { msg ->
+                                if (msg.roadmap?.id == latestRoadmap.id) msg.copy(roadmap = executedRoadmap) else msg
+                            }
+                        } else {
+                            messagesWithRoadmap
+                        }
+                        val scratchpad = deriveScratchpadItems(executedRoadmap, emptyList(), false)
+                        attachTaskDuration(segmentFinishedState.copy(messages = trimMessages(completedMessages)), finishedAt).copy(
                             isRunning = false,
                             streamingMessageId = null,
                             activeSessionId = null,
                             pendingApproval = null,
-                            activeRoadmap = latestRoadmap,
+                            activeRoadmap = executedRoadmap,
                             scratchpadItems = scratchpad,
                             activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +
                                 current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
