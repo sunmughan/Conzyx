@@ -509,21 +509,34 @@ class RuntimeCoordinator(
     }
 
     fun finishOnboarding(profile: ProviderProfile, secret: String) {
-        vault.put(profile.kind.name, secret)
-        val saved = profile.copy(
-            hasSecret = secret.isNotBlank() || vault.contains(profile.kind.name),
-        )
+        // A secure-storage failure must never force-stop the setup screen:
+        // stay on the configure-AI page with a visible error so the user can
+        // retry, instead of crashing on the Continue tap (issues #6, #7).
+        val saved = try {
+            vault.put(profile.kind.name, secret)
+            profile.copy(
+                hasSecret = secret.isNotBlank() || vault.contains(profile.kind.name),
+            )
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            host.updateState {
+                it.copy(toastMessage = "Could not save the API key securely on this device. Please try again.")
+            }
+            return
+        }
         preferences.saveProvider(saved, host.state().agentKind)
         preferences.onboardingComplete = true
         host.updateState { it.copy(onboardingComplete = true, provider = saved, startupStage = StartupStage.READY) }
-        refreshActiveApiKey(profile.kind)
+        // A stale vault read after a successful save must not crash setup.
+        runCatching { refreshActiveApiKey(profile.kind) }
         pingApi()
         autoUpdateToolsAndSkills()
     }
 
     fun finishAntigravityOnboarding() {
-        check(host.state().antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN) {
-            "Sign in to Antigravity first"
+        if (host.state().antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
+            host.updateState { it.copy(toastMessage = "Sign in to Antigravity first") }
+            return
         }
         preferences.onboardingComplete = true
         host.updateState { it.copy(onboardingComplete = true, startupStage = StartupStage.READY) }

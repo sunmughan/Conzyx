@@ -289,6 +289,7 @@ import com.codeair.mhe.ui.theme.PocketBlue
 import com.codeair.mhe.ui.theme.PocketGreen
 import com.codeair.mhe.ui.theme.PocketOrange
 import java.io.ByteArrayInputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -3457,19 +3458,31 @@ private fun ProviderCredentialsStep(
                             status = "Checking API key, model, and Claude Code settings…"
                             statusDetails = null
                             statusOk = true
-                            when (val result = onValidate(models)) {
-                                is ConnectionValidation.Success -> {
-                                    status = result.message
-                                    statusOk = true
-                                    onSave()
+                            try {
+                                when (val result = onValidate(models)) {
+                                    is ConnectionValidation.Success -> {
+                                        status = result.message
+                                        statusOk = true
+                                        onSave()
+                                    }
+                                    is ConnectionValidation.Failure -> {
+                                        status = result.message
+                                        statusDetails = result.providerMessage
+                                        statusOk = false
+                                    }
                                 }
-                                is ConnectionValidation.Failure -> {
-                                    status = result.message
-                                    statusDetails = result.providerMessage
-                                    statusOk = false
-                                }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                // Saving must never force-stop setup: surface
+                                // the failure on this screen so the user can
+                                // retry (issues #6, #7).
+                                status = "Could not save this provider: ${error.message?.take(120) ?: "unknown error"}. Please try again."
+                                statusDetails = null
+                                statusOk = false
+                            } finally {
+                                isValidating = false
                             }
-                            isValidating = false
                         }
                     },
                     enabled = baseUrl.isNotBlank() && model.isNotBlank() && hasKey && !isDiscovering && !isValidating,
