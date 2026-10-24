@@ -37,6 +37,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -298,6 +300,7 @@ import com.codeair.mhe.ui.theme.AppThemeMode
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.documentfile.provider.DocumentFile
 
 // Conzyx branding is rendered in the shared setup headers.
@@ -6577,6 +6580,29 @@ private fun ChatTab(
                 // Approve/Deny actions on a completed task.
                 approval?.takeIf { lastTaskOutcome == null }?.let { request ->
                     item { ApprovalCard(request, onApproval, onApprovalWithLevel) }
+                }
+            }
+            // Scroll-to-latest: visible only while the user has scrolled up
+            // away from the latest message (there is more content below).
+            // One tap animates to the last item; once there, canScrollForward
+            // is false again, so the button hides on its own.
+            AnimatedVisibility(
+                visible = listState.canScrollForward,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp),
+            ) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        chatScope.launch {
+                            val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                            if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Scroll to latest")
                 }
             }
         }
