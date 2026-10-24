@@ -195,6 +195,18 @@ object RoadmapParser {
      * Without the last two checks the buttons resurface forever on the
      * persisted transcript of a finished task.
      */
+    /**
+     * Whether streamed text already carries a complete roadmap, even though the
+     * session that produced it has not finished yet. The roadmap's closing
+     * "Approve & Build" line is written last, so its presence means the full
+     * roadmap has arrived. Callers use this to allow a roadmap parse (and its
+     * Approve & Build / Add Note buttons) while the message is still streaming,
+     * instead of waiting for SessionCompleted, which can lag the visible text
+     * by minutes when the runtime takes time to close the session.
+     */
+    fun isRoadmapTextComplete(text: String): Boolean =
+        text.contains("Approve & Build", ignoreCase = true)
+
     fun roadmapActionsEnabled(
         messages: List<ChatMessage>,
         messageIndex: Int,

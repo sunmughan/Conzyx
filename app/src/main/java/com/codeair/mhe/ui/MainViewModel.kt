@@ -2984,7 +2984,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value
         val message = current.messages.firstOrNull { it.id == messageId } ?: return
         if (message.fromUser || message.roadmap != null || message.workItems.isNotEmpty()) return
-        if (message.id == current.streamingMessageId || message.text.isBlank() || message.text.length > 30000) return
+        // Late-button fix (2026-10-24): the roadmap buttons used to appear only at
+        // SessionCompleted, minutes after the roadmap text itself was fully visible,
+        // because parsing was refused for the whole streaming lifetime of the message.
+        // See RoadmapParser.isRoadmapTextComplete for the completeness signal.
+        val isStreaming = message.id == current.streamingMessageId
+        val roadmapComplete = RoadmapParser.isRoadmapTextComplete(message.text)
+        if ((isStreaming && !roadmapComplete) || message.text.isBlank() || message.text.length > 30000) return
         if (current.lastTaskOutcome != null) return
         val messageIndex = current.messages.indexOfFirst { it.id == messageId }
         if (messageIndex < 0 || RoadmapParser.segmentHasTerminalRoadmap(current.messages, messageIndex)) return

@@ -6478,8 +6478,14 @@ private fun ChatTab(
                 itemsIndexed(messages, key = { index, msg -> "${msg.id}#$index" }) { messageIndex, rawMessage ->
                     val message = rawMessage
                     LaunchedEffect(rawMessage.id, rawMessage.text, rawMessage.roadmap) {
+                        // Late-button fix (2026-10-24): same relaxation as
+                        // MainViewModel.ensureMessageRoadmap. While a message streams,
+                        // allow the roadmap parse once its closing line has arrived,
+                        // so the buttons render together with the finished roadmap
+                        // text instead of waiting for SessionCompleted.
                         if (!rawMessage.fromUser && rawMessage.roadmap == null &&
-                            rawMessage.id != streamingMessageId && rawMessage.workItems.isEmpty() &&
+                            (rawMessage.id != streamingMessageId || RoadmapParser.isRoadmapTextComplete(rawMessage.text)) &&
+                            rawMessage.workItems.isEmpty() &&
                             rawMessage.text.isNotBlank() && rawMessage.text.length <= 30000
                         ) {
                             onEnsureMessageRoadmap(rawMessage.id)
