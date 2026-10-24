@@ -3265,21 +3265,32 @@ private fun ProviderCredentialsStep(
             isDiscovering = true
             status = null
             statusDetails = null
-            when (val result = onDiscover()) {
-                is ModelDiscoveryResult.Success -> {
-                    models = result.models
-                    statusOk = true
-                    status = "Found ${result.models.size} available model${if (result.models.size == 1) "" else "s"}."
-                    if (model.isBlank() && result.models.isNotEmpty()) onModel(result.models.first().id)
-                    if (openWhenReady && result.models.isNotEmpty()) showModels = true
+            try {
+                when (val result = onDiscover()) {
+                    is ModelDiscoveryResult.Success -> {
+                        models = result.models
+                        statusOk = true
+                        status = "Found ${result.models.size} available model${if (result.models.size == 1) "" else "s"}."
+                        if (model.isBlank() && result.models.isNotEmpty()) onModel(result.models.first().id)
+                        if (openWhenReady && result.models.isNotEmpty()) showModels = true
+                    }
+                    is ModelDiscoveryResult.Failure -> {
+                        statusOk = false
+                        status = result.message
+                        statusDetails = result.providerMessage
+                    }
                 }
-                is ModelDiscoveryResult.Failure -> {
-                    statusOk = false
-                    status = result.message
-                    statusDetails = result.providerMessage
-                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // Model discovery must never force-stop setup: surface
+                // the failure on this screen so the user can retry.
+                statusOk = false
+                status = "Could not load models: ${error.message?.take(120) ?: "unknown error"}. Please try again."
+                statusDetails = null
+            } finally {
+                isDiscovering = false
             }
-            isDiscovering = false
         }
     }
 

@@ -166,8 +166,13 @@ class RuntimeInstaller(private val context: Context) {
         if (macosMetadataRepairMarker.isFile) return
         if (!rootfs.isDirectory) return
         stripMacosMetadataArtifacts(rootfs)
-        macosMetadataRepairMarker.parentFile?.mkdirs()
-        macosMetadataRepairMarker.writeText("1")
+        // The marker write runs on the calling thread (including the UI
+        // thread via isAgentInstalled); a failed write must never kill
+        // setup — the cleanup simply runs again next time.
+        runCatching {
+            macosMetadataRepairMarker.parentFile?.mkdirs()
+            macosMetadataRepairMarker.writeText("1")
+        }
     }
 
     /** Returns the already verified runtime without performing network or update checks. */
@@ -1362,7 +1367,9 @@ class RuntimeInstaller(private val context: Context) {
             coreReadyMarker.readTextOrNull(),
             bundledClaudeMarker.readTextOrNull(),
         ).mapNotNull { it?.trim() }.firstOrNull { it.matches(CLAUDE_VERSION_PATTERN) } ?: return
-        claudeMarker.writeText(legacyVersion)
+        // Called from isAgentInstalled on the UI thread; a failed marker
+        // write must never kill the tap — the install path rewrites it.
+        runCatching { claudeMarker.writeText(legacyVersion) }
     }
 
     private fun isSupportedCoreToolsVersion(): Boolean = coreToolsMarker.readTextOrNull() in setOf(

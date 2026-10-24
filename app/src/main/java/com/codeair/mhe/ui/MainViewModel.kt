@@ -1396,9 +1396,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearMcpAuditLogs() =
         mcpCoordinator.clearMcpAuditLogs()
-    fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()
+    // A vault throw here used to kill the app during composition: these
+    // getters run inside remember() blocks on the main thread (AgentScreen
+    // and the post-setup home screen), so a legacy-migration keystore
+    // failure after Continue threw the app out right after setup
+    // completed. A failed read degrades to empty, never a throw.
+    fun getSavedApiKey(kind: ProviderKind): String = runCatching { vault.get(kind.name) }.getOrNull().orEmpty()
 
-    fun getSavedApiKeys(kind: ProviderKind): List<ApiKeyInfo> = vault.list(kind.name)
+    fun getSavedApiKeys(kind: ProviderKind): List<ApiKeyInfo> = runCatching { vault.list(kind.name) }.getOrDefault(emptyList())
 
     fun addApiKey(kind: ProviderKind, name: String, secret: String): List<ApiKeyInfo> {
         vault.add(kind.name, name, secret)
@@ -1421,7 +1426,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshActiveApiKey(kind: ProviderKind) {
         if (_state.value.provider.kind != kind) return
-        val keys = vault.list(kind.name)
+        // Vault reads must never kill the caller (finishOnboarding
+        // wraps this, but key-management callers do not).
+        val keys = runCatching { vault.list(kind.name) }.getOrDefault(emptyList())
         _state.update { current ->
             current.copy(
                 activeApiKeyName = keys.firstOrNull(ApiKeyInfo::isActive)?.name,
@@ -1582,7 +1589,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(toastMessage = "Stop the current agent before switching.") }
             return
         }
-        if (installer.isAgentInstalled(kind)) {
+        // isAgentInstalled walks the guest filesystem on the calling
+        // thread; a throw there must never kill the tap. On failure we
+        // fall through to the install flow, which re-checks safely.
+        if (runCatching { installer.isAgentInstalled(kind) }.getOrDefault(false)) {
             selectAgent(kind)
             return
         }
@@ -1939,7 +1949,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runtimeCoordinator.removeDevStack(stack)
 
     suspend fun discoverModels(profile: ProviderProfile, secret: String): ModelDiscoveryResult {
-        val key = secret.ifBlank { vault.get(profile.kind.name).orEmpty() }
+        // A vault throw here (legacy-migration keystore failure on the
+        // device) used to escape this suspend call and kill the setup
+        // process from the "Find available models" button, exactly like
+        // the pingApi throw fixed in v3.5.4. A failed vault read degrades
+        // to "no saved secret", never a throw.
+        val key = secret.ifBlank { runCatching { vault.get(profile.kind.name) }.getOrNull().orEmpty() }
         return providerApi.discoverModels(profile.baseUrl, key, providerProtocolForAgent(profile, _state.value.agentKind))
     }
 
@@ -1948,7 +1963,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         secret: String,
         models: List<com.codeair.mhe.network.DiscoveredModel>,
     ): ConnectionValidation {
-        val key = secret.ifBlank { vault.get(profile.kind.name).orEmpty() }
+        // Same vault-throw guard as discoverModels: the credentials
+        // Continue button catches its own call, but other callers must
+        // never see a vault throw either.
+        val key = secret.ifBlank { runCatching { vault.get(profile.kind.name) }.getOrNull().orEmpty() }
         return providerApi.validate(
             profile.baseUrl,
             profile.model,
@@ -5058,11 +5076,13 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         if (!scoped.isRunning || scoped.activeSessionId != event.sessionId) return false
         if (!isApiKeyFailure(event.reason)) return false
         val request = sessionRuntimeRequests[event.sessionId] ?: return false
-        val credentials = vault.credentials(request.provider.kind.name)
+        // Vault reads must never kill task recovery: a failed lookup
+        // simply means no key rotation happens for this failure.
+        val credentials = runCatching { vault.credentials(request.provider.kind.name) }.getOrNull() ?: return false
         val active = credentials.firstOrNull { it.isActive } ?: return false
         failedApiKeyIds += active.id
         val next = credentials.firstOrNull { it.id !in failedApiKeyIds } ?: return false
-        if (!vault.activate(request.provider.kind.name, next.id)) return false
+        if (!runCatching { vault.activate(request.provider.kind.name, next.id) }.getOrDefault(false)) return false
         updateSessionScoped(projectId, chatId) {
             it.copy(
                 activeSessionId = null,

@@ -144,9 +144,17 @@ class ApiKeyVault(context: Context) {
         if (!preferences.contains("$providerId.value")) return emptyList()
         val legacySecret = getEncrypted(providerId) ?: return emptyList()
         val legacy = ApiKeyInfo("legacy", "Primary", true)
-        putEncrypted(secretKey(providerId, legacy.id), legacySecret)
-        savePool(providerId, listOf(legacy))
-        setActiveId(providerId, legacy.id)
+        // The legacy migration rewrites the secret under a new keystore
+        // key. A keystore failure here used to escape through get(),
+        // list() and contains() and kill setup taps (the v3.5.4 pingApi
+        // crash, then the discover/validate crash). A failed migration
+        // degrades to "no saved secret" so the user can save a fresh
+        // key instead of being thrown out of setup.
+        runCatching {
+            putEncrypted(secretKey(providerId, legacy.id), legacySecret)
+            savePool(providerId, listOf(legacy))
+            setActiveId(providerId, legacy.id)
+        }.onFailure { return emptyList() }
         return listOf(legacy)
     }
 

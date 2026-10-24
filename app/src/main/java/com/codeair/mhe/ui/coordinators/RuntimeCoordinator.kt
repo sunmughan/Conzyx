@@ -555,9 +555,14 @@ class RuntimeCoordinator(
     /** Lets first-run users escape a provider/login failure without losing saved credentials. */
     fun chooseOnboardingAgent(kind: AgentKind) {
         selectAgent(kind)
+        // isAgentInstalled walks the guest filesystem and can rewrite a
+        // marker file on the calling (UI) thread; a throw there used to
+        // kill the "Use another coding agent" tap outright. On failure
+        // the setup prompt is the safe fallback, never a crash.
+        val installed = runCatching { installer.isAgentInstalled(kind) }.getOrDefault(false)
         host.updateState {
             it.copy(
-                startupStage = if (installer.isAgentInstalled(kind)) {
+                startupStage = if (installed) {
                     StartupStage.MODEL_SETUP
                 } else {
                     StartupStage.SETUP_REQUIRED
