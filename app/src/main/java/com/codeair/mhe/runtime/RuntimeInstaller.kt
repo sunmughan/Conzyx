@@ -142,6 +142,20 @@ class RuntimeInstaller(private val context: Context) {
     }
 
     /**
+     * Stricter than [isInstalled]: the core must not only exist, it must be
+     * launchable — initializeExisting() requires node and git to be
+     * EXECUTABLE, while isInstalled() only requires them to exist. A core
+     * with stripped exec bits passes isInstalled() yet fails every launch;
+     * Retry must send such a core to a repair install, never back into
+     * initializeExisting().
+     */
+    fun isCoreLaunchable(): Boolean = startupRetryRoute(
+        installed = isInstalled(),
+        nodeExecutable = File(rootfs, "usr/local/bin/node").canExecute(),
+        gitExecutable = File(rootfs, "usr/bin/git").canExecute(),
+    ) == StartupRetryRoute.INITIALIZE_EXISTING
+
+    /**
      * One-shot cleanup for devices that already extracted a tarball built on
      * macOS without the `--no-mac-metadata` flag. Such bundles contain
      * `._filename` AppleDouble metadata files that crash Python 3.8 when it
@@ -226,6 +240,24 @@ class RuntimeInstaller(private val context: Context) {
         ) { "Unsupported architecture: Conzyx requires an ARM64 device or ARM64 emulator" }
         val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
         require(proot.canExecute()) { "The embedded PRoot launcher is unavailable" }
+
+        // Repair a core whose binaries lost their exec bits (interrupted
+        // extraction, backup/restore round-trip). Without this, such a core
+        // passes isInstalled() yet fails initializeExisting() forever, and
+        // Retry never re-enters setup. When the bits cannot be restored,
+        // drop the rootfs marker so the extraction below rebuilds the core
+        // from the bundle (offline: embedded, online: re-downloaded); the
+        // staged swap keeps a backup, and agents/stacks reinstall after,
+        // exactly as on a rootfs version upgrade.
+        val coreBinaries = listOf(
+            File(rootfs, "usr/bin/bash"),
+            File(rootfs, "usr/local/bin/node"),
+            File(rootfs, "usr/bin/git"),
+        )
+        repairCoreExecBits(coreBinaries)
+        if (coreBinaries.any { it.exists() && !it.canExecute() }) {
+            rootfsMarker.delete()
+        }
 
         if (!File(rootfs, "usr/bin/bash").exists() || rootfsMarker.readTextOrNull() != ROOTFS_VERSION) {
             onProgress(RuntimeInstallProgress("Preparing the private development runtime", 0.03f))

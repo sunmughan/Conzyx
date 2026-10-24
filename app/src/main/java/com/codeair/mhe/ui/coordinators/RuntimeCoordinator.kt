@@ -159,7 +159,16 @@ class RuntimeCoordinator(
     }
 
     fun retryStartup() {
-        if (installer.isInstalled()) host.scope.launch { initializeRuntime() } else {
+        // isInstalled() only checks existence, while initializeExisting()
+        // requires node/git executable: a core with stripped exec bits used
+        // to re-fail initializeRuntime on every Retry forever, never
+        // re-entering setup, so packages could never download again. Only
+        // a launchable core retries initialization; anything else — not
+        // installed, or installed-but-broken — re-enters setup, where
+        // ensureInstalled repairs the exec bits or rebuilds the core.
+        if (runCatching { installer.isCoreLaunchable() }.getOrDefault(false)) {
+            host.scope.launch { initializeRuntime() }
+        } else {
             host.updateState { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupError = null) }
             startRuntimeSetup()
         }

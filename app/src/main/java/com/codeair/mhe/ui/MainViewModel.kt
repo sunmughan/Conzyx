@@ -1553,7 +1553,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 agentKind = kind,
                 primaryAgentKind = if (selectingInitialAgent) kind else current.primaryAgentKind,
                 provider = provider,
-                activeApiKeyName = vault.list(provider.kind.name).firstOrNull(ApiKeyInfo::isActive)?.name,
+                // vault.list runs on the UI thread inside this state
+                // update; a keystore throw here used to crash the agent
+                // tap outright. A failed lookup only clears the active
+                // key name; the agent switch itself still applies.
+                activeApiKeyName = runCatching {
+                    vault.list(provider.kind.name).firstOrNull(ApiKeyInfo::isActive)?.name
+                }.getOrNull(),
                 // Ping results belong to the previous agent; never leak them across.
                 apiPingStatus = ApiPingStatus.IDLE,
                 apiPingMessage = null,
@@ -1957,22 +1963,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
         _state.update { it.copy(apiPingStatus = ApiPingStatus.PINGING, apiPingMessage = "Sending a minimal test request…") }
         viewModelScope.launch {
-            val key = vault.get(profile.kind.name).orEmpty()
-            val result = providerApi.validate(
-                profile.baseUrl,
-                profile.model,
-                key,
-                providerProtocolForAgent(profile, _state.value.agentKind),
-                emptyList(),
-                profile.openRouterProviderOrder,
-                profile.openRouterAllowFallbacks,
-            )
-            when (result) {
-                is ConnectionValidation.Success -> _state.update {
-                    it.copy(apiPingStatus = ApiPingStatus.OK, apiPingMessage = "API responded successfully")
+            // This coroutine runs on EVERY configure-AI Continue tap
+            // (finishOnboarding) and every warm boot (initializeRuntime).
+            // It used to be unguarded: a vault throw here (keystore failure
+            // on the device, e.g. the legacy-migration path in ApiKeyVault)
+            // escaped the coroutine and killed the app process right after
+            // Continue. A failed ping must never kill setup; it only marks
+            // the ping failed and the user can retry from the main screen.
+            try {
+                val key = vault.get(profile.kind.name).orEmpty()
+                val result = providerApi.validate(
+                    profile.baseUrl,
+                    profile.model,
+                    key,
+                    providerProtocolForAgent(profile, _state.value.agentKind),
+                    emptyList(),
+                    profile.openRouterProviderOrder,
+                    profile.openRouterAllowFallbacks,
+                )
+                when (result) {
+                    is ConnectionValidation.Success -> _state.update {
+                        it.copy(apiPingStatus = ApiPingStatus.OK, apiPingMessage = "API responded successfully")
+                    }
+                    is ConnectionValidation.Failure -> _state.update {
+                        it.copy(apiPingStatus = ApiPingStatus.FAILED, apiPingMessage = result.message)
+                    }
                 }
-                is ConnectionValidation.Failure -> _state.update {
-                    it.copy(apiPingStatus = ApiPingStatus.FAILED, apiPingMessage = result.message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                _state.update {
+                    it.copy(
+                        apiPingStatus = ApiPingStatus.FAILED,
+                        apiPingMessage = "API check failed: ${error.message?.take(120) ?: "Unknown error"}",
+                    )
                 }
             }
         }
