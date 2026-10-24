@@ -3868,6 +3868,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     enriched.history,
                     enriched.provider,
                     sessionId,
+                    sessionChats[sessionId],
                 )
             }.onFailure { error ->
                 val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
@@ -3890,20 +3891,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             request.toolName.contains("bash", true) || request.toolName.contains("exec", true) -> com.codeair.mhe.security.PermissionCategory.SHELL_EXEC
             request.toolName.contains("write", true) || request.toolName.contains("edit", true) -> com.codeair.mhe.security.PermissionCategory.FILE_WRITE
             request.toolName.contains("delete", true) || request.toolName.contains("remove", true) -> com.codeair.mhe.security.PermissionCategory.FILE_DELETE
+            // Launch-gate cards carry the agent label ("Antigravity CLI",
+            // "DeepSeek Harness") as the tool name; they authorize a shell
+            // launch, so a Chat grant for them must be SHELL_EXEC, or the
+            // gate's next authorize call would never match it.
+            request.toolName.contains("antigravity", true) || request.toolName.contains("deepseek", true) -> com.codeair.mhe.security.PermissionCategory.SHELL_EXEC
             else -> com.codeair.mhe.security.PermissionCategory.FILE_READ
         }
+        // The chat that owns this approval: the run's session maps to its
+        // chat, falling back to the active chat. Null when unknown, in
+        // which case a Chat grant safely records nothing.
+        val chatKey = com.codeair.mhe.security.chatGrantKey(
+            project?.slug ?: project?.id,
+            sessionChats[request.sessionId] ?: _state.value.activeChatId,
+        )
         if (approved) {
             permissionPolicyEngine.grantPermission(
                 category = category,
                 level = level,
                 targetPattern = target,
                 projectId = project?.slug ?: project?.id,
-                sessionId = _state.value.activeSessionId
+                sessionId = _state.value.activeSessionId,
+                chatId = chatKey
             )
         }
         _state.update { it.copy(pendingApproval = null) }
         MobileHarnessApplication.appScope.launch {
-            project?.let { sessionBridge(it.id).respondToApproval(request, approved) }
+            project?.let { sessionBridge(it.id).respondToApprovalWithLevel(request, approved, level) }
         }
     }
 
@@ -4762,7 +4776,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 liveProcess = it.liveProcess + ActivityItem("Reconnecting", "Attempting to re-establish connection…"),
             ) }
             runCatching {
-                request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
+                request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider, chatId = chatId)
             }.onFailure { error ->
                 val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
                 onRuntimeEvent(projectId, RuntimeEvent.SessionFailed(event.sessionId, failureReason))
@@ -4999,6 +5013,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                     cleanedMessages,
                     _state.value.provider,
                     resumeSessionId,
+                    sessionChats[resumeSessionId],
                 )
             }.onFailure { error ->
                 val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
@@ -5063,6 +5078,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 request.history,
                 request.provider,
                 newSessionId,
+                sessionChats[newSessionId],
             )
         }
         return true
@@ -5203,6 +5219,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 request.history,
                 request.provider,
                 newSessionId,
+                sessionChats[newSessionId],
             )
         }
         return true

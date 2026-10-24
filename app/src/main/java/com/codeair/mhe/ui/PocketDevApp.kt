@@ -7487,6 +7487,19 @@ private fun ApprovalCard(
                 ) {
                     Text("Session", fontSize = 12.sp)
                 }
+                // Chat: same approval, but the grant is scoped to this
+                // conversation (project + chat), so later task runs in the
+                // same chat do not prompt again, while a new chat does.
+                // Mirrors Session: only the leveled approval runs, the
+                // pending launch completes through it.
+                OutlinedButton(
+                    onClick = {
+                        onApprovalWithLevel(com.codeair.mhe.security.PermissionLevel.CHAT, true)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Chat", fontSize = 12.sp)
+                }
                 Button(
                     onClick = {
                         onApproval(true)
