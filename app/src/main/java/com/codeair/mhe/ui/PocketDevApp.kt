@@ -7315,8 +7315,9 @@ private fun MessageBubble(
                 // Roadmap-only display (2026-10-24): when a message parsed into a
                 // roadmap, the card below already carries title, summary, steps
                 // and files, so the raw prose above it is pure duplication. Hide
-                // it and render only the card. The copy button below still
-                // copies the full text.
+                // it and render only the card. The copy button is also hidden
+                // for roadmap messages: it sat at the card header's top-right
+                // and wasted space; regular messages keep their copy button.
                 val roadmapOnly = !message.fromUser && message.roadmap != null
                 if (!roadmapOnly) {
                 if (hugeText) {
@@ -7357,6 +7358,7 @@ private fun MessageBubble(
                     }
                 }
                 }
+                if (!roadmapOnly) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -7380,6 +7382,7 @@ private fun MessageBubble(
                             modifier = Modifier.size(15.dp),
                         )
                     }
+                }
                 }
                 if (!message.fromUser && message.roadmap != null) {
                     RoadmapCard(
