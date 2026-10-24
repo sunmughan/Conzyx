@@ -94,4 +94,14 @@ internal class FullAccessLaunchGate(
         pending.clear()
         stale.forEach { it.gate.complete(false) }
     }
+
+    /** Aborts only [sessionId]'s pending launch approvals (multi-session
+     * isolation: stopping one chat's task must not deny another chat's
+     * pending approval). */
+    fun abortPendingForSession(sessionId: String) {
+        val stale = pending.entries.filter { it.value.sessionId == sessionId }
+        stale.forEach { (key, launch) ->
+            if (pending.remove(key, launch)) launch.gate.complete(false)
+        }
+    }
 }

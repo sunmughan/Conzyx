@@ -42,6 +42,11 @@ class AgentOrchestrator(
     @Volatile private var activeProjectId: String? = null
     @Volatile private var approvalGranted: Boolean = false
 
+    /** Project whose task the shared snapshot currently describes, if any.
+     * ViewModels use this to avoid showing one project's live banner inside
+     * another project's chat (multi-project concurrency). */
+    fun currentProjectId(): String? = activeProjectId
+
     fun startTask(
         projectId: String,
         workspaceDir: File,

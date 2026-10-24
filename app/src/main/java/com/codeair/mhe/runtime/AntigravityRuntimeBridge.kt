@@ -163,13 +163,18 @@ class AntigravityRuntimeBridge(
     private val launchGate = FullAccessLaunchGate(safetyGateway)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
-    private val geminiApiClient = GeminiApiClient()
     private val finished = ConcurrentHashMap.newKeySet<String>()
-    @Volatile private var activeProcess: Process? = null
-    @Volatile private var activeToolExecutor: WorkspaceToolExecutor? = null
-    @Volatile private var activeSessionId: String? = null
-    @Volatile private var userStopRequested = false
-    @Volatile private var foregroundResultPosted = false
+    // Multi-session isolation (2026-10-24): this bridge instance is pooled
+    // per (project, kind), so several chats of one project share it. All
+    // mutable per-session state lives in these maps keyed by sessionId;
+    // stopping one chat's task must never touch another chat's process,
+    // tool executor, API connection, stop flag, or foreground result.
+    private val activeProcesses = ConcurrentHashMap<String, Process>()
+    private val toolExecutors = ConcurrentHashMap<String, WorkspaceToolExecutor>()
+    private val apiClients = ConcurrentHashMap<String, GeminiApiClient>()
+    private val activeSessionIds = ConcurrentHashMap.newKeySet<String>()
+    private val stoppedSessions = ConcurrentHashMap.newKeySet<String>()
+    private val foregroundResultsPosted = ConcurrentHashMap.newKeySet<String>()
 
     fun configureProjectRoot(projectId: String, rootPath: String) = checkpoints.configureProjectRoot(projectId, rootPath)
 
@@ -289,9 +294,9 @@ class AntigravityRuntimeBridge(
     ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
-        activeSessionId = sessionId
-        userStopRequested = false
-        foregroundResultPosted = false
+        activeSessionIds.add(sessionId)
+        stoppedSessions.remove(sessionId)
+        foregroundResultsPosted.remove(sessionId)
         var assistantTextSeen = false
         finished.remove(sessionId)
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
@@ -324,10 +329,10 @@ class AntigravityRuntimeBridge(
 
         runCatching {
             RuntimeTaskController.registerStop(sessionId) {
-                userStopRequested = true
-                activeProcess?.destroy()
+                stoppedSessions.add(sessionId)
+                activeProcesses[sessionId]?.destroy()
             }
-            startForegroundRuntime(projectSlug)
+            startForegroundRuntime(projectSlug, sessionId)
             val installed = installer.installedRuntime()
             val workspace = checkpoints.ensureWorkspace(projectId)
             checkpoints.createCheckpoint(projectId, workspace)
@@ -343,8 +348,8 @@ class AntigravityRuntimeBridge(
                 emulateHardLinks = false,
                 extraBinds = installer.antigravityCredentialBinds(),
             )
-            activeProcess = process
-            if (userStopRequested) process.destroy()
+            activeProcesses[sessionId] = process
+            if (sessionId in stoppedSessions) process.destroy()
             val request = JSONObject()
                 .put("event", "user")
                 .put("message", JSONObject().put("content", antigravityWorkspacePrompt(projectSlug, prompt)))
@@ -369,6 +374,7 @@ class AntigravityRuntimeBridge(
                         eventBus.emit(RuntimeEvent.ToolStarted(sessionId, event.name, event.detail))
                         pushForegroundProgress(
                             projectSlug,
+                            sessionId,
                             "Running ${event.name} · ${event.detail.replace(Regex("\\s+"), " ").trim().take(80).ifBlank { event.name }}",
                         )
                     }
@@ -389,7 +395,7 @@ class AntigravityRuntimeBridge(
                             val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
                             val durationText = formatDurationText(durationSeconds)
                             emitCompleted(sessionId)
-                            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
+                            finishForegroundRuntime(true, projectSlug, sessionId, "Antigravity finished the task in $projectSlug in $durationText.")
                         } else if (assistantTextSeen) {
                             // Assistant already produced complete text output; trailing errors during cleanup
                             // should not fail the session.
@@ -402,7 +408,7 @@ class AntigravityRuntimeBridge(
                             val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
                             val durationText = formatDurationText(durationSeconds)
                             emitCompleted(sessionId)
-                            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
+                            finishForegroundRuntime(true, projectSlug, sessionId, "Antigravity finished the task in $projectSlug in $durationText.")
                         } else throw AntigravitySessionException(friendlyError(event.error ?: event.status))
                     }
                     null -> {
@@ -443,7 +449,7 @@ class AntigravityRuntimeBridge(
                 runCatching { process.destroy() }
             }
             val exit = runCatching { process.waitFor() }.getOrDefault(0)
-            if (userStopRequested) {
+            if (sessionId in stoppedSessions) {
                 throw AntigravitySessionException("Stopped by user")
             }
             if (exit != 0 && !resultSeen) {
@@ -462,29 +468,29 @@ class AntigravityRuntimeBridge(
             val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
             val durationText = formatDurationText(durationSeconds)
             emitCompleted(sessionId)
-            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
+            finishForegroundRuntime(true, projectSlug, sessionId, "Antigravity finished the task in $projectSlug in $durationText.")
         }.onFailure {
-            if (assistantTextSeen && !userStopRequested) {
+            if (assistantTextSeen && sessionId !in stoppedSessions) {
                 val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
                 val durationText = formatDurationText(durationSeconds)
                 emitCompleted(sessionId)
-                finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
+                finishForegroundRuntime(true, projectSlug, sessionId, "Antigravity finished the task in $projectSlug in $durationText.")
             } else {
                 val rawError = it.message.orEmpty()
                 val isTransient = RuntimeFailureClassifier.isTransientNetworkFailure(rawError)
-                val message = if (userStopRequested) "Stopped by user"
+                val message = if (sessionId in stoppedSessions) "Stopped by user"
                     else if (isTransient) RuntimeFailureClassifier.friendlyNetworkErrorMessage(rawError)
                     else friendlyError(rawError)
                 emitFailure(sessionId, message)
-                if (userStopRequested) {
-                    cancelForegroundRuntime()
+                if (sessionId in stoppedSessions) {
+                    cancelForegroundRuntime(sessionId)
                 } else if (!isTransient) {
-                    finishForegroundRuntime(false, projectSlug, message)
+                    finishForegroundRuntime(false, projectSlug, sessionId, message)
                 }
             }
         }
-        activeProcess = null
-        activeSessionId = null
+        activeProcesses.remove(sessionId)
+        activeSessionIds.remove(sessionId)
         RuntimeTaskController.unregisterStop(sessionId)
         sessionId
     }
@@ -497,13 +503,18 @@ class AntigravityRuntimeBridge(
         conversationHistory: List<ChatMessage>,
         config: GeminiApiConfig,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
-        userStopRequested = false
-        foregroundResultPosted = false
+        activeSessionIds.add(sessionId)
+        stoppedSessions.remove(sessionId)
+        foregroundResultsPosted.remove(sessionId)
         finished.remove(sessionId)
+        // Per-session API client: the shared client held a single active
+        // connection, so stopping one chat's Gemini session could kill
+        // another chat's in-flight request on the same pooled bridge.
+        val apiClient = apiClients.getOrPut(sessionId) { GeminiApiClient() }
         RuntimeTaskController.registerStop(sessionId) {
-            userStopRequested = true
-            geminiApiClient.cancel()
-            activeToolExecutor?.cancel()
+            stoppedSessions.add(sessionId)
+            apiClient.cancel()
+            toolExecutors[sessionId]?.cancel()
         }
         val launchAcknowledged = launchGate.authorizeLaunch(
             agentLabel = "Gemini API",
@@ -521,20 +532,22 @@ class AntigravityRuntimeBridge(
             emit = { eventBus.emit(it) },
         )
         if (!launchAcknowledged) {
-            activeProcess = null
-            activeSessionId = null
+            activeProcesses.remove(sessionId)
+            activeSessionIds.remove(sessionId)
             RuntimeTaskController.unregisterStop(sessionId)
             return@withContext sessionId
         }
-        startForegroundRuntime(projectSlug, "Gemini API")
+        startForegroundRuntime(projectSlug, sessionId, "Gemini API")
         try {
             val workspace = checkpoints.ensureWorkspace(projectId)
             checkpoints.createCheckpoint(projectId, workspace)
             val before = checkpoints.snapshot(workspace)
-            val history = conversationHistory.mapNotNull { message ->
-                message.text.takeIf { it.isNotBlank() }
-                    ?.let { (if (message.fromUser) "user" else "model") to it }
-            }
+            val history = boundSeedHistory(
+                conversationHistory.mapNotNull { message ->
+                    message.text.takeIf { it.isNotBlank() }
+                        ?.let { (if (message.fromUser) "user" else "model") to it }
+                },
+            )
             val contents = buildGeminiContents(history, prompt)
             val executor = WorkspaceToolExecutor(
                 installer = installer,
@@ -543,12 +556,12 @@ class AntigravityRuntimeBridge(
                 projectSlug = projectSlug,
                 cacheDir = context.cacheDir,
             )
-            activeToolExecutor = executor
+            toolExecutors[sessionId] = executor
             val loop = GeminiAgentLoop(executor)
             var assistantTextSeen = false
             loop.run(
                 generateTurn = { body, onDelta ->
-                    geminiApiClient.generateAgentTurn(config.apiKey, config.model, body, onDelta)
+                    apiClient.generateAgentTurn(config.apiKey, config.model, body, onDelta)
                 },
                 systemPrompt = geminiApiAgentSystemPrompt(projectSlug),
                 contents = contents,
@@ -560,15 +573,16 @@ class AntigravityRuntimeBridge(
                     eventBus.emit(RuntimeEvent.ToolStarted(sessionId, name, detail))
                     pushForegroundProgress(
                         projectSlug,
+                        sessionId,
                         "Running $name ${detail.take(80)}".trim(),
                     )
                 },
                 onToolCompleted = { name, summary ->
                     eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, name, summary))
                 },
-                isCancelled = { userStopRequested },
+                isCancelled = { sessionId in stoppedSessions },
             )
-            if (userStopRequested) throw AntigravitySessionException("Stopped by user")
+            if (sessionId in stoppedSessions) throw AntigravitySessionException("Stopped by user")
             val paths = checkpoints.changedFiles(workspace, before)
             checkpoints.saveChangedPaths(projectId, paths)
             if (paths.isNotEmpty()) {
@@ -578,20 +592,21 @@ class AntigravityRuntimeBridge(
                 eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, "Done."))
             }
             emitCompleted(sessionId)
-            finishForegroundRuntime(true, projectSlug, "Gemini API finished the task in $projectSlug.")
+            finishForegroundRuntime(true, projectSlug, sessionId, "Gemini API finished the task in $projectSlug.")
         } catch (e: Exception) {
-            val message = if (userStopRequested || e is CancellationException) "Stopped by user"
+            val message = if (sessionId in stoppedSessions || e is CancellationException) "Stopped by user"
             else e.message.orEmpty().ifBlank { "Gemini API request failed." }
             emitFailure(sessionId, message)
-            if (userStopRequested) {
-                cancelForegroundRuntime()
+            if (sessionId in stoppedSessions) {
+                cancelForegroundRuntime(sessionId)
             } else {
-                finishForegroundRuntime(false, projectSlug, message)
+                finishForegroundRuntime(false, projectSlug, sessionId, message)
             }
         }
-        activeProcess = null
-        activeToolExecutor = null
-        activeSessionId = null
+        activeProcesses.remove(sessionId)
+        toolExecutors.remove(sessionId)
+        apiClients.remove(sessionId)
+        activeSessionIds.remove(sessionId)
         RuntimeTaskController.unregisterStop(sessionId)
         sessionId
     }
@@ -610,17 +625,24 @@ class AntigravityRuntimeBridge(
     }
 
     override suspend fun stopSession(sessionId: String) {
-        if (activeSessionId == sessionId) {
-            userStopRequested = true
-            launchGate.abortPending()
-            activeProcess?.destroy()
-            geminiApiClient.cancel()
-            activeToolExecutor?.cancel()
+        if (sessionId in activeSessionIds) {
+            stoppedSessions.add(sessionId)
+            // Scoped abort: the old abortPending() denied EVERY pending
+            // launch approval on this pooled bridge, including other chats'.
+            launchGate.abortPendingForSession(sessionId)
+            activeProcesses[sessionId]?.destroy()
+            apiClients[sessionId]?.cancel()
+            toolExecutors[sessionId]?.cancel()
             emitFailure(sessionId, "Stopped by user")
         }
     }
 
-    override suspend fun stopActiveSession() = activeSessionId?.let { stopSession(it) } ?: Unit
+    // Stops every session on this bridge. Only callers are team executors
+    // holding a private bridge per execution, so this stops just their own
+    // session; user-chat stops always go through stopSession(sessionId).
+    override suspend fun stopActiveSession() {
+        activeSessionIds.toList().forEach { stopSession(it) }
+    }
 
     override suspend fun undoLastChanges(projectId: String): Boolean = withContext(Dispatchers.IO) {
         val checkpoint = checkpoints.checkpointDir(projectId)
@@ -681,7 +703,7 @@ class AntigravityRuntimeBridge(
         if (finished.add(sessionId)) eventBus.emit(RuntimeEvent.SessionFailed(sessionId, reason))
     }
 
-    private fun startForegroundRuntime(projectName: String, agentName: String = "Antigravity CLI") {
+    private fun startForegroundRuntime(projectName: String, sessionId: String, agentName: String = "Antigravity CLI") {
         ContextCompat.startForegroundService(
             context,
             android.content.Intent(context, RuntimeExecutionService::class.java)
@@ -689,11 +711,11 @@ class AntigravityRuntimeBridge(
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                 .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, agentName)
                 .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "$agentName is working in $projectName")
-                .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
+                .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId),
         )
     }
 
-    private fun pushForegroundProgress(projectName: String, detail: String) {
+    private fun pushForegroundProgress(projectName: String, sessionId: String, detail: String) {
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
@@ -701,14 +723,13 @@ class AntigravityRuntimeBridge(
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
-                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId),
             )
         }
     }
 
-    private fun finishForegroundRuntime(completed: Boolean, projectName: String, detail: String) {
-        if (foregroundResultPosted) return
-        foregroundResultPosted = true
+    private fun finishForegroundRuntime(completed: Boolean, projectName: String, sessionId: String, detail: String) {
+        if (!foregroundResultsPosted.add(sessionId)) return
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
@@ -716,19 +737,18 @@ class AntigravityRuntimeBridge(
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail)
-                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
     }
 
-    private fun cancelForegroundRuntime() {
-        if (foregroundResultPosted) return
-        foregroundResultPosted = true
+    private fun cancelForegroundRuntime(sessionId: String) {
+        if (!foregroundResultsPosted.add(sessionId)) return
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
                     .setAction(RuntimeExecutionService.ACTION_CANCELLED)
-                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, activeSessionId),
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }
     }

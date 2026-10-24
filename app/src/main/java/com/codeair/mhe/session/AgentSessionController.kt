@@ -133,6 +133,11 @@ class AgentSessionController(
         _state.value.activeSessions[sessionId]?.projectId
             ?: _state.value.interruptedSessions.firstOrNull { it.sessionId == sessionId }?.projectId
 
+    /** Chat that owns a session (multi-chat concurrency routing). */
+    fun sessionChatId(sessionId: String): String? =
+        _state.value.activeSessions[sessionId]?.chatId
+            ?: _state.value.interruptedSessions.firstOrNull { it.sessionId == sessionId }?.chatId
+
     fun listHistory(): List<PersistedAgentSession> = sessionManager.listSessionHistory()
 
     fun cleanupOldSessions(days: Int = 14): Int = sessionManager.cleanupOldSessions(days)

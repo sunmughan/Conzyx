@@ -607,15 +607,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val projectSessionStates = MutableStateFlow<Map<String, ProjectSessionState>>(emptyMap())
     private val sessionRuntimeRequests = ConcurrentHashMap<String, RuntimeRetryRequest>()
     private val sessionProjects = ConcurrentHashMap<String, String>()
-    private val runningSessions = ConcurrentHashMap<String, String>()
+    // Multi-chat concurrency (2026-10-24): sessionId -> owning chatId, and
+    // live state stashed per chatId when the user leaves a running chat.
+    // ChatIds are UUIDs, globally unique, so the stash is keyed by chatId
+    // alone. The old single-active-session machinery (runningSessions +
+    // sessionStartQueue + the max-agents start gate) is removed: user
+    // sessions now start unthrottled in any chat and any project. The
+    // AdaptiveConcurrencyController still throttles TEAM-internal dispatch
+    // stages (ConcurrentTeamDispatcher), which is a different mechanism.
+    private val sessionChats = ConcurrentHashMap<String, String>()
+    private val chatLiveStash = ConcurrentHashMap<String, ProjectSessionState>()
     private data class SessionRecoveryState(var job: Job? = null, var attempt: Int = 0, var startedAtMillis: Long? = null)
     private val sessionRecoveryStates = ConcurrentHashMap<String, SessionRecoveryState>()
     private val pendingAssistantDeltas = ConcurrentHashMap<String, StringBuilder>()
     private val roadmapParseAttempts = ConcurrentHashMap.newKeySet<String>()
     private val assistantDeltaFlushJobs = ConcurrentHashMap<String, Job>()
     private val lastAssistantDeltaPersistAtMillis = ConcurrentHashMap<String, Long>()
-    private data class QueuedSessionStart(val projectId: String, val prompt: String, val attachments: List<ChatAttachment>)
-    private val sessionStartQueue = ArrayDeque<QueuedSessionStart>()
     private val failedApiKeyIds = mutableSetOf<String>()
     @Volatile private var lastOpenedAntigravityAuthUrl: String? = null
     private fun appUpdater(): AppUpdater = AppUpdater(
@@ -850,7 +857,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadMcpAuditLogs()
         viewModelScope.launch {
             agentOrchestrator.snapshot.collect { orchSnapshot ->
-                _state.update { it.copy(orchestratorSnapshot = orchSnapshot) }
+                // Banner-leak guard: the orchestrator snapshot is shared
+                // across projects, so only forward it when it belongs to
+                // the project currently on screen; otherwise clear it, so
+                // viewing project B never shows project A's live banner.
+                _state.update {
+                    it.copy(
+                        orchestratorSnapshot =
+                            if (agentOrchestrator.currentProjectId() == it.activeProject?.id) orchSnapshot else null,
+                    )
+                }
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -2042,7 +2058,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        current.activeProject?.let { persistSessionSlice(it.id) }
+        stashActiveChat()
         preferences.lastActiveProjectId = project.id
         val terminal = loadProjectTerminal(project)
         // Milestone 2: restore the persisted editor session (dirty buffers,
@@ -2118,6 +2134,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 previewReady = slice?.previewReady ?: false,
                 previewUrl = slice?.previewUrl,
                 pendingAttachments = emptyList(),
+            )
+        }
+        // The per-chat stash is fresher than the project slice (background
+        // events update the stash while this project is away), so it wins
+        // for the last-active chat, including a still-running task.
+        chatLiveStash[activeChat.id]?.let { stash ->
+            _state.update { applyChatSliceToState(it, stash, activeChat.id) }
+        }
+        // Resume this project's live orchestrator banner immediately instead
+        // of waiting for the next emission; a foreign project's snapshot is
+        // never shown here (see the collect guard above).
+        _state.update {
+            it.copy(
+                orchestratorSnapshot =
+                    if (agentOrchestrator.currentProjectId() == project.id) agentOrchestrator.snapshot.value else null,
             )
         }
         slice?.pendingOrchestratorTransition?.let { transition ->
@@ -3065,20 +3096,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val chats = listOf(chat) + current.projectChats
         preferences.saveProjectChats(project.id, chats)
 
-        if (current.isRunning) {
-            // Keep the running conversation attached to its active UI/session.
-            // The new conversation is persisted immediately and can be opened when
-            // the current task finishes, without mixing two chats' live output.
-            _state.update {
-                it.copy(
-                    projectChats = chats,
-                    toastMessage = "New conversation created. The running task will continue; switch chats when it finishes.",
-                )
-            }
-            return
-        }
-
+        // No running guard: the outgoing chat is stashed (its task keeps
+        // running in the background) and the new chat opens immediately.
         persistMessages()
+        stashActiveChat()
         preferences.setLastActiveChatId(project.id, chat.id)
         _state.update {
             it.copy(
@@ -3100,14 +3121,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun switchChat(chatId: String) {
         val current = _state.value
         val project = current.activeProject ?: return
-        if (current.isRunning || current.activeChatId == chatId) return
+        if (current.activeChatId == chatId) return
         val chat = current.projectChats.firstOrNull { it.id == chatId } ?: return
         persistMessages()
+        stashActiveChat()
+        preferences.setLastActiveChatId(project.id, chat.id)
+        // A stashed chat keeps its live running state; restoring it shows
+        // the background task's progress instead of a stale disk transcript.
+        chatLiveStash[chatId]?.let { stash ->
+            _state.update {
+                applyChatSliceToState(it, stash, chatId).copy(pendingAttachments = emptyList())
+            }
+            return
+        }
         val saved = dropActiveSessionInterruptedRow(preferences.loadMessages(project.id, chat.id))
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
         val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
-        preferences.setLastActiveChatId(project.id, chat.id)
         _state.update {
             it.copy(
                 activeChatId = chat.id,
@@ -3139,16 +3169,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteChat(chatId: String) {
         val project = _state.value.activeProject ?: return
-        if (_state.value.isRunning || _state.value.projectChats.size <= 1) return
+        if (_state.value.projectChats.size <= 1) return
+        // Only the TARGET chat being running blocks deletion; other chats'
+        // tasks keep running untouched.
+        val targetRunning = if (_state.value.activeChatId == chatId) _state.value.isRunning
+            else chatLiveStash[chatId]?.isRunning == true
+        if (targetRunning) return
+        chatLiveStash.remove(chatId)
         preferences.deleteProjectChat(project.id, chatId)
         val remainingChats = preferences.loadProjectChats(project.id)
         if (_state.value.activeChatId == chatId) {
             val nextChat = remainingChats.firstOrNull() ?: return
+            preferences.setLastActiveChatId(project.id, nextChat.id)
+            chatLiveStash[nextChat.id]?.let { stash ->
+                _state.update {
+                    applyChatSliceToState(it, stash, nextChat.id).copy(
+                        projectChats = remainingChats,
+                        pendingAttachments = emptyList(),
+                    )
+                }
+                return
+            }
             val saved = dropActiveSessionInterruptedRow(preferences.loadMessages(project.id, nextChat.id))
             val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
             val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
             val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
-            preferences.setLastActiveChatId(project.id, nextChat.id)
             _state.update {
                 it.copy(
                     projectChats = remainingChats,
@@ -3679,34 +3724,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val attachments = state.value.pendingAttachments
+        // Same-chat guard only: _state reflects the ACTIVE chat (stash/restore),
+        // so this blocks a second agent in the SAME running chat, never another
+        // chat or project. No start throttle: user sessions start unthrottled.
         if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
-        MobileHarnessApplication.appScope.launch { runCatching { teamConcurrencyController.evaluateNow() } }
-        if (runningSessions.size >= teamConcurrencyController.currentMaxAgents()) {
-            sessionStartQueue.addLast(QueuedSessionStart(project.id, requestText, attachments))
-            val reason = teamConcurrencyController.state.value.throttleReason
-            _state.update {
-                it.copy(
-                    toastMessage = "Waiting for resources" +
-                        (reason?.let { r -> " ($r)" } ?: "") +
-                        " - your task is queued and will start automatically.",
-                )
-            }
-            return
-        }
         beginSession(project, requestText, attachments)
     }
 
     private fun beginSession(project: Project, requestText: String, attachments: List<ChatAttachment>, admissionChecked: Boolean = false) {
-        if (_state.value.activeProject?.id == project.id && _state.value.isRunning) return
-        if (!admissionChecked) {
-            MobileHarnessApplication.appScope.launch { runCatching { teamConcurrencyController.evaluateNow() } }
-            if (runningSessions.size >= teamConcurrencyController.currentMaxAgents()) {
-                sessionStartQueue.addLast(QueuedSessionStart(project.id, requestText, attachments))
-                return
-            }
-        }
+        // No same-project running guard and no max-agents queue: a task in one
+        // chat must never block starting an agent in another chat/project.
         val sessionId = UUID.randomUUID().toString()
+        sessionChats[sessionId] = _state.value.activeChatId ?: ""
         val mentionedPaths = resolveMentionedWorkspacePaths(requestText, project)
         updateActiveChatTitle(requestText)
         val mode = _state.value.executionMode
@@ -3773,7 +3803,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             provider = state.value.provider,
         )
         sessionProjects[sessionId] = project.id
-        runningSessions[sessionId] = project.id
         runCatching {
             androidx.core.content.ContextCompat.startForegroundService(
                 getApplication<Application>(),
@@ -3823,20 +3852,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun pumpSessionQueue() {
-        viewModelScope.launch {
-            if (sessionStartQueue.isEmpty()) return@launch
-            runCatching { teamConcurrencyController.evaluateNow() }
-            while (true) {
-                if (runningSessions.size >= teamConcurrencyController.currentMaxAgents()) return@launch
-                val queued = sessionStartQueue.removeFirstOrNull() ?: return@launch
-                val project = _state.value.projects.firstOrNull { it.id == queued.projectId } ?: continue
-                if (_state.value.activeProject?.id != project.id) openProject(project)
-                beginSession(project, queued.prompt, queued.attachments, admissionChecked = true)
-            }
-        }
-    }
-
     private fun resolveMentionedWorkspacePaths(prompt: String, project: Project): List<String> =
         agentChatController.resolveMentionedWorkspacePaths(prompt, projectWorkspaceRoot(project))
     fun answerApproval(approved: Boolean) {
@@ -3878,7 +3893,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ignoredSessionIds += sid
             if (ignoredSessionIds.size > 100) ignoredSessionIds.remove(ignoredSessionIds.first())
             sessionRuntimeRequests.remove(sid)
-            runningSessions.remove(sid)
+            sessionChats.remove(sid)
             sessionProjects.remove(sid)
             agentSessionController.cancelSession(sid)
         }
@@ -3903,7 +3918,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 getApplication<Application>().startService(intent)
             }
-            pumpSessionQueue()
         }
     }
 
@@ -4071,21 +4085,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lastTaskOutcome = state.lastTaskOutcome,
     )
 
-    private fun sessionScopeFor(projectId: String): AppUiState {
+    /** Owning chat for a runtime session, from the start-time record or the
+     * persisted controller record. Null when unknown (legacy sessions). */
+    private fun sessionChatIdFor(sessionId: String): String? =
+        sessionChats[sessionId] ?: agentSessionController.sessionChatId(sessionId)
+
+    private fun sessionScopeFor(projectId: String, chatId: String? = null): AppUiState {
         val current = _state.value
-        if (projectId == current.activeProject?.id) return current
+        if (projectId == current.activeProject?.id && (chatId == null || chatId == current.activeChatId)) return current
+        if (chatId != null) {
+            // Per-chat stash (seeded from disk on first touch) so background
+            // chats keep their own transcripts, progress, and outcomes.
+            val stash = chatLiveStash[chatId]
+            if (stash != null) return applyChatSliceToState(current, stash, chatId)
+            val diskMessages = preferences.loadMessages(projectId, chatId)
+            return current.copy(activeChatId = chatId, messages = diskMessages)
+        }
         val slice = projectSessionStates.value[projectId] ?: ProjectSessionState(projectId = projectId)
         return applySliceToState(current, slice)
     }
 
-    private fun updateSessionScoped(projectId: String, transform: (AppUiState) -> AppUiState) {
-        if (projectId == _state.value.activeProject?.id) {
+    private fun updateSessionScoped(projectId: String, chatId: String? = null, transform: (AppUiState) -> AppUiState) {
+        if (projectId == _state.value.activeProject?.id && (chatId == null || chatId == _state.value.activeChatId)) {
             _state.update(transform)
+            return
+        }
+        if (chatId != null) {
+            val seed = chatLiveStash[chatId] ?: run {
+                val diskMessages = preferences.loadMessages(projectId, chatId)
+                ProjectSessionState(projectId = projectId, activeChatId = chatId, messages = diskMessages)
+            }
+            val updated = transform(applyChatSliceToState(_state.value, seed, chatId))
+            chatLiveStash[chatId] = chatSliceFromState(projectId, chatId, updated)
             return
         }
         val slice = projectSessionStates.value[projectId] ?: ProjectSessionState(projectId = projectId)
         val updated = transform(applySliceToState(_state.value, slice))
         projectSessionStates.update { it + (projectId to sliceFromState(projectId, updated, slice)) }
+    }
+
+    /**
+     * Stash the visible chat's live state before leaving it (chat switch or
+     * project switch). Also refreshes the project slice so slice-based reads
+     * stay consistent. Stashes are evicted when they grow past 32 entries
+     * (non-running chats first) so long sessions do not leak memory.
+     */
+    private fun stashActiveChat() {
+        val current = _state.value
+        val chatId = current.activeChatId ?: return
+        val projectId = current.activeProject?.id ?: return
+        chatLiveStash[chatId] = chatSliceFromState(projectId, chatId, current)
+        if (chatLiveStash.size > 32) {
+            chatLiveStash.entries
+                .filter { !it.value.isRunning }
+                .sortedBy { it.value.taskStartedAtMillis ?: 0L }
+                .take(chatLiveStash.size - 32)
+                .forEach { chatLiveStash.remove(it.key) }
+        }
+        persistSessionSlice(projectId)
     }
 
     private fun persistSessionSlice(projectId: String) {
@@ -4104,7 +4161,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun onRuntimeEvent(projectId: String, event: RuntimeEvent) {
         if (event.sessionId in ignoredSessionIds) return
         if (event is RuntimeEvent.SessionStarted) {
-            runningSessions[event.sessionId] = projectId
+            // Keep the chat recorded at start time (beginSession/resume);
+            // only fall back to the controller/slice when no record exists.
+            if (sessionChats[event.sessionId] == null) {
+                sessionChats[event.sessionId] =
+                    agentSessionController.sessionChatId(event.sessionId)
+                        ?: sessionScopeFor(projectId).activeChatId.orEmpty()
+            }
             sessionProjects[event.sessionId] = projectId
         }
         if (event is RuntimeEvent.AssistantDelta) {
@@ -4141,19 +4204,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         processRuntimeEvent(projectId, RuntimeEvent.AssistantDelta(sessionId, text))
     }
 
-    private fun persistProjectMessages(projectId: String) {
-        val slice = projectSessionStates.value[projectId] ?: return
-        val chatId = slice.activeChatId ?: return
-        val liveItems = slice.liveProcess.filterNot(::isNoisyRuntimeItem)
-        val messages = if (liveItems.isEmpty() && !slice.liveThinking) {
-            slice.messages
+    private fun persistProjectMessages(projectId: String, chatId: String? = null) {
+        // Chat-routed persist: write the EVENT's chat (stash-backed), never
+        // the visible chat — persistMessages() already covers the visible one.
+        val view: AppUiState
+        val resolvedChatId: String
+        if (chatId != null) {
+            view = sessionScopeFor(projectId, chatId)
+            resolvedChatId = chatId
         } else {
-            val startedAt = slice.workSegmentStartedAtMillis ?: slice.taskStartedAtMillis ?: System.currentTimeMillis()
-            val interruptedId = "interrupted-${slice.activeSessionId ?: chatId}"
-            if (slice.messages.any { it.id == interruptedId }) {
-                slice.messages
+            val slice = projectSessionStates.value[projectId] ?: return
+            resolvedChatId = slice.activeChatId ?: return
+            view = applySliceToState(_state.value, slice)
+        }
+        val liveItems = view.liveProcess.filterNot(::isNoisyRuntimeItem)
+        val messages = if (liveItems.isEmpty() && !view.liveThinking) {
+            view.messages
+        } else {
+            val startedAt = view.workSegmentStartedAtMillis ?: view.taskStartedAtMillis ?: System.currentTimeMillis()
+            val interruptedId = "interrupted-${view.activeSessionId ?: resolvedChatId}"
+            if (view.messages.any { it.id == interruptedId }) {
+                view.messages
             } else {
-                slice.messages + ChatMessage(
+                view.messages + ChatMessage(
                     id = interruptedId,
                     fromUser = false,
                     text = "",
@@ -4165,28 +4238,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
-        transcriptWrites.trySend(TranscriptWrite(projectId, chatId, messages))
+        transcriptWrites.trySend(TranscriptWrite(projectId, resolvedChatId, messages))
     }
 
     private fun trimMessages(messages: List<ChatMessage>): List<ChatMessage> =
         if (messages.size > maxInMemoryMessages) messages.takeLast(maxInMemoryMessages) else messages
 
     private fun processRuntimeEvent(projectId: String, event: RuntimeEvent) {
-        val scoped = sessionScopeFor(projectId)
+        val eventChatId = sessionChatIdFor(event.sessionId)
+        val scoped = sessionScopeFor(projectId, eventChatId)
         val isActiveProject = projectId == _state.value.activeProject?.id
         val lastUserIdx = scoped.messages.indexOfLast { it.fromUser }
         val hasResponseAlready = scoped.messages.indices.any {
             it > lastUserIdx && !scoped.messages[it].fromUser && scoped.messages[it].text.isNotBlank()
         }
-        if (event is RuntimeEvent.SessionFailed && retryAntigravityWithNextAccount(projectId, event)) return
+        if (event is RuntimeEvent.SessionFailed && retryAntigravityWithNextAccount(projectId, event, eventChatId)) return
         if (event is RuntimeEvent.SessionFailed && scoped.agentKind == AgentKind.ANTIGRAVITY &&
             (event.reason.contains("sign-in", true) || event.reason.contains("authentication", true) || event.reason.contains("401", true))) {
             antigravityAuthController.invalidateSession(event.reason)
         }
-        if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && retryWithNextApiKey(projectId, event)) return
-        if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && recoverTransientRuntimeFailure(projectId, event)) return
+        if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && retryWithNextApiKey(projectId, event, eventChatId)) return
+        if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && recoverTransientRuntimeFailure(projectId, event, eventChatId)) return
         var backgroundTransition: OrchestratorTransition? = null
-        updateSessionScoped(projectId) { current ->
+        updateSessionScoped(projectId, eventChatId) { current ->
             if (!current.isRunning) {
                 current
             } else if (current.activeSessionId != null && current.activeSessionId != event.sessionId) {
@@ -4529,11 +4603,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 current + (projectId to (current[projectId] ?: ProjectSessionState(projectId)).copy(pendingOrchestratorTransition = transition))
             }
         }
-        val scopedAfter = sessionScopeFor(projectId)
+        val scopedAfter = sessionScopeFor(projectId, eventChatId)
         if (event is RuntimeEvent.SessionCompleted || (event is RuntimeEvent.SessionFailed && !scopedAfter.runtimeRecoveryCanResume)) {
             sessionRuntimeRequests.remove(event.sessionId)
             failedApiKeyIds.clear()
-            runningSessions.remove(event.sessionId)
+            sessionChats.remove(event.sessionId)
             sessionProjects.remove(event.sessionId)
             pendingAssistantDeltas.remove(event.sessionId)
             assistantDeltaFlushJobs.remove(event.sessionId)?.cancel()
@@ -4549,7 +4623,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 getApplication<Application>().startService(intent)
             }
-            pumpSessionQueue()
         }
         if (event is RuntimeEvent.FilesChanged || event is RuntimeEvent.SessionCompleted ||
             (event is RuntimeEvent.SessionFailed && hasResponseAlready)) {
@@ -4560,7 +4633,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (event !is RuntimeEvent.AssistantDelta ||
             System.currentTimeMillis() - lastPersistAt >= 1_500L
         ) {
-            if (isActiveProject) persistMessages(includeLiveProcess = true) else persistProjectMessages(projectId)
+            if (isActiveProject && (eventChatId == null || eventChatId == _state.value.activeChatId)) persistMessages(includeLiveProcess = true) else persistProjectMessages(projectId, eventChatId)
             if (event is RuntimeEvent.AssistantDelta) {
                 lastAssistantDeltaPersistAtMillis[event.sessionId] = System.currentTimeMillis()
             }
@@ -4570,8 +4643,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun ensureCompletionMessage(state: AppUiState, totalDurationText: String): AppUiState =
         state.copy(messages = agentChatController.ensureCompletionMessage(state.messages, totalDurationText))
 
-    private fun recoverTransientRuntimeFailure(projectId: String, event: RuntimeEvent.SessionFailed): Boolean {
-        val scoped = sessionScopeFor(projectId)
+    private fun recoverTransientRuntimeFailure(projectId: String, event: RuntimeEvent.SessionFailed, chatId: String? = null): Boolean {
+        val scoped = sessionScopeFor(projectId, chatId)
         val isActiveProject = projectId == _state.value.activeProject?.id
         val request = sessionRuntimeRequests[event.sessionId] ?: return false
         if (!scoped.isRunning || (scoped.activeSessionId != null && scoped.activeSessionId != event.sessionId)) return false
@@ -4588,7 +4661,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             recovery.job?.cancel()
             sessionRecoveryStates.remove(event.sessionId)
             val finishedAt = System.currentTimeMillis()
-            updateSessionScoped(projectId) { state ->
+            updateSessionScoped(projectId, chatId) { state ->
                 attachTaskDuration(
                     finishWorkSegment(
                         appendWorkItem(state, ActivityItem("Task stopped", friendlyError)),
@@ -4606,7 +4679,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     currentTaskRequest = null,
                 )
             }
-            if (isActiveProject) persistMessages(includeLiveProcess = true) else persistProjectMessages(projectId)
+            if (isActiveProject && (chatId == null || chatId == _state.value.activeChatId)) persistMessages(includeLiveProcess = true) else persistProjectMessages(projectId, chatId)
             NotificationCoordinator.postResult(
                 getApplication<Application>(),
                 "Task paused · Network error",
@@ -4631,7 +4704,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val remainingSeconds = (((maxDurationMillis - elapsedMillis) / 1000L).coerceAtLeast(1L))
         val statusText = "Reconnecting… (${remainingSeconds}s remaining)"
 
-        updateSessionScoped(projectId) { it.copy(
+        updateSessionScoped(projectId, chatId) { it.copy(
             activeSessionId = null,
             runtimeRecoveryStatus = statusText,
             runtimeRecoveryAttempt = attempt,
@@ -4641,7 +4714,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "Network disturbance detected. Reconnecting… (${remainingSeconds}s remaining, attempt $attempt)",
             ),
         ) }
-        if (isActiveProject) persistMessages(includeLiveProcess = true) else persistProjectMessages(projectId)
+        if (isActiveProject && (chatId == null || chatId == _state.value.activeChatId)) persistMessages(includeLiveProcess = true) else persistProjectMessages(projectId, chatId)
 
         runCatching {
             val progressIntent = Intent(getApplication<Application>(), RuntimeExecutionService::class.java).apply {
@@ -4656,11 +4729,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         recovery.job = MobileHarnessApplication.appScope.launch {
             delay(retryDelay)
-            val live = sessionScopeFor(projectId)
+            val live = sessionScopeFor(projectId, chatId)
             if (!live.isRunning || sessionRuntimeRequests[event.sessionId] !== request) return@launch
             val updatedElapsed = System.currentTimeMillis() - recoveryStartedAt
             val currentRemaining = (((maxDurationMillis - updatedElapsed) / 1000L).coerceAtLeast(1L))
-            updateSessionScoped(projectId) { it.copy(
+            updateSessionScoped(projectId, chatId) { it.copy(
                 runtimeRecoveryStatus = "Reconnecting… (${currentRemaining}s remaining)",
                 liveProcess = it.liveProcess + ActivityItem("Reconnecting", "Attempting to re-establish connection…"),
             ) }
@@ -4676,7 +4749,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resumeInterruptedTask() {
         val project = _state.value.activeProject
-        val prompt = project?.let { p -> sessionRuntimeRequests.values.firstOrNull { it.project.id == p.id }?.prompt }
+        val activeChatId = _state.value.activeChatId
+        // Prefer the ACTIVE chat's own session request: the old project-wide
+        // firstOrNull could resume another chat's prompt in this chat.
+        val prompt = project?.let { p ->
+            sessionRuntimeRequests.entries.firstOrNull { (sid, req) ->
+                req.project.id == p.id && (activeChatId == null || sessionChats[sid] == activeChatId)
+            }?.value?.prompt
+                ?: sessionRuntimeRequests.values.firstOrNull { it.project.id == p.id }?.prompt
+        }
             ?: _state.value.currentTaskRequest
             ?: _state.value.messages.lastOrNull { it.fromUser }?.text
             ?: return
@@ -4884,7 +4965,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             )
             sessionRuntimeRequests[resumeSessionId] = request
             sessionProjects[resumeSessionId] = project.id
-            runningSessions[resumeSessionId] = project.id
+            sessionChats[resumeSessionId] = _state.value.activeChatId.orEmpty()
             runCatching {
                 runtime.startSession(
                     project.id,
@@ -4901,31 +4982,32 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             }
         }
     }
-    private fun restartSessionWithNewId(projectId: String, oldSessionId: String, request: RuntimeRetryRequest): String {
+    private fun restartSessionWithNewId(projectId: String, oldSessionId: String, request: RuntimeRetryRequest, chatId: String? = null): String {
         val newSessionId = UUID.randomUUID().toString()
         ignoredSessionIds += oldSessionId
         if (ignoredSessionIds.size > 100) ignoredSessionIds.remove(ignoredSessionIds.first())
         agentSessionController.failSession(oldSessionId, "Superseded by retry")
-        val scoped = sessionScopeFor(projectId)
+        val scoped = sessionScopeFor(projectId, chatId)
+        val resolvedChatId = chatId ?: scoped.activeChatId.orEmpty()
         agentSessionController.startSession(
             sessionId = newSessionId,
             projectId = projectId,
             projectTitle = request.project.name,
-            chatId = scoped.activeChatId.orEmpty(),
+            chatId = resolvedChatId,
             prompt = scoped.currentTaskRequest ?: request.prompt,
             roadmap = scoped.activeRoadmap,
         )
         sessionRuntimeRequests[newSessionId] = request
         sessionProjects[newSessionId] = projectId
-        runningSessions[newSessionId] = projectId
+        sessionChats[newSessionId] = resolvedChatId
         sessionRuntimeRequests.remove(oldSessionId)
         sessionProjects.remove(oldSessionId)
-        runningSessions.remove(oldSessionId)
+        sessionChats.remove(oldSessionId)
         return newSessionId
     }
 
-    private fun retryWithNextApiKey(projectId: String, event: RuntimeEvent.SessionFailed): Boolean {
-        val scoped = sessionScopeFor(projectId)
+    private fun retryWithNextApiKey(projectId: String, event: RuntimeEvent.SessionFailed, chatId: String? = null): Boolean {
+        val scoped = sessionScopeFor(projectId, chatId)
         if (scoped.agentKind == AgentKind.ANTIGRAVITY) return false
         if (!scoped.isRunning || scoped.activeSessionId != event.sessionId) return false
         if (!isApiKeyFailure(event.reason)) return false
@@ -4935,7 +5017,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         failedApiKeyIds += active.id
         val next = credentials.firstOrNull { it.id !in failedApiKeyIds } ?: return false
         if (!vault.activate(request.provider.kind.name, next.id)) return false
-        updateSessionScoped(projectId) {
+        updateSessionScoped(projectId, chatId) {
             it.copy(
                 activeSessionId = null,
                 runtimeRecoveryStatus = null,
@@ -4946,7 +5028,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 liveProcess = it.liveProcess + ActivityItem("API key switched", "Using ${next.name}", true),
             )
         }
-        val newSessionId = restartSessionWithNewId(projectId, event.sessionId, request)
+        val newSessionId = restartSessionWithNewId(projectId, event.sessionId, request, chatId)
         viewModelScope.launch {
             kotlinx.coroutines.delay(300)
             request.runtime.startSession(
@@ -5049,8 +5131,8 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         return isAntigravityQuotaFailure(reason) || isAntigravityAuthFailure(reason)
     }
 
-    private fun retryAntigravityWithNextAccount(projectId: String, event: RuntimeEvent.SessionFailed): Boolean {
-        val scoped = sessionScopeFor(projectId)
+    private fun retryAntigravityWithNextAccount(projectId: String, event: RuntimeEvent.SessionFailed, chatId: String? = null): Boolean {
+        val scoped = sessionScopeFor(projectId, chatId)
         if (scoped.agentKind != AgentKind.ANTIGRAVITY) return false
         if (!scoped.isRunning || scoped.activeSessionId != event.sessionId) return false
         if (!antigravityAuthController.isAutoRoundRobin()) return false
@@ -5075,7 +5157,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
         val reasonLabel = if (isAuthError) "session expired" else "usage limit reached"
         val failoverLabel = if (isAuthError) "auth expired failover" else "quota limit failover"
-        updateSessionScoped(projectId) {
+        updateSessionScoped(projectId, chatId) {
             it.copy(
                 activeSessionId = null,
                 runtimeRecoveryStatus = null,
@@ -5086,7 +5168,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 liveProcess = it.liveProcess + ActivityItem("Google account switched", "Auto round-robin to $nextEmail ($failoverLabel)", true),
             )
         }
-        val newSessionId = restartSessionWithNewId(projectId, event.sessionId, request)
+        val newSessionId = restartSessionWithNewId(projectId, event.sessionId, request, chatId)
         viewModelScope.launch {
             kotlinx.coroutines.delay(300)
             request.runtime.startSession(

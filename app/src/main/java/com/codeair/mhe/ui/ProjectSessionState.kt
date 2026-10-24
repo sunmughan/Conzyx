@@ -102,6 +102,71 @@ fun bannerSnapshotFor(
     return if (live != null && !live.state.isTerminalBannerState()) live else null
 }
 
+/**
+ * Per-chat live state for multi-chat concurrency (2026-10-24).
+ *
+ * Slices ([ProjectSessionState]) are keyed by PROJECT, but a user can now
+ * run agents in several chats of one project at once. The active chat's live
+ * fields live in [AppUiState]; when the user leaves a chat, its live fields
+ * are stashed under its chatId (which is a UUID, globally unique) and
+ * restored when the user returns, so background chats keep running and keep
+ * their transcripts, progress, and outcomes without leaking into other chats.
+ * Only chat-scoped fields are stashed: projectChats, preview, terminal, and
+ * orchestrator-transition state stay with the project, never the chat.
+ */
+fun applyChatSliceToState(base: AppUiState, slice: ProjectSessionState, chatId: String): AppUiState =
+    base.copy(
+        activeChatId = chatId,
+        messages = slice.messages,
+        pendingApproval = slice.pendingApproval,
+        changes = slice.changes,
+        activity = slice.activity,
+        liveProcess = slice.liveProcess,
+        liveThinking = slice.liveThinking,
+        activeThinkingBlockId = slice.activeThinkingBlockId,
+        taskStartedAtMillis = slice.taskStartedAtMillis,
+        taskFinishedAtMillis = slice.taskFinishedAtMillis,
+        workSegmentStartedAtMillis = slice.workSegmentStartedAtMillis,
+        currentTaskRequest = slice.currentTaskRequest,
+        isRunning = slice.isRunning,
+        streamingMessageId = slice.streamingMessageId,
+        activeSessionId = slice.activeSessionId,
+        interruptedSession = slice.interruptedSession,
+        runtimeRecoveryStatus = slice.runtimeRecoveryStatus,
+        runtimeRecoveryAttempt = slice.runtimeRecoveryAttempt,
+        runtimeRecoveryCanResume = slice.runtimeRecoveryCanResume,
+        activeRoadmap = slice.activeRoadmap,
+        scratchpadItems = slice.scratchpadItems,
+        lastTaskOutcome = slice.lastTaskOutcome,
+    )
+
+fun chatSliceFromState(projectId: String, chatId: String, state: AppUiState): ProjectSessionState =
+    ProjectSessionState(
+        projectId = projectId,
+        activeChatId = chatId,
+        messages = state.messages,
+        pendingApproval = state.pendingApproval,
+        changes = state.changes,
+        activity = state.activity,
+        liveProcess = state.liveProcess,
+        liveThinking = state.liveThinking,
+        activeThinkingBlockId = state.activeThinkingBlockId,
+        taskStartedAtMillis = state.taskStartedAtMillis,
+        taskFinishedAtMillis = state.taskFinishedAtMillis,
+        workSegmentStartedAtMillis = state.workSegmentStartedAtMillis,
+        currentTaskRequest = state.currentTaskRequest,
+        isRunning = state.isRunning,
+        streamingMessageId = state.streamingMessageId,
+        activeSessionId = state.activeSessionId,
+        interruptedSession = state.interruptedSession,
+        runtimeRecoveryStatus = state.runtimeRecoveryStatus,
+        runtimeRecoveryAttempt = state.runtimeRecoveryAttempt,
+        runtimeRecoveryCanResume = state.runtimeRecoveryCanResume,
+        activeRoadmap = state.activeRoadmap,
+        scratchpadItems = state.scratchpadItems,
+        lastTaskOutcome = state.lastTaskOutcome,
+    )
+
 data class ProjectSessionState(
     val projectId: String,
     val messages: List<ChatMessage> = emptyList(),
