@@ -74,7 +74,7 @@ CRITICAL CONSTRAINTS FOR PLAN MODE:
 - DO NOT perform any file edits, modifications, creations, deletions, or write operations.
 - DO NOT execute commands that modify system state, files, or environment. Only read-only exploration commands (ls, cat, git status, etc.) or read-only tools are allowed.
 - Be token-efficient: keep the summary to 2-3 sentences, architecture decisions to a short bullet list, and each roadmap step to one title line plus one brief description line. No verbose prose.
-- Output your plan structured with a brief summary, key architecture decisions, and an interactive roadmap under the header '### Implementation Roadmap'.
+- Output ONLY the roadmap as the plan: a brief summary, key architecture decisions, and an interactive roadmap under the header '### Implementation Roadmap'. Do NOT write a separate implementation narrative before or after the roadmap, and do NOT repeat step content in prose. The roadmap steps ARE the plan.
 - In the roadmap, format each task as a checklist item:
 1. [ ] Step title
    - Description / Details
@@ -99,7 +99,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
 - Do NOT make any modifications to code or files yet.
 - Inspect the codebase to understand requirements.
 - Be token-efficient: keep the explanation to 2-3 sentences and each roadmap step to one title line plus one brief description line. No verbose prose.
-- Present a brief explanation followed by '### Implementation Roadmap'.
+- Present ONLY the roadmap: a brief explanation followed by '### Implementation Roadmap'. Do NOT write a separate implementation narrative before or after the roadmap, and do NOT repeat step content in prose. The roadmap steps ARE the plan.
 - List the steps as numbered checklist items:
 1. [ ] Step title
    - Description: Brief explanation of what will be done
