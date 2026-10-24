@@ -3380,12 +3380,18 @@ private fun ProviderCredentialsStep(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().imePadding(),
-        contentPadding = PaddingValues(bottom = 24.dp),
+    // v3.5.5: this step lives inside ProviderSetupScreen's vertically
+    // scrolling Column, so it must be a plain Column, NOT a LazyColumn:
+    // a vertically scrollable component measured with infinite height
+    // constraints throws IllegalStateException on first composition.
+    // That throw killed the app the instant Continue left the provider
+    // list, before this screen ever rendered (guest-mode video proof:
+    // list at 9.3s, launcher at 9.6s, no credentials frame). The
+    // parent Column already scrolls, so a plain Column is correct.
+    Column(
+        modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp),
     ) {
-        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("STEP 3 OF 3", color = PocketOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
@@ -3408,8 +3414,6 @@ private fun ProviderCredentialsStep(
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        item {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(20.dp),
@@ -3454,8 +3458,6 @@ private fun ProviderCredentialsStep(
                     )
                 }
             }
-        }
-        item {
             OutlinedButton(
                 onClick = {
                     if (models.isEmpty()) discoverModels() else showModels = true
@@ -3471,10 +3473,8 @@ private fun ProviderCredentialsStep(
                 Spacer(Modifier.width(8.dp))
                 Text(if (models.isEmpty()) "Find available models" else "Available models (${models.size})")
             }
-        }
         if (status != null) {
-            item {
-                Text(
+            Text(
                     status.orEmpty(),
                     color = if (statusOk) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                     fontSize = 13.sp,
@@ -3489,8 +3489,6 @@ private fun ProviderCredentialsStep(
                     )
                 }
             }
-        }
-        item {
             Button(
                     onClick = {
                         scope.launch {
@@ -3534,15 +3532,12 @@ private fun ProviderCredentialsStep(
                     }
                     Text(if (isValidating) "Checking" else "Continue")
             }
-        }
-        item {
             TextButton(
                 onClick = onChangeAgent,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Use another coding agent", fontSize = 12.sp)
             }
-        }
     }
 }
 
@@ -3557,12 +3552,12 @@ private fun ClaudeSubscriptionCredentialsStep(
     var tokenVisible by rememberSaveable { mutableStateOf(false) }
     val hasToken = token.isNotBlank() || hasStoredToken
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().imePadding(),
-        contentPadding = PaddingValues(bottom = 24.dp),
+    // Same v3.5.5 fix as ProviderCredentialsStep: plain Column, not
+    // LazyColumn, inside the parent's scrolling Column.
+    Column(
+        modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("STEP 3 OF 3", color = PocketOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
@@ -3581,8 +3576,6 @@ private fun ClaudeSubscriptionCredentialsStep(
                 "Connect a Claude Pro, Max, Team, or Enterprise subscription to Claude Code.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        item {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(20.dp),
@@ -3617,8 +3610,6 @@ private fun ClaudeSubscriptionCredentialsStep(
                     )
                 }
             }
-        }
-        item {
             Button(
                 onClick = onSave,
                 enabled = hasToken,
@@ -3626,12 +3617,9 @@ private fun ClaudeSubscriptionCredentialsStep(
             ) {
                 Text("Save and continue")
             }
-        }
-        item {
             TextButton(onClick = onChangeAgent, modifier = Modifier.fillMaxWidth()) {
                 Text("Use another coding agent", fontSize = 12.sp)
             }
-        }
     }
 }
 
