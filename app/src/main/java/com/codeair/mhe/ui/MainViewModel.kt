@@ -1548,7 +1548,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (selectingInitialAgent) preferences.primaryAgentKind = kind.stableId
         _state.update { current ->
             preferences.saveProvider(current.provider, current.agentKind)
-            val provider = preferences.loadProvider(vault, kind)
+            // The provider reload must never kill the agent switch: it
+            // reads the secure vault on the UI thread, and a keystore
+            // throw here used to force-stop the app on the agent tap
+            // (the "Use another coding agent" path). On failure the
+            // previous provider is kept and the choice step lets the user
+            // pick a valid provider for the new agent (its Continue stays
+            // disabled until the selection belongs to that agent's list).
+            val provider = runCatching { preferences.loadProvider(vault, kind) }.getOrElse { current.provider }
             current.copy(
                 agentKind = kind,
                 primaryAgentKind = if (selectingInitialAgent) kind else current.primaryAgentKind,

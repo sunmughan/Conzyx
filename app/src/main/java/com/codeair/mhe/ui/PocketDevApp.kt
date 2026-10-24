@@ -2781,12 +2781,17 @@ private fun ProviderSetupScreen(
     themeMode: AppThemeMode = AppThemeMode.DARK,
 ) {
     val context = LocalContext.current
-    var step by rememberSaveable { mutableIntStateOf(initialStep) }
-    var selected by rememberSaveable { mutableStateOf(initial.kind) }
-    var baseUrl by rememberSaveable { mutableStateOf(initial.baseUrl.ifBlank { initial.kind.defaultBaseUrl }) }
-    var model by rememberSaveable { mutableStateOf(initial.model.ifBlank { initial.kind.defaultModel }) }
-    var dshApi by rememberSaveable { mutableStateOf(initial.dshApi.ifBlank { "anthropic-messages" }) }
-    var apiKey by rememberSaveable { mutableStateOf("") }
+    // All step state is keyed on the agent: switching agents ("Use another
+    // coding agent") re-renders this screen for the new agent WITHOUT
+    // recreating it, so unkeyed state used to keep the previous agent's
+    // provider, URL, model, and typed key — and Continue could advance
+    // with a provider that the new agent does not offer at all.
+    var step by rememberSaveable(agentKind) { mutableIntStateOf(initialStep) }
+    var selected by rememberSaveable(agentKind) { mutableStateOf(initial.kind) }
+    var baseUrl by rememberSaveable(agentKind) { mutableStateOf(initial.baseUrl.ifBlank { initial.kind.defaultBaseUrl }) }
+    var model by rememberSaveable(agentKind) { mutableStateOf(initial.model.ifBlank { initial.kind.defaultModel }) }
+    var dshApi by rememberSaveable(agentKind) { mutableStateOf(initial.dshApi.ifBlank { "anthropic-messages" }) }
+    var apiKey by rememberSaveable(agentKind) { mutableStateOf("") }
     var showAgentPicker by rememberSaveable { mutableStateOf(false) }
 
     if (showAgentPicker) {
@@ -3031,23 +3036,41 @@ private fun ProviderChoiceStep(
         Spacer(Modifier.height(12.dp))
 
         Surface(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            // Bounded by content, never by weight: this step lives inside
+            // the screen's scrolling Column, where a weight(1f) list has
+            // no bounded space to distribute and can collapse to nothing
+            // (the empty provider box in the bug report). At most seven
+            // providers exist, so the cap never clips a real list.
+            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 420.dp),
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                itemsIndexed(visibleProviders) { index, provider ->
-                    ProviderChoiceRow(
-                        provider = provider,
-                        selected = selected == provider,
-                        onClick = { onSelected(provider) },
+            if (visibleProviders.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "No providers available for this agent.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
                     )
-                    if (index != visibleProviders.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 68.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    itemsIndexed(visibleProviders) { index, provider ->
+                        ProviderChoiceRow(
+                            provider = provider,
+                            selected = selected == provider,
+                            onClick = { onSelected(provider) },
                         )
+                        if (index != visibleProviders.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 68.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            )
+                        }
                     }
                 }
             }
@@ -3067,6 +3090,12 @@ private fun ProviderChoiceStep(
         }
         Button(
             onClick = onContinue,
+            // Continue used to fire unconditionally, even when the
+            // selection did not belong to this agent's list (stale
+            // selection after an agent switch, or an empty list): it
+            // advanced to credentials for a provider the agent does not
+            // offer. The user must pick a listed provider first.
+            enabled = selected in visibleProviders,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(

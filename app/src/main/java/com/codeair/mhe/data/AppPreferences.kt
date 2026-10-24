@@ -246,9 +246,12 @@ class AppPreferences(private val context: Context) {
         // Older builds copied the global Claude/Anthropic default into a new
         // DeepSeek Harness profile. Treat that untouched, keyless placeholder
         // as unconfigured so DeepSeek opens on its own official provider.
+        // A keystore failure degrades to "no saved secret", never a throw:
+        // loadProvider runs on the UI thread during agent switches, and a
+        // vault throw there used to kill the app on the agent tap.
         val legacyClaudeDefaultInDeepSeek = agent == AgentKind.DEEPSEEK_HARNESS &&
             storedKind == ProviderKind.ANTHROPIC &&
-            !vault.contains(ProviderKind.ANTHROPIC.name) &&
+            !runCatching { vault.contains(ProviderKind.ANTHROPIC.name) }.getOrDefault(false) &&
             storedBaseUrl == ProviderKind.ANTHROPIC.defaultBaseUrl &&
             storedModel == ProviderKind.ANTHROPIC.defaultModel
         val kind = when {
@@ -287,7 +290,7 @@ class AppPreferences(private val context: Context) {
                 kind.defaultBaseUrl
             },
             model = model,
-            hasSecret = vault.contains(kind.name),
+            hasSecret = runCatching { vault.contains(kind.name) }.getOrDefault(false),
             dshApi = if (useStoredValues) {
                 preferences.getString("${sourcePrefix}dsh_api", defaultDshApiForProvider(kind))
                     ?: defaultDshApiForProvider(kind)
