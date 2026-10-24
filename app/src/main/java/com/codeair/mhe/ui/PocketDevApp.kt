@@ -37,8 +37,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -6586,12 +6584,7 @@ private fun ChatTab(
             // away from the latest message (there is more content below).
             // One tap animates to the last item; once there, canScrollForward
             // is false again, so the button hides on its own.
-            AnimatedVisibility(
-                visible = listState.canScrollForward,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut(),
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp),
-            ) {
+            if (listState.canScrollForward) {
                 SmallFloatingActionButton(
                     onClick = {
                         chatScope.launch {
@@ -6599,6 +6592,7 @@ private fun ChatTab(
                             if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
                         }
                     },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp),
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
