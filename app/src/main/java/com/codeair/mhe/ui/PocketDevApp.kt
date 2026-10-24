@@ -7507,14 +7507,7 @@ private fun ApprovalCard(
                 ) {
                     Text("Reject", fontSize = 12.sp)
                 }
-                OutlinedButton(
-                    onClick = {
-                        onApprovalWithLevel(com.codeair.mhe.security.PermissionLevel.SESSION, true)
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Session", fontSize = 12.sp)
-                }
+
                 // Chat: same approval, but the grant is scoped to this
                 // conversation (project + chat), so later task runs in the
                 // same chat do not prompt again, while a new chat does.
