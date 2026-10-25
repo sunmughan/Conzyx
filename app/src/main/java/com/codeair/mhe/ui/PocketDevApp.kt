@@ -2873,7 +2873,11 @@ private fun ProviderSetupScreen(
                     apiKey = apiKey,
                     onBaseUrl = {
                         baseUrl = it
-                        if (agentKind == AgentKind.DEEPSEEK_HARNESS && selected == ProviderKind.CUSTOM) {
+                        // v3.5.11: infer the gateway protocol from the URL
+                        // for Custom API on every agent, not just DeepSeek
+                        // Harness. An OpenAI-compatible URL must not keep
+                        // defaulting to anthropic-messages.
+                        if (selected == ProviderKind.CUSTOM) {
                             dshApi = inferredDshApiForUrl(it)
                         }
                     },
@@ -2931,7 +2935,7 @@ private fun DshApiProtocolPicker(selected: String, onSelected: (String) -> Unit)
             }
         }
         Text(
-            "Pick the protocol your gateway speaks; DeepSeek Harness routes it directly.",
+            "Pick the protocol your gateway speaks. OpenAI-compatible endpoints use openai-completions.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 11.sp,
         )
@@ -3240,6 +3244,11 @@ private fun ProviderCredentialsStep(
     var statusDetails by remember { mutableStateOf<String?>(null) }
     var statusOk by remember { mutableStateOf(false) }
     var showModels by rememberSaveable { mutableStateOf(false) }
+    // v3.5.11: Custom API verifies first, then picks from a dropdown.
+    // customVerified resets whenever the provider changes; the URL, key,
+    // and protocol fields reset it on edit below.
+    var customVerified by remember(provider) { mutableStateOf(false) }
+    var customDropdownExpanded by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val hasKey = apiKey.isNotBlank() || hasStoredSecret
@@ -3261,7 +3270,7 @@ private fun ProviderCredentialsStep(
         return
     }
 
-    fun discoverModels(openWhenReady: Boolean = true) {
+    fun discoverModels(openWhenReady: Boolean = true, onDone: ((Boolean) -> Unit)? = null) {
         scope.launch {
             isDiscovering = true
             status = null
@@ -3274,11 +3283,13 @@ private fun ProviderCredentialsStep(
                         status = "Found ${result.models.size} available model${if (result.models.size == 1) "" else "s"}."
                         if (model.isBlank() && result.models.isNotEmpty()) onModel(result.models.first().id)
                         if (openWhenReady && result.models.isNotEmpty()) showModels = true
+                        onDone?.invoke(true)
                     }
                     is ModelDiscoveryResult.Failure -> {
                         statusOk = false
                         status = result.message
                         statusDetails = result.providerMessage
+                        onDone?.invoke(false)
                     }
                 }
             } catch (error: CancellationException) {
@@ -3289,8 +3300,25 @@ private fun ProviderCredentialsStep(
                 statusOk = false
                 status = "Could not load models: ${error.message?.take(120) ?: "unknown error"}. Please try again."
                 statusDetails = null
+                onDone?.invoke(false)
             } finally {
                 isDiscovering = false
+            }
+        }
+    }
+
+    // v3.5.11: Verify first for Custom API. Discovery against the models
+    // endpoint proves the base URL and the selected gateway protocol
+    // before any model step; only a verified endpoint unlocks the model
+    // dropdown and the Continue button below.
+    fun verifyCustom() {
+        discoverModels(openWhenReady = false) { ok ->
+            customVerified = ok
+            if (ok) {
+                statusOk = true
+                status = "Verified. Select a model from the dropdown below."
+                statusDetails = null
+                customDropdownExpanded = true
             }
         }
     }
@@ -3423,7 +3451,7 @@ private fun ProviderCredentialsStep(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     OutlinedTextField(
                         baseUrl,
-                        { onBaseUrl(it); status = null; statusDetails = null; models = emptyList() },
+                        { onBaseUrl(it); status = null; statusDetails = null; models = emptyList(); customVerified = false },
                         label = { Text("Base URL") },
                         supportingText = {
                             if (provider.fixedBaseUrl) Text("Fixed by ${provider.title}")
@@ -3433,12 +3461,17 @@ private fun ProviderCredentialsStep(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (agentKind == AgentKind.DEEPSEEK_HARNESS && provider in DSH_PROTOCOL_PROVIDERS && !provider.fixedProtocol) {
-                        DshApiProtocolPicker(selected = dshApi, onSelected = { onDshApi(it); status = null })
+                    // v3.5.11: the gateway protocol picker renders for
+                    // Custom API on every agent, not just DeepSeek Harness.
+                    // A Claude Code Custom profile pointed at an
+                    // OpenAI-compatible endpoint previously had no picker
+                    // at all, so it always validated as anthropic-messages.
+                    if ((provider == ProviderKind.CUSTOM || (agentKind == AgentKind.DEEPSEEK_HARNESS && provider in DSH_PROTOCOL_PROVIDERS)) && !provider.fixedProtocol) {
+                        DshApiProtocolPicker(selected = dshApi, onSelected = { onDshApi(it); status = null; customVerified = false })
                     }
                     OutlinedTextField(
                         apiKey,
-                        { onApiKey(it); status = null; statusDetails = null },
+                        { onApiKey(it); status = null; statusDetails = null; customVerified = false },
                         label = { Text("API key") },
                         placeholder = { Text(if (hasStoredSecret) "Saved securely — leave blank to keep it" else "Enter your API key") },
                         supportingText = {
@@ -3459,6 +3492,22 @@ private fun ProviderCredentialsStep(
                     )
                 }
             }
+            // v3.5.11: Verify comes first for Custom API. It checks the
+            // base URL and the selected gateway protocol against the
+            // provider's models endpoint before any model step.
+            if (provider == ProviderKind.CUSTOM) {
+                Button(
+                    onClick = { verifyCustom() },
+                    enabled = baseUrl.isNotBlank() && hasKey && !isDiscovering && !isValidating,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    if (isDiscovering) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (isDiscovering) "Verifying" else "Verify")
+                }
+            }
             OutlinedButton(
                 onClick = {
                     if (models.isEmpty()) discoverModels() else showModels = true
@@ -3473,6 +3522,42 @@ private fun ProviderCredentialsStep(
                 Icon(if (models.isEmpty()) Icons.Default.Search else Icons.Default.KeyboardArrowDown, null, Modifier.size(19.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (models.isEmpty()) "Find available models" else "Available models (${models.size})")
+            }
+            // v3.5.11: after a successful Verify, the Custom API models
+            // appear as a dropdown on this screen. The selected model is
+            // the one the Continue button validates and saves.
+            if (provider == ProviderKind.CUSTOM && customVerified && models.isNotEmpty()) {
+                Box(Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Select model") },
+                        supportingText = { Text("Verified models for this custom API. Pick one from the list.") },
+                        trailingIcon = { Icon(Icons.Default.KeyboardArrowDown, null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Box(
+                        Modifier.matchParentSize().clickable { customDropdownExpanded = true },
+                    )
+                    DropdownMenu(
+                        expanded = customDropdownExpanded,
+                        onDismissRequest = { customDropdownExpanded = false },
+                    ) {
+                        models.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.displayName) },
+                                onClick = {
+                                    onModel(option.id)
+                                    customDropdownExpanded = false
+                                    status = null
+                                    statusDetails = null
+                                },
+                            )
+                        }
+                    }
+                }
             }
         if (status != null) {
             Text(
@@ -3524,7 +3609,10 @@ private fun ProviderCredentialsStep(
                             }
                         }
                     },
-                    enabled = baseUrl.isNotBlank() && model.isNotBlank() && hasKey && !isDiscovering && !isValidating,
+                    // v3.5.11: Custom API continues only after a
+                    // successful Verify in this session, so the model
+                    // being validated is one picked from the verified list.
+                    enabled = baseUrl.isNotBlank() && model.isNotBlank() && hasKey && !isDiscovering && !isValidating && (provider != ProviderKind.CUSTOM || customVerified),
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                 ) {
                     if (isValidating) {

@@ -1171,7 +1171,9 @@ fun AgentScreen(
                         },
                         onBaseUrl = {
                             baseUrl = it
-                            if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind == ProviderKind.CUSTOM) {
+                            // v3.5.11: infer the gateway protocol from the
+                            // URL for Custom API on every agent.
+                            if (selectedKind == ProviderKind.CUSTOM) {
                                 dshApi = inferredDshApiForUrl(it)
                             }
                             models = emptyList()
@@ -2180,7 +2182,9 @@ private fun AgentProviderCard(
                                 )
                             }
                         }
-                        if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS && !selectedKind.fixedProtocol) {
+                        // v3.5.11: same picker fix as setup. Custom API
+                        // shows the gateway protocol picker on every agent.
+                        if ((selectedKind == ProviderKind.CUSTOM || (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS)) && !selectedKind.fixedProtocol) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text("Gateway protocol", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(5.dp))

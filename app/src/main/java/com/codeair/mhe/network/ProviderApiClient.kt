@@ -99,11 +99,7 @@ class ProviderApiClient {
                 providerErrorMessage(response.body),
                 "Rejected",
             )
-            response.code == 404 -> ConnectionValidation.Failure(
-                "Check the Base URL and selected gateway protocol.",
-                providerErrorMessage(response.body),
-                "Endpoint error",
-            )
+            response.code == 404 -> classifyNotFound(model, discoveredModels, response.body)
             response.code == 400 && response.body.contains("model", ignoreCase = true) ->
                 ConnectionValidation.Failure(
                     "Refresh the model list or select a different model.",
@@ -225,6 +221,39 @@ class ProviderApiClient {
                 }
             }
             .toString()
+    }
+
+    /**
+     * Splits the old single 404 message into two specific ones (v3.5.11).
+     * A model already seen in discovery cannot be the missing piece, so a
+     * 404 for it means the request path is not served for the selected
+     * gateway protocol. A 404 whose provider body complains about the model,
+     * for a model never seen in discovery, means the model itself is unknown
+     * to the provider. Any other 404 (generic body, no discovery data) is
+     * treated as a path problem, because a wrong path is the failure that
+     * used to hide behind this code.
+     */
+    internal fun classifyNotFound(
+        model: String,
+        discoveredModels: List<DiscoveredModel>,
+        responseBody: String,
+    ): ConnectionValidation.Failure {
+        val providerMessage = providerErrorMessage(responseBody)
+        val modelDiscovered = discoveredModels.any { it.id == model }
+        val bodyMentionsModel = responseBody.contains("model", ignoreCase = true)
+        return if (!modelDiscovered && bodyMentionsModel) {
+            ConnectionValidation.Failure(
+                "That model was not found on this provider. Select a model from the available models list.",
+                providerMessage,
+                "Model error",
+            )
+        } else {
+            ConnectionValidation.Failure(
+                "This endpoint path is not served for the selected gateway protocol. Change the gateway protocol (OpenAI-compatible endpoints use openai-completions).",
+                providerMessage,
+                "Endpoint error",
+            )
+        }
     }
 
     /** Extracts the assistant text from a completion response per [protocol]. */
