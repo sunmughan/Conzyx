@@ -184,6 +184,33 @@ class RuntimeInstaller(private val context: Context) {
         )
     }
 
+    /**
+     * Crashlytics fix: same as [installedRuntime] but null instead of throwing
+     * when the core is not fully installed. UI paths must use this and route
+     * the user to repair (via [ensureInstalled]) instead of crashing on a
+     * partially installed core. The throwing accessor stays only for install
+     * flows that just proved installation in the same call chain.
+     */
+    fun installedRuntimeOrNull(): InstalledRuntime? =
+        if (isInstalled()) InstalledRuntime(
+            proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so"),
+            rootfs = rootfs,
+        ) else null
+
+    /**
+     * Names the actual failed check(s) behind an incomplete core, so UI
+     * messages can say what is missing instead of a generic "setup is
+     * incomplete". Mirrors the [isInstalled] conjuncts one by one.
+     */
+    fun missingCoreChecks(): List<String> = buildList {
+        if (!ensureRootfsCompatibilityLinks()) add("Runtime filesystem layout is damaged")
+        if (!File(context.applicationInfo.nativeLibraryDir, "libproot.so").canExecute()) add("PRoot launcher is unavailable")
+        if (!File(rootfs, "usr/bin/bash").exists()) add("Core runtime files are missing")
+        if (rootfsMarker.readTextOrNull() != ROOTFS_VERSION) add("Core runtime version is out of date")
+        if (!File(rootfs, "usr/local/bin/node").exists()) add("Node.js is missing from the core runtime")
+        if (!coreReadyMarker.exists()) add("Core runtime setup did not finish")
+    }
+
     fun secureCredentialRoot(): File = File(context.filesDir, "secure-credentials").apply { mkdirs() }
 
     fun githubCredentialHostDir(): File = File(secureCredentialRoot(), "github").apply { mkdirs() }

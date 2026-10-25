@@ -29,6 +29,13 @@ class RuntimeExecutionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var canStop: Boolean = true
+    // Crashlytics fix: tracks whether the FGS deadline is already satisfied.
+    // startForeground used to live only in one onStartCommand branch, behind
+    // Application.onCreate and notification construction, so a cold start or
+    // a non-START delivery could miss the ~5s ForegroundServiceDidNotStartInTime
+    // deadline. Foregrounding in onCreate (same pattern as KeepAliveService)
+    // plus the onStartCommand safety net below closes that window.
+    private var foregrounded: Boolean = false
 
     private data class SessionNotification(
         var projectName: String,
@@ -41,6 +48,23 @@ class RuntimeExecutionService : Service() {
     override fun onCreate() {
         super.onCreate()
         NotificationCoordinator.ensureChannels(this)
+        // Foreground immediately with a placeholder; the real per-session
+        // notification replaces it via refreshForegroundNotification().
+        try {
+            startForeground(
+                NotificationCoordinator.RUNNING_NOTIFICATION_ID,
+                NotificationCoordinator.running(
+                    context = this,
+                    title = "Conzyx is working",
+                    detail = "Starting…",
+                    canStop = false,
+                    sessionId = null,
+                ),
+            )
+            foregrounded = true
+        } catch (e: Exception) {
+            stopSelf()
+        }
     }
 
     private fun notificationManager(): android.app.NotificationManager =
@@ -81,6 +105,28 @@ class RuntimeExecutionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Safety net for the case where onCreate did not foreground (e.g. an
+        // exception while building the placeholder): satisfy the FGS deadline
+        // before any branch dispatch, so STOP/PROGRESS/COMPLETE deliveries to
+        // a dead service can never time out either.
+        if (!foregrounded) {
+            try {
+                startForeground(
+                    NotificationCoordinator.RUNNING_NOTIFICATION_ID,
+                    NotificationCoordinator.running(
+                        context = this,
+                        title = "Conzyx is working",
+                        detail = "Starting…",
+                        canStop = false,
+                        sessionId = null,
+                    ),
+                )
+                foregrounded = true
+            } catch (e: Exception) {
+                stopSelf()
+                return START_STICKY
+            }
+        }
         val sessionId = intent?.getStringExtra(EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() } ?: "legacy"
         val projectName = intent?.getStringExtra(EXTRA_PROJECT_NAME)?.takeIf { it.isNotBlank() }
         val agentName = intent?.getStringExtra(EXTRA_AGENT_NAME)?.takeIf { it.isNotBlank() }

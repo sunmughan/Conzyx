@@ -5658,7 +5658,10 @@ private fun WorkspaceCommandPalette(
                 )
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
+                    // Crashlytics hardening: same as CommandPalette, cap the
+                    // list itself so it can never see infinite constraints,
+                    // independent of the sheet Column's heightIn cap.
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {

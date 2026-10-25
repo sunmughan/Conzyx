@@ -208,7 +208,13 @@ fun CommandPalette(
             Spacer(Modifier.height(10.dp))
 
             LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
+                // Crashlytics hardening: this list used to rely only on the
+                // sheet Column's heightIn cap for a finite height. Capping the
+                // list itself means it can never be measured with infinite
+                // constraints (the CheckScrollableContainerConstraints crash
+                // family), even if the sheet ever measures it unbounded.
+                // heightIn only caps; short lists render exactly as before.
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {

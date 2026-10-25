@@ -209,7 +209,15 @@ tasks.register("playReadinessCheck") {
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.02.00"))
-    implementation("androidx.core:core-ktx:1.15.0")
+    // Crashlytics mitigation for the Api34Impl.getActionScrollInDirection
+    // NoSuchFieldError (1 event, 3.4.5): no app code calls that API-34-only
+    // accessibility field; the crash comes from the androidx.core shim the
+    // Compose runtime triggers under an accessibility service. Bumping core
+    // to the newest stable release moves that shim forward. This is a
+    // mitigation, NOT a proven fix: the single event has no full stack in
+    // the report, so the fix is confirmed only by TalkBack repro plus
+    // Crashlytics monitoring after release, not by this version number.
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")

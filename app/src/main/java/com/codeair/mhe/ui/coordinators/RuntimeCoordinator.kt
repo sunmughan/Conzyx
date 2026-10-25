@@ -152,8 +152,10 @@ class RuntimeCoordinator(
 
     fun cancelRuntimeSetup() {
         if (host.state().startupStage != StartupStage.INSTALLING) return
-        ContextCompat.startForegroundService(
-            host.appContext,
+        // Crashlytics fix: a cancel never needs to create a foreground
+        // service, so use a plain start. The old foreground start to a dead
+        // service was the one deterministic never-foregrounds FGS delivery.
+        host.appContext.startService(
             Intent(host.appContext, RuntimeSetupService::class.java).setAction(RuntimeSetupService.ACTION_STOP),
         )
     }

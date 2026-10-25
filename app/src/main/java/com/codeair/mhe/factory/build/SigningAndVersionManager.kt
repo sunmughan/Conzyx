@@ -73,6 +73,8 @@ object SigningAndVersionManager {
             // Persisted so injectSigningConfig() and Gradle can reference it.
             // storeFile stays project-relative so the path resolves both on
             // the host and inside the runtime guest.
+            // Same latent ENOENT pattern as bumpVersion: ensure the folder.
+            projectDir.mkdirs()
             File(projectDir, "keystore.properties").writeText(
                 "storeFile=${keystoreFile.name}\n" +
                     "storePassword=$storePassword\n" +
@@ -137,6 +139,10 @@ object SigningAndVersionManager {
         }
         props.setProperty("versionCode", newCode.toString())
         props.setProperty("versionName", newName)
+        // Crashlytics ENOENT fix: FileOutputStream creates the file but never
+        // its parent directories, so bumping a version for a project whose
+        // folder was deleted or never created crashed. Create parents first.
+        propsFile.parentFile?.mkdirs()
         propsFile.outputStream().use { props.store(it, "Managed by Conzyx App Factory") }
         return newCode to newName
     }

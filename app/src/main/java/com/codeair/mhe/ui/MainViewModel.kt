@@ -504,7 +504,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val agentChatController = com.codeair.mhe.agent.AgentChatController()
     val gitDomainController = com.codeair.mhe.workspace.GitDomainController { args, workingDir, guestPath ->
         if (!installer.isInstalled()) return@GitDomainController 1 to "Linux runtime is not ready."
-        val installed = installer.installedRuntime()
+        // Crashlytics fix: close the check-then-use gap; the throwing call
+        // sat outside the try below, so a core that vanished mid-call crashed.
+        val installed = installer.installedRuntimeOrNull()
+            ?: return@GitDomainController 1 to "Linux runtime is not ready."
         val outputFile = File(getApplication<Application>().cacheDir, "git-op-${System.nanoTime()}.log")
         try {
             val process = installer.process(
@@ -5784,7 +5787,14 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 error = "No Android Gradle project found under ${workingDir.path}; cannot validate build/test.",
                 startedAt = startedAt,
             )
-        val installed = installer.installedRuntime()
+        // Crashlytics fix: the isInstalled() pre-check above leaves a
+        // check-then-use gap, and installedRuntime() threw outside the try
+        // below. Return a graceful not-configured result instead of crashing.
+        val installed = installer.installedRuntimeOrNull()
+            ?: return@withContext OperationResult.notConfigured(
+                "Linux runtime is not installed; cannot run Gradle build/test. " +
+                    "Missing: ${installer.missingCoreChecks().firstOrNull() ?: "setup incomplete"}"
+            )
         val outputFile = File(
             getApplication<Application>().cacheDir,
             "workflow-build-${System.nanoTime()}.log"
