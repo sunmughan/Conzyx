@@ -308,6 +308,9 @@ class McpToolRegistryTest {
     @Test
     fun `first custom server spawn is audited with warning`() {
         registry.installServer(testStdioServer("custom1").copy(isBuiltIn = false))
+        // First use approved: discovery must still audit the spawn warning,
+        // but an unapproved server must never reach spawn (see prompt test).
+        permissionManager.setGlobalServerPolicy("custom1", McpPermissionPolicy.ALLOW_ALWAYS)
         toolRegistry().discover("custom1")
         val spawns = auditLogger.getEntriesForServer("custom1")
             .filter { it.toolName == "FIRST_CUSTOM_SERVER_SPAWN" }
@@ -321,6 +324,7 @@ class McpToolRegistryTest {
     @Test
     fun `custom server spawn warns only once`() {
         registry.installServer(testStdioServer("custom2").copy(isBuiltIn = false))
+        permissionManager.setGlobalServerPolicy("custom2", McpPermissionPolicy.ALLOW_ALWAYS)
         toolRegistry().discover("custom2")
         toolRegistry().discover("custom2", forceRefresh = true)
         val warnings = auditLogger.getEntriesForServer("custom2")
@@ -329,6 +333,18 @@ class McpToolRegistryTest {
         val respawns = auditLogger.getEntriesForServer("custom2")
             .filter { it.toolName == "SERVER_SPAWN" }
         assertEquals(1, respawns.size)
+    }
+
+    @Test
+    fun `unapproved custom server discovery prompts before spawn`() {
+        registry.installServer(testStdioServer("custom3").copy(isBuiltIn = false))
+        try {
+            toolRegistry().discover("custom3")
+            fail("expected McpPromptRequiredException")
+        } catch (e: McpPromptRequiredException) {
+            // Expected: discovery must not spawn before first-use approval.
+        }
+        assertFalse(registry.hasSpawnedBefore("custom3"))
     }
 
     @Test

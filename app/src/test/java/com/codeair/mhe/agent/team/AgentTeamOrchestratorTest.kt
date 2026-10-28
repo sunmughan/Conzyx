@@ -101,6 +101,14 @@ class AgentTeamOrchestratorTest {
         )
         realModeOrchestrator.planProject("Build complete mobile app")
 
+        // The dispatcher review gate requires a real CODE_REVIEWER approval
+        // (plus SECURITY_REVIEWER approval for security-sensitive files)
+        // recorded against each code task id before it may complete.
+        realModeOrchestrator.scheduler.getTasks().forEach { task ->
+            realModeOrchestrator.submitReview(task.id, TeamRole.CODE_REVIEWER, ReviewVerdict.APPROVED, "approved")
+            realModeOrchestrator.submitReview(task.id, TeamRole.SECURITY_REVIEWER, ReviewVerdict.APPROVED, "approved")
+        }
+
         val report = realModeOrchestrator.autoRunAllReal()
         assertEquals(10, report.succeeded)
 

@@ -113,6 +113,13 @@ class OrchestratorRealModeTest {
             maxConcurrentAgents = 3,
         )
         orchestrator.planProject("Build a notes app")
+        // Review gate: record real approvals against each planned task id
+        // before the run, or code tasks park UNDER_REVIEW instead of
+        // completing.
+        orchestrator.scheduler.getTasks().forEach { task ->
+            orchestrator.submitReview(task.id, TeamRole.CODE_REVIEWER, ReviewVerdict.APPROVED, "approved")
+            orchestrator.submitReview(task.id, TeamRole.SECURITY_REVIEWER, ReviewVerdict.APPROVED, "approved")
+        }
         val report = orchestrator.autoRunAllReal()
         assertEquals(10, report.succeeded)
         assertEquals(0, report.failed)
