@@ -292,6 +292,7 @@ class AntigravityRuntimeBridge(
         provider: ProviderProfile,
         clientSessionId: String?,
         chatId: String?,
+        rolePermissions: com.codeair.mhe.agent.team.model.TeamRolePermissions?,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         // Conversation key for Chat grants: the same chat across task runs
@@ -306,7 +307,7 @@ class AntigravityRuntimeBridge(
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         val apiConfig = geminiApiConfig()
         if (apiConfig != null) {
-            return@withContext startGeminiApiSession(sessionId, projectId, projectSlug, prompt, conversationHistory, apiConfig, chatKey)
+            return@withContext startGeminiApiSession(sessionId, projectId, projectSlug, prompt, conversationHistory, apiConfig, chatKey, rolePermissions)
         }
         if (!installer.isAgentInstalled(com.codeair.mhe.model.AgentKind.ANTIGRAVITY)) {
             emitFailure(sessionId, "Antigravity CLI is not installed. Open Settings → Coding agent to install it.")
@@ -508,6 +509,7 @@ class AntigravityRuntimeBridge(
         conversationHistory: List<ChatMessage>,
         config: GeminiApiConfig,
         chatKey: String? = null,
+        rolePermissions: com.codeair.mhe.agent.team.model.TeamRolePermissions? = null,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
         activeSessionIds.add(sessionId)
         stoppedSessions.remove(sessionId)
@@ -578,7 +580,7 @@ class AntigravityRuntimeBridge(
                 },
             )
             toolExecutors[sessionId] = executor
-            val loop = GeminiAgentLoop(executor)
+            val loop = GeminiAgentLoop(executor, rolePermissions = rolePermissions)
             var assistantTextSeen = false
             loop.run(
                 generateTurn = { body, onDelta ->

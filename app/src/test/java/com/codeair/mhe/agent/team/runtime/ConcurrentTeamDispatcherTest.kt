@@ -9,6 +9,7 @@ import com.codeair.mhe.agent.team.model.TeamRole
 import com.codeair.mhe.agent.team.model.TeamTask
 import com.codeair.mhe.agent.team.model.TeamTaskPriority
 import com.codeair.mhe.agent.team.model.TeamTaskStatus
+import com.codeair.mhe.agent.team.model.ReviewVerdict
 import com.codeair.mhe.agent.team.review.TeamReviewGatekeeper
 import com.codeair.mhe.agent.team.scheduler.TeamTaskScheduler
 import com.codeair.mhe.core.result.OperationResult
@@ -48,6 +49,17 @@ class ConcurrentTeamDispatcherTest {
             dependencies = deps,
             affectedFiles = files,
         )
+
+    /**
+     * Records a real CODE_REVIEWER approval for every scheduled task, so
+     * the review gate lets code-role tasks complete. Without this, a
+     * finished code task parks in UNDER_REVIEW by design.
+     */
+    private fun approveAllCodeTasks() {
+        scheduler.getTasks().forEach { task ->
+            gatekeeper.submitReview(task.id, TeamRole.CODE_REVIEWER, ReviewVerdict.APPROVED, "approved")
+        }
+    }
 
     private fun successExecutor(
         onExecute: (TeamTask) -> Unit = {},
@@ -93,6 +105,7 @@ class ConcurrentTeamDispatcherTest {
             active.decrementAndGet()
         }
         scheduler.setTasks(listOf(devTask("A"), devTask("B")))
+        approveAllCodeTasks()
         val report = dispatcher(executor, maxConcurrent = 2).runAll()
         assertEquals(2, report.succeeded)
         assertEquals(2, maxObserved.get())
@@ -112,6 +125,7 @@ class ConcurrentTeamDispatcherTest {
                 devTask("B", files = listOf("shared/file.kt")),
             )
         )
+        approveAllCodeTasks()
         val report = dispatcher(executor, maxConcurrent = 2).runAll()
         assertEquals(2, report.succeeded)
         // The two tasks must not overlap: one's end precedes the other's start.
@@ -132,6 +146,7 @@ class ConcurrentTeamDispatcherTest {
         val firstWithId = first.copy(id = "id-first")
         val second = devTask("Second", deps = listOf("id-first"))
         scheduler.setTasks(listOf(firstWithId, second))
+        approveAllCodeTasks()
         val report = dispatcher(executor).runAll()
         assertEquals(2, report.succeeded)
         assertEquals(listOf("First", "Second"), order)
@@ -175,6 +190,7 @@ class ConcurrentTeamDispatcherTest {
     @Test
     fun testGenuineArtifactsPublishedToBlackboard() = runBlocking {
         scheduler.setTasks(listOf(devTask("A")))
+        approveAllCodeTasks()
         val report = dispatcher(successExecutor()).runAll()
         assertEquals(1, report.succeeded)
         val artifacts = blackboard.getAllArtifacts()
@@ -228,7 +244,29 @@ class ConcurrentTeamDispatcherTest {
             TeamExecutionResult(result = OperationResult.success(), outputText = "ok")
         }
         scheduler.setTasks(listOf(devTask("A"), devTask("B")))
+        approveAllCodeTasks()
         val report = dispatcher(executor, maxConcurrent = 2).runAll()
         assertEquals(2, report.succeeded)
+    }
+
+    @Test
+    fun testCodeTaskParksUnderReviewWithoutApproval() = runBlocking {
+        scheduler.setTasks(listOf(devTask("A")))
+        val report = dispatcher(successExecutor()).runAll()
+        assertEquals(0, report.succeeded)
+        assertEquals(TeamTaskStatus.UNDER_REVIEW, scheduler.getTasks().single().status)
+        assertEquals(
+            TeamTaskStatus.UNDER_REVIEW,
+            report.outcomes.single().status,
+        )
+    }
+
+    @Test
+    fun testCodeTaskCompletesWithRealReviewerApproval() = runBlocking {
+        scheduler.setTasks(listOf(devTask("A")))
+        approveAllCodeTasks()
+        val report = dispatcher(successExecutor()).runAll()
+        assertEquals(1, report.succeeded)
+        assertEquals(TeamTaskStatus.COMPLETED, scheduler.getTasks().single().status)
     }
 }

@@ -229,7 +229,7 @@ class ChatGrantTest {
         val gateway = SafetyGateway(engine)
         val operation = SafetyOperation.NetworkRequest("https://example.com")
         val chatKey = chatGrantKey("beauty-salon", "chat-1")!!
-        gateway.recordGrant(operation, PermissionLevel.CHAT, chatId = chatKey)
+        gateway.recordGrant(operation, PermissionLevel.CHAT, chatId = chatKey, targetPattern = "https://example.com")
         val allowed = gateway.authorize(operation, sessionId = "fresh-run", chatId = chatKey)
         assertEquals(SafetyVerdict.ALLOW, allowed.verdict)
         assertEquals(PermissionLevel.CHAT, allowed.level)

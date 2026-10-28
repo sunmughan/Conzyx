@@ -1052,6 +1052,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             refreshProjectFiles = { refreshProjectFiles() },
             buildSessionFactory =
                 com.codeair.mhe.factory.build.RuntimeGuestBuildSessionFactory(installer),
+            safetyGateway = safetyGateway,
         )
     private val gitCoordinator =
         com.codeair.mhe.ui.coordinators.GitCoordinator(
@@ -1096,6 +1097,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             openProject = { project -> openProject(project) },
             selectAgent = { kind -> selectAgent(kind) },
             refreshActiveApiKey = { kind -> refreshActiveApiKey(kind) },
+            safetyGateway = safetyGateway,
         )
 
     val marketplaceInstalledIds: StateFlow<Set<String>> = marketplaceCoordinator.installedIds
@@ -1239,7 +1241,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .filter { it.isFile && it.extension.equals("apk", ignoreCase = true) && it.path.contains("/outputs/apk/debug/") }
                     .maxByOrNull(File::lastModified)
                     ?: error("Gradle finished but no debug APK was found")
-                AndroidAppInstaller.install(getApplication(), apk)
+                AndroidAppInstaller.install(getApplication(), apk, safetyGateway)
             }.onSuccess {
                 withContext(Dispatchers.Main) {
                     _state.update {

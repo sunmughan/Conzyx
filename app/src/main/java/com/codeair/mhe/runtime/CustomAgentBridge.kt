@@ -51,6 +51,7 @@ class CustomAgentBridge(
         provider: ProviderProfile,
         clientSessionId: String?,
         chatId: String?,
+        rolePermissions: com.codeair.mhe.agent.team.model.TeamRolePermissions? = null,
     ): String = withContext(Dispatchers.IO) {
         val sessionId = clientSessionId ?: UUID.randomUUID().toString()
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))

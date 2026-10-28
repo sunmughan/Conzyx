@@ -63,6 +63,24 @@ class TeamBudgetTrackerTest {
     }
 
     @Test
+    fun testUnknownTokenRunsCountedNotInventedAsZero() {
+        tracker.recordUsage(TeamRole.DEVELOPER, tokens = null, durationMs = 1000L)
+        val budget = tracker.getBudgetSummary()
+        assertEquals(0L, budget.totalTokensUsed)
+        assertEquals(1, budget.unknownTokenRuns)
+        assertFalse(budget.isQuotaExceeded)
+    }
+
+    @Test
+    fun testTimeLimitTripsQuotaEvenWithUnknownTokens() {
+        tracker.recordUsage(TeamRole.DEVELOPER, tokens = null, durationMs = 60_000L)
+        val budget = tracker.getBudgetSummary()
+        assertTrue(tracker.isQuotaExceeded())
+        assertTrue(budget.isQuotaExceeded)
+        assertEquals(60_000L, budget.elapsedTimeMs)
+    }
+
+    @Test
     fun testReset() {
         tracker.recordUsage(TeamRole.DEVELOPER, tokens = 5000L)
         assertEquals(5000L, tracker.getBudgetSummary().totalTokensUsed)

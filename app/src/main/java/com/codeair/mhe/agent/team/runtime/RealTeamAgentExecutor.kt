@@ -427,6 +427,10 @@ class RealTeamAgentExecutor(
                 prompt = prompt,
                 conversationHistory = emptyList(),
                 provider = provider,
+                // Enforced by the in-app Gemini tool loop; CLI bridges
+                // run tools inside the CLI process and cannot intercept
+                // individual calls, so for them this stays advisory.
+                rolePermissions = context.roleConfig.permissions,
             )
         }
         val sessionId: String?

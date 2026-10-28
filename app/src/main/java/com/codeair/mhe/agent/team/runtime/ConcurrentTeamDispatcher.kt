@@ -135,7 +135,7 @@ class ConcurrentTeamDispatcher(
                 if (budgetTracker.isQuotaExceeded()) {
                     commBus.escalateToManager(
                         fromRole = TeamRole.MANAGER,
-                        reason = "Token quota exceeded; halting dispatch before stage of ${stage.size} tasks.",
+                        reason = "Budget quota exceeded (tokens or elapsed time); halting dispatch before stage of ${stage.size} tasks.",
                     )
                     break
                 }
@@ -263,7 +263,7 @@ class ConcurrentTeamDispatcher(
                 executionTimeMs = durationMs,
                 isSimulated = false,
             )
-            budgetTracker.recordUsage(task.assignedRole, execResult.tokensUsed ?: 0L, durationMs)
+            budgetTracker.recordUsage(task.assignedRole, execResult.tokensUsed, durationMs)
             commBus.escalateToManager(
                 task.assignedRole,
                 "'${task.title}' failed: ${execResult.result.error ?: execResult.result.status}.",
@@ -323,7 +323,23 @@ class ConcurrentTeamDispatcher(
             else -> true
         }
 
-        val finalStatus = if (taskSucceeded) TeamTaskStatus.COMPLETED else TeamTaskStatus.FAILED
+        // Review gate: a code-role task must not be marked COMPLETED
+        // without a real (non-simulated) CODE_REVIEWER approval recorded
+        // for this task, plus SECURITY_REVIEWER approval for
+        // security-sensitive files. Reviewer and manager roles are exempt
+        // by the gate itself. Without approval the task parks in
+        // UNDER_REVIEW instead of completing unreviewed.
+        val reviewGatePassed = when (task.assignedRole) {
+            TeamRole.TESTER, TeamRole.SECURITY_REVIEWER, TeamRole.MANAGER,
+            TeamRole.CODE_REVIEWER -> true
+            else -> gatekeeper.canCompleteTask(task)
+        }
+
+        val finalStatus = when {
+            !taskSucceeded -> TeamTaskStatus.FAILED
+            !reviewGatePassed -> TeamTaskStatus.UNDER_REVIEW
+            else -> TeamTaskStatus.COMPLETED
+        }
         scheduler.updateTaskStatus(
             taskId = task.id,
             status = finalStatus,
@@ -332,8 +348,18 @@ class ConcurrentTeamDispatcher(
             executionTimeMs = durationMs,
             isSimulated = false,
         )
-        budgetTracker.recordUsage(task.assignedRole, execResult.tokensUsed ?: 0L, durationMs)
+        budgetTracker.recordUsage(task.assignedRole, execResult.tokensUsed, durationMs)
         budgetTracker.recordTaskCompleted(task.assignedRole)
+
+        if (!reviewGatePassed) {
+            commBus.sendMessage(
+                fromRole = task.assignedRole,
+                toRole = TeamRole.CODE_REVIEWER,
+                type = TeamMessageType.REVIEW_REQUEST,
+                content = "'${task.title}' finished but is held UNDER_REVIEW: no real CODE_REVIEWER approval is recorded for this task.",
+                taskId = task.id,
+            )
+        }
 
         commBus.sendMessage(
             fromRole = task.assignedRole,

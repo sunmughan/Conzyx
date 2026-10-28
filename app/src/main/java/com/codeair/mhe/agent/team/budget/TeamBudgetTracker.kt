@@ -20,6 +20,10 @@ class TeamBudgetTracker(
     private val maxExecutionTimeMs = AtomicLong(initialMaxExecutionTimeMs)
     private val totalTokensUsed = AtomicLong(0L)
     private val totalDurationMs = AtomicLong(0L)
+    /** Runs whose token usage was unknown (executors report null): their
+     * cost cannot be counted, so the elapsed-time limit is the binding
+     * constraint for them, and the count is surfaced in the summary. */
+    private val unknownTokenRuns = AtomicLong(0L)
 
     private val roleTokens = ConcurrentHashMap<TeamRole, AtomicLong>()
     private val roleTasks = ConcurrentHashMap<TeamRole, AtomicLong>()
@@ -43,10 +47,18 @@ class TeamBudgetTracker(
         costPer1kTokens = cost
     }
 
-    fun recordUsage(role: TeamRole, tokens: Long, durationMs: Long = 0L) {
-        if (tokens > 0) {
+    /**
+     * Records one run. [tokens] is null when the executor genuinely does
+     * not report token usage: the run is counted as unmeasurable (never
+     * invented as 0 cost) while its duration still accrues toward the
+     * time limit, so an unmeasured run cannot run unbounded.
+     */
+    fun recordUsage(role: TeamRole, tokens: Long?, durationMs: Long = 0L) {
+        if (tokens != null && tokens > 0) {
             totalTokensUsed.addAndGet(tokens)
             roleTokens[role]?.addAndGet(tokens)
+        } else if (tokens == null) {
+            unknownTokenRuns.incrementAndGet()
         }
         if (durationMs > 0) {
             totalDurationMs.addAndGet(durationMs)
@@ -57,8 +69,15 @@ class TeamBudgetTracker(
         roleTasks[role]?.incrementAndGet()
     }
 
+    /**
+     * Trips on either limit: tokens consumed, or elapsed execution time.
+     * Previously only tokens were compared, and real executors report null
+     * tokens, so the quota could never trip; the time limit stored here
+     * was never evaluated at all.
+     */
     fun isQuotaExceeded(): Boolean {
-        return totalTokensUsed.get() >= tokenQuota.get()
+        return totalTokensUsed.get() >= tokenQuota.get() ||
+            totalDurationMs.get() >= maxExecutionTimeMs.get()
     }
 
     fun getBudgetSummary(): TeamBudget {
@@ -73,7 +92,8 @@ class TeamBudgetTracker(
             elapsedTimeMs = totalDurationMs.get(),
             costPer1kTokens = costPer1kTokens,
             totalCostUsd = (cost * 1000).toLong() / 1000.0, // rounded to 3 decimals
-            isQuotaExceeded = usedTokens >= quota
+            isQuotaExceeded = isQuotaExceeded(),
+            unknownTokenRuns = unknownTokenRuns.get().toInt()
         )
     }
 
@@ -97,6 +117,7 @@ class TeamBudgetTracker(
     fun reset() {
         totalTokensUsed.set(0L)
         totalDurationMs.set(0L)
+        unknownTokenRuns.set(0L)
         TeamRole.entries.forEach { role ->
             roleTokens[role]?.set(0L)
             roleTasks[role]?.set(0L)

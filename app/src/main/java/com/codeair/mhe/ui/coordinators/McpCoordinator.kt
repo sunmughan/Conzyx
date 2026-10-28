@@ -74,6 +74,9 @@ class McpCoordinator(
 
     fun toggleMcpServer(serverId: String, enabled: Boolean) {
         mcpRegistry.toggleServer(serverId, enabled)
+        // Disabling must stop a running session, not just block new calls:
+        // otherwise the old process keeps running with its old config.
+        if (!enabled) toolRegistry.stopServer(serverId)
         refreshMcpServers()
     }
 
@@ -85,6 +88,9 @@ class McpCoordinator(
 
     fun updateMcpConfig(server: McpServerInfo) {
         mcpRegistry.updateServer(server)
+        // The old session was built from the pre-update configuration and
+        // would otherwise keep running (and re-spawn) the old command.
+        toolRegistry.stopServer(server.id)
         refreshMcpServers()
     }
 
@@ -106,7 +112,12 @@ class McpCoordinator(
                 }
                 host.updateState { it.copy(mcpBusy = false, mcpTools = tools, mcpMessage = "Found ${tools.size} tools") }
             }.onFailure { err ->
-                host.updateState { it.copy(mcpBusy = false, mcpMessage = "Tool discovery failed: ${err.message}") }
+                val message = if (err is McpPromptRequiredException) {
+                    "Tool discovery needs your first-use confirmation for ${server.name}: allow it in MCP settings, then discover again."
+                } else {
+                    "Tool discovery failed: ${err.message}"
+                }
+                host.updateState { it.copy(mcpBusy = false, mcpMessage = message) }
             }
         }
     }

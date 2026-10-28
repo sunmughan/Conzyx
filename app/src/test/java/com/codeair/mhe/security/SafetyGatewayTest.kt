@@ -215,7 +215,8 @@ class SafetyGatewayTest {
         gateway.recordGrant(
             SafetyOperation.GitOp(GitOpKind.PUSH, "project"),
             PermissionLevel.PROJECT,
-            projectId = "proj-1"
+            projectId = "proj-1",
+            targetPattern = "project"
         )
         // Recreate engine + gateway from the same policy dir: grant must survive.
         val engine2 = PermissionPolicyEngine(policyDir = policyDir)
@@ -244,11 +245,12 @@ class SafetyGatewayTest {
         gateway.recordGrant(
             SafetyOperation.NetworkRequest("https://example.com"),
             PermissionLevel.SESSION,
-            sessionId = "sess-1"
+            sessionId = "sess-1",
+            targetPattern = "https://example.com"
         )
         // Same engine, same session: session grant allows a prompt-category op.
         val deleteOp = SafetyOperation.FileOp(FileOpKind.DELETE, "src/Main.kt")
-        gateway.recordGrant(deleteOp, PermissionLevel.SESSION, sessionId = "sess-1")
+        gateway.recordGrant(deleteOp, PermissionLevel.SESSION, sessionId = "sess-1", targetPattern = "src/Main.kt")
         val sessionDecision = gateway.authorize(deleteOp, sessionId = "sess-1")
         assertEquals(SafetyVerdict.ALLOW, sessionDecision.verdict)
 

@@ -447,7 +447,7 @@ class AgentTeamOrchestrator(
         if (budgetTracker.isQuotaExceeded()) {
             commBus.escalateToManager(
                 fromRole = TeamRole.MANAGER,
-                reason = "Token quota exceeded (${budgetTracker.getBudgetSummary().totalTokensUsed} tokens). Halting team execution."
+                reason = "Budget quota exceeded (${budgetTracker.getBudgetSummary().totalTokensUsed} tokens, ${budgetTracker.getBudgetSummary().elapsedTimeMs}ms elapsed). Halting team execution."
             )
             _sessionState.value = _sessionState.value.copy(isRunning = false)
             return null

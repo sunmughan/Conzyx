@@ -253,7 +253,9 @@ data class TeamBudget(
     val elapsedTimeMs: Long = 0L,
     val costPer1kTokens: Double = 0.003,
     val totalCostUsd: Double = 0.0,
-    val isQuotaExceeded: Boolean = false
+    val isQuotaExceeded: Boolean = false,
+    /** Runs whose token usage was unknown (executor reported null). */
+    val unknownTokenRuns: Int = 0
 )
 
 /**

@@ -60,6 +60,7 @@ class RuntimeCoordinator(
     private val openProject: (Project) -> Unit,
     private val selectAgent: (AgentKind) -> Unit,
     private val refreshActiveApiKey: (ProviderKind) -> Unit,
+    private val safetyGateway: com.codeair.mhe.security.SafetyGateway? = null,
 ) {
     @Volatile private var setupCompletionHandled: Boolean = false
     private var appUpdateDownloadJob: Job? = null
@@ -450,7 +451,7 @@ class RuntimeCoordinator(
             if (!isActive) return@launch
             result.onSuccess { apk ->
                 host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.INSTALLING) }
-                runCatching { AndroidAppInstaller.install(host.appContext, apk) }.onFailure { error ->
+                runCatching { AndroidAppInstaller.install(host.appContext, apk, safetyGateway) }.onFailure { error ->
                     host.updateState { it.copy(appUpdateStatus = AppUpdateStatus.ERROR, appUpdateError = error.message ?: "Could not start the Android installer") }
                 }
             }.onFailure { error ->

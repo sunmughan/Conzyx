@@ -10,14 +10,33 @@ import android.os.Build
 import android.os.Process
 import androidx.core.content.FileProvider
 import com.codeair.mhe.files.SharedExport
+import com.codeair.mhe.security.ApkSafetyAdapter
+import com.codeair.mhe.security.SafetyGateway
 import java.io.File
 
 /** Installs a locally-built APK through Android's package manager, without ADB. */
 object AndroidAppInstaller {
-    fun install(context: Context, apk: File) {
+    /**
+     * When [gateway] is supplied, the install passes the SafetyGateway
+     * INSTALL_APK decision first: a DENY or an unapproved PROMPT aborts
+     * before the platform installer is launched (the platform confirmation
+     * still stands as a second layer). Callers without a gateway keep the
+     * previous behavior; all in-app callers pass the shared gateway.
+     */
+    fun install(context: Context, apk: File, gateway: SafetyGateway? = null) {
         require(apk.isFile && apk.extension.equals("apk", ignoreCase = true) && apk.length() > 0L) {
             "A valid APK was not produced: ${apk.name}"
         }
+        if (gateway != null) {
+            ApkSafetyAdapter(gateway).install(apk.absolutePath) {
+                installUngated(context, apk)
+            }
+        } else {
+            installUngated(context, apk)
+        }
+    }
+
+    private fun installUngated(context: Context, apk: File) {
         if (isCustomOemDevice() || !canUsePackageInstallerSession(context)) {
             launchInstallerIntent(context, apk)
             return

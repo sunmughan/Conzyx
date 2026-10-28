@@ -106,6 +106,31 @@ jobs:
           if missing:
               raise SystemExit(f"Missing published runtime bundles: {', '.join(missing)}")
 
+          # Owner-controlled pin: the lockfile in this repo is the trust
+          # anchor. A digest taken from the same API response that lists
+          # the asset proves nothing about a swapped upstream release, so
+          # the selected version AND the asset digest must both match the
+          # lock. On mismatch the build fails: the owner reviews the new
+          # upstream release and updates the lockfile in a commit, and
+          # that commit is the manual approval step.
+          with open(".github/runtime-bundles.lock.json") as handle:
+              lock = json.load(handle)
+          for component, (_, version, asset) in selected.items():
+              entry = lock.get(component)
+              if entry is None:
+                  raise SystemExit(f"No lockfile entry for runtime bundle '{component}'; refusing to fetch an unpinned bundle")
+              api_digest = asset.get("digest", "").removeprefix("sha256:").lower()
+              if version != entry["version"]:
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' moved from locked {entry['version']} to {version}. "
+                      "Review the new upstream release, then update .github/runtime-bundles.lock.json in a commit."
+                  )
+              if api_digest != entry["sha256"].lower():
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' digest differs from the lockfile "
+                      f"({api_digest} != {entry['sha256']}). Refusing to trust a digest that changed with the release."
+                  )
+
           manifest = {}
           for component, (_, version, asset) in selected.items():
               name = asset["name"]
@@ -120,9 +145,11 @@ jobs:
               )
               with urllib.request.urlopen(download, timeout=300) as response, open(out, "wb") as target:
                   target.write(response.read())
-              digest = asset.get("digest", "").removeprefix("sha256:")
+              # Verify against the owner-controlled lock digest, not the
+              # digest from the same API response that listed the asset.
+              digest = lock[component]["sha256"]
               if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
-                  raise SystemExit(f"Missing SHA-256 digest for {name}")
+                  raise SystemExit(f"Missing SHA-256 digest for {name} in the lockfile")
               import hashlib
               actual = hashlib.sha256(open(out, "rb").read()).hexdigest()
               if actual.lower() != digest.lower():
@@ -293,6 +320,31 @@ jobs:
           if missing:
               raise SystemExit(f"Missing published runtime bundles: {', '.join(missing)}")
 
+          # Owner-controlled pin: the lockfile in this repo is the trust
+          # anchor. A digest taken from the same API response that lists
+          # the asset proves nothing about a swapped upstream release, so
+          # the selected version AND the asset digest must both match the
+          # lock. On mismatch the build fails: the owner reviews the new
+          # upstream release and updates the lockfile in a commit, and
+          # that commit is the manual approval step.
+          with open(".github/runtime-bundles.lock.json") as handle:
+              lock = json.load(handle)
+          for component, (_, version, asset) in selected.items():
+              entry = lock.get(component)
+              if entry is None:
+                  raise SystemExit(f"No lockfile entry for runtime bundle '{component}'; refusing to fetch an unpinned bundle")
+              api_digest = asset.get("digest", "").removeprefix("sha256:").lower()
+              if version != entry["version"]:
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' moved from locked {entry['version']} to {version}. "
+                      "Review the new upstream release, then update .github/runtime-bundles.lock.json in a commit."
+                  )
+              if api_digest != entry["sha256"].lower():
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' digest differs from the lockfile "
+                      f"({api_digest} != {entry['sha256']}). Refusing to trust a digest that changed with the release."
+                  )
+
           manifest = {}
           for component, (_, version, asset) in selected.items():
               name = asset["name"]
@@ -307,9 +359,11 @@ jobs:
               )
               with urllib.request.urlopen(download, timeout=300) as response, open(out, "wb") as target:
                   target.write(response.read())
-              digest = asset.get("digest", "").removeprefix("sha256:")
+              # Verify against the owner-controlled lock digest, not the
+              # digest from the same API response that listed the asset.
+              digest = lock[component]["sha256"]
               if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
-                  raise SystemExit(f"Missing SHA-256 digest for {name}")
+                  raise SystemExit(f"Missing SHA-256 digest for {name} in the lockfile")
               import hashlib
               actual = hashlib.sha256(open(out, "rb").read()).hexdigest()
               if actual.lower() != digest.lower():

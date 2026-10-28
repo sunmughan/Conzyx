@@ -92,12 +92,19 @@ class McpToolRegistry(
     /**
      * Discovers tools via tools/list, honoring the discovery cache TTL.
      * @throws McpDeniedException when the server is disabled or denied by policy.
+     * @throws McpPromptRequiredException when the server still needs a
+     * first-use confirmation: discovery must not spawn the server process
+     * or resolve its credential-bearing environment before that prompt,
+     * exactly as callTool already refuses to do.
      */
     fun discover(serverId: String, projectId: String? = null, forceRefresh: Boolean = false): List<McpToolDefinition> {
         val server = requireServer(serverId)
         val decision = permissionManager.evaluate(server, projectId = projectId)
         if (!decision.allowed && !decision.requiresPrompt) {
             throw McpDeniedException(decision)
+        }
+        if (!decision.allowed && decision.requiresPrompt) {
+            throw McpPromptRequiredException(decision)
         }
         synchronized(lock) {
             val cached = discoveryCache[serverId]

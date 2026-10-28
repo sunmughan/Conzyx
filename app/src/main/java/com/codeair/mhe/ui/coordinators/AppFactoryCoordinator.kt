@@ -49,6 +49,7 @@ class AppFactoryCoordinator(
     private val workspaceRootFor: (Project) -> File,
     private val refreshProjectFiles: () -> Unit,
     private val buildSessionFactory: GuestBuildSessionFactory? = null,
+    private val safetyGateway: com.codeair.mhe.security.SafetyGateway? = null,
     private val blueprintModelProvider: () -> BlueprintModel = {
         ChatProviderBlueprintModel(host.appContext)
     },
@@ -219,7 +220,7 @@ class AppFactoryCoordinator(
 
     fun installBuiltApk(apkFile: File) {
         try {
-            AppBuildOrchestrator.installApk(host.appContext, apkFile)
+            AppBuildOrchestrator.installApk(host.appContext, apkFile, safetyGateway)
             host.updateState { it.copy(appFactoryMessage = "Launched package installer for ${apkFile.name}") }
         } catch (e: Exception) {
             host.updateState { it.copy(appFactoryMessage = "Installation error: ${e.message}") }

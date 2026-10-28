@@ -1,5 +1,6 @@
 package com.codeair.mhe.runtime
 
+import com.codeair.mhe.agent.team.model.TeamRolePermissions
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -176,6 +177,12 @@ fun boundSeedHistory(history: List<Pair<String, String>>): List<Pair<String, Str
 class GeminiAgentLoop(
     private val tools: GeminiToolExecutor,
     private val maxIterations: Int = MAX_AGENT_ITERATIONS,
+    /**
+     * When set, the role permission set is enforced at this execution
+     * layer, not just in the prompt: a tool call outside the set is
+     * refused without executing. Null means unrestricted (user chats).
+     */
+    private val rolePermissions: TeamRolePermissions? = null,
 ) {
     suspend fun run(
         generateTurn: suspend (body: JSONObject, onTextDelta: suspend (String) -> Unit) -> GeminiAgentTurn,
@@ -203,7 +210,11 @@ class GeminiAgentLoop(
                 if (isCancelled()) throw CancellationException("Stopped by user")
                 val detail = redactGeminiToolText(call.args.toString().take(200))
                 onToolStarted(call.name, detail.ifBlank { call.name })
-                val output = tools.execute(call.name, call.args)
+                val output = if (!isToolAllowedForRole(call.name)) {
+                    "Error: tool '${call.name}' is not permitted for this role's permission set; it was not executed."
+                } else {
+                    tools.execute(call.name, call.args)
+                }
                 onToolCompleted(call.name, redactGeminiToolText(output.take(200)))
                 results.add(call.name to boundToolOutputForModel(output))
             }
@@ -214,5 +225,20 @@ class GeminiAgentLoop(
 
     companion object {
         const val MAX_AGENT_ITERATIONS = 25
+    }
+
+    /**
+     * Role permission check for one model tool call. Reads are always
+     * allowed; writes need canWriteCode, shell needs canRunTerminal.
+     * Unknown tool names fail closed.
+     */
+    private fun isToolAllowedForRole(name: String): Boolean {
+        val permissions = rolePermissions ?: return true
+        return when (name) {
+            "read_file", "list_dir" -> true
+            "write_file", "edit_file" -> permissions.canWriteCode
+            "run_shell" -> permissions.canRunTerminal
+            else -> false
+        }
     }
 }

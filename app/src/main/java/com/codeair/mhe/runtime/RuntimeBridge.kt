@@ -19,7 +19,15 @@ interface RuntimeBridge {
     val events: Flow<RuntimeEvent>
     /** True only when restarting startSession can resume the provider-owned conversation safely. */
     val supportsSessionRecovery: Boolean get() = false
-    suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, clientSessionId: String? = null, chatId: String? = null): String
+    /**
+     * [rolePermissions] is honored only by bridges whose tool execution
+     * runs in-app (the Gemini API loop): tool calls outside the set are
+     * refused without executing. CLI bridges run tools inside the CLI
+     * process and cannot intercept individual calls, so they accept and
+     * ignore it; for those roles the permission set stays advisory. Null
+     * means unrestricted (user chats).
+     */
+    suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, clientSessionId: String? = null, chatId: String? = null, rolePermissions: com.codeair.mhe.agent.team.model.TeamRolePermissions? = null): String
     suspend fun respondToApproval(request: ToolRequest, approved: Boolean)
     /**
      * Level-aware approval: bridges whose launch gate records grants

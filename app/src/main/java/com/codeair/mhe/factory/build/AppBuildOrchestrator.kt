@@ -210,9 +210,9 @@ object AppBuildOrchestrator {
      * Installs [apkFile] via the app's real installer ([AndroidAppInstaller]).
      * Throws on any failure — the caller reports the real error.
      */
-    fun installApk(context: Context, apkFile: File) {
+    fun installApk(context: Context, apkFile: File, gateway: com.codeair.mhe.security.SafetyGateway? = null) {
         require(apkFile.isFile) { "APK not found: ${apkFile.absolutePath}" }
-        com.codeair.mhe.runtime.AndroidAppInstaller.install(context, apkFile)
+        com.codeair.mhe.runtime.AndroidAppInstaller.install(context, apkFile, gateway)
     }
 }
 
