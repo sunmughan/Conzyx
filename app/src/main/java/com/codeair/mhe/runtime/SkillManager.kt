@@ -375,6 +375,9 @@ class SkillManager(
                 val skillRoot = manifest.parentFile ?: error("Invalid SKILL.md location.")
                 val metadata = parseManifest(content, skillRoot.name ?: "skill")
                 val safeName = sanitizeSkillName(metadata.first)
+                require(safeName !in builtinSkillNames()) {
+                    "Skill name '$safeName' is reserved for a built-in skill and cannot be installed over it."
+                }
                 val destination = File(root, safeName)
                 destination.deleteRecursively()
                 destination.mkdirs()
@@ -620,6 +623,12 @@ class SkillManager(
                     val sourceDirectory = manifest.parentFile ?: error("Invalid SKILL.md location")
                     val metadata = parseManifest(manifest.readText(), sourceDirectory.name)
                     val safeName = sanitizeSkillName(metadata.first)
+                    // A built-in skill name is reserved: installing over it
+                    // would silently replace trusted, enabled content with
+                    // third-party content. Refuse instead of overwriting.
+                    require(safeName !in builtinSkillNames()) {
+                        "Skill name '$safeName' is reserved for a built-in skill and cannot be installed over it."
+                    }
                     val destination = File(root, safeName)
                     destination.deleteRecursively()
                     copyDirectory(sourceDirectory, destination)
@@ -687,15 +696,10 @@ class SkillManager(
         val version: Int = 1,
     )
 
-    fun ensureDefaultSkills() {
-        val retiredSkillNames = setOf(
-            "geo-sleuth", "stickman-video-director", "api-anything", "logo-design-skill",
-            "anyps5-director", "youtube-video-intel", "fridge-vision-chef",
-            "receipt-expense-sleuth", "contract-legal-buster", "smarthome-iot-commander",
-            "academic-paper-architect", "document-transmuter", "marp-presentation-deck",
-            "creative-image-director", "viral-growth-creator", "fullstack-dev-accelerator",
-        )
-        val defaultSpecs = listOf(
+    /** Names reserved for built-in skills: an install may never overwrite one. */
+    private fun builtinSkillNames(): Set<String> = defaultSkillSpecs().map { it.name }.toSet()
+
+    private fun defaultSkillSpecs(): List<DefaultSkillSpec> = listOf(
             DefaultSkillSpec(
                 name = "browser-automation",
                 description = "Drive the user's visible in-app browser tab live in synced mode, or automate headless Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.",
@@ -973,6 +977,16 @@ User experience architecture, touch ergonomic design, accessibility, and modern 
             ),
         )
 
+    fun ensureDefaultSkills() {
+        val retiredSkillNames = setOf(
+            "geo-sleuth", "stickman-video-director", "api-anything", "logo-design-skill",
+            "anyps5-director", "youtube-video-intel", "fridge-vision-chef",
+            "receipt-expense-sleuth", "contract-legal-buster", "smarthome-iot-commander",
+            "academic-paper-architect", "document-transmuter", "marp-presentation-deck",
+            "creative-image-director", "viral-growth-creator", "fullstack-dev-accelerator",
+        )
+        val defaultSpecs = defaultSkillSpecs()
+
         var registryModified = false
         val currentRegistry = if (registryFile.isFile) {
             runCatching {
@@ -1019,7 +1033,13 @@ User experience architecture, touch ergonomic design, accessibility, and modern 
                     },
                 )
                 registryModified = true
-            } else if (existing.optString("source") != spec.source && spec.source.startsWith("https://github.com/")) {
+            } else if (existing.optString("source") != spec.source) {
+                // A third-party install squatted this built-in name (or an
+                // older restore left a foreign source): restore the built-in
+                // content and provenance instead of keeping the squatter.
+                dir.mkdirs()
+                file.writeText(wanted)
+                versionFile.writeText(spec.version.toString())
                 existing.put("source", spec.source)
                 existing.put("path", dir.absolutePath)
                 registryModified = true

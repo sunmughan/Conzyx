@@ -88,11 +88,15 @@ internal class FullAccessLaunchGate(
     fun respondToApproval(approvalId: String, approved: Boolean, level: PermissionLevel = PermissionLevel.SESSION): Boolean {
         val launch = pending.remove(approvalId) ?: return false
         if (approved) {
+            // Bind the grant to exactly the approved launch operation's
+            // target (e.g. its workspace), never to a wildcard: a later
+            // launch outside that scope must show the launch card again.
             safetyGateway.recordGrant(
                 launch.operation,
                 level,
                 sessionId = launch.sessionId,
                 projectId = launch.projectId,
+                targetPattern = safetyGateway.narrowPatternFor(launch.operation),
                 chatId = launch.chatId,
             )
         }
@@ -100,10 +104,86 @@ internal class FullAccessLaunchGate(
         return true
     }
 
+    private data class PendingCommand(
+        val operation: SafetyOperation.ShellExec,
+        val sessionId: String,
+        val projectId: String?,
+        val chatId: String?,
+        val gate: CompletableDeferred<Boolean>,
+    )
+
+    private val pendingCommands = ConcurrentHashMap<String, PendingCommand>()
+
+    /**
+     * Per-command approval for a single model shell command. Unlike the
+     * launch gate, a baseline ALLOW executes without a card: only a PROMPT
+     * verdict (e.g. a HIGH-risk command) surfaces a card, and a non-
+     * interactive session fails closed instead of executing.
+     * Returns true only when the command may execute.
+     */
+    suspend fun authorizeShellCommand(
+        operation: SafetyOperation.ShellExec,
+        sessionId: String,
+        projectId: String?,
+        emit: suspend (RuntimeEvent) -> Unit,
+        chatId: String? = null,
+        interactive: Boolean = true,
+    ): Boolean {
+        val decision = safetyGateway.authorize(operation, sessionId = sessionId, projectId = projectId, chatId = chatId)
+        if (decision.verdict == SafetyVerdict.DENY) return false
+        if (decision.verdict == SafetyVerdict.ALLOW) return true
+        if (!interactive) return false
+        val request = ToolRequest(
+            sessionId = sessionId,
+            toolName = "run_shell",
+            explanation = decision.reason,
+            affectedPaths = emptyList(),
+            commandPreview = operation.describe(),
+            risk = RiskLevel.HIGH,
+        )
+        val gate = CompletableDeferred<Boolean>()
+        pendingCommands[request.approvalId] = PendingCommand(operation, sessionId, projectId, chatId, gate)
+        emit(RuntimeEvent.ToolRequested(sessionId, request))
+        val approved = try {
+            gate.await()
+        } finally {
+            pendingCommands.remove(request.approvalId)
+        }
+        emit(
+            if (approved) RuntimeEvent.ToolApproved(sessionId, request.approvalId)
+            else RuntimeEvent.ToolRejected(sessionId, request.approvalId),
+        )
+        return approved
+    }
+
+    /**
+     * Completes a pending per-command approval. An approval records a grant
+     * bound to exactly this command string, so it never widens to other
+     * commands in the session or chat.
+     */
+    fun respondToCommandApproval(approvalId: String, approved: Boolean, level: PermissionLevel = PermissionLevel.SESSION): Boolean {
+        val pendingCommand = pendingCommands.remove(approvalId) ?: return false
+        if (approved) {
+            safetyGateway.recordGrant(
+                pendingCommand.operation,
+                level,
+                sessionId = pendingCommand.sessionId,
+                projectId = pendingCommand.projectId,
+                targetPattern = safetyGateway.narrowPatternFor(pendingCommand.operation),
+                chatId = pendingCommand.chatId,
+            )
+        }
+        pendingCommand.gate.complete(approved)
+        return true
+    }
+
     fun abortPending() {
         val stale = pending.values.toList()
         pending.clear()
         stale.forEach { it.gate.complete(false) }
+        val staleCommands = pendingCommands.values.toList()
+        pendingCommands.clear()
+        staleCommands.forEach { it.gate.complete(false) }
     }
 
     /** Aborts only [sessionId]'s pending launch approvals (multi-session
@@ -113,6 +193,10 @@ internal class FullAccessLaunchGate(
         val stale = pending.entries.filter { it.value.sessionId == sessionId }
         stale.forEach { (key, launch) ->
             if (pending.remove(key, launch)) launch.gate.complete(false)
+        }
+        val staleCommands = pendingCommands.entries.filter { it.value.sessionId == sessionId }
+        staleCommands.forEach { (key, command) ->
+            if (pendingCommands.remove(key, command)) command.gate.complete(false)
         }
     }
 }

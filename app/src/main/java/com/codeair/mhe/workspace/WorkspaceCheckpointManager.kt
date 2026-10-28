@@ -156,7 +156,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
     fun deleteCheckpoint(projectId: String, checkpointId: String): Boolean {
         return runCatching {
             val dir = File(checkpointsBaseDir(projectId), checkpointId)
-            dir.deleteRecursively()
+            deleteTreeWithoutFollowingSymlinks(dir)
             val remaining = listCheckpoints(projectId).filterNot { it.id == checkpointId }
             saveIndex(projectId, remaining)
             true

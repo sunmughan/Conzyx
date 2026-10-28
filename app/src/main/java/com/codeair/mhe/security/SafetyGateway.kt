@@ -162,13 +162,19 @@ class SafetyGateway(
      * ONCE live for the session only — by design, not by accident. A CHAT
      * grant is keyed by conversation (project slug + chat id) and never
      * applies to another conversation or project.
+     *
+     * There is deliberately NO wildcard default for [targetPattern]: a
+     * caller that forgets to pass one records a grant that matches nothing
+     * (fail closed), so one approval can never silently widen to every
+     * target in the category. Callers must pass the exact approved scope,
+     * normally [narrowPatternFor] of the approved operation.
      */
     fun recordGrant(
         operation: SafetyOperation,
         level: PermissionLevel,
         sessionId: String? = null,
         projectId: String? = null,
-        targetPattern: String = "*",
+        targetPattern: String = "",
         chatId: String? = null
     ) {
         policyEngine.grantPermission(
@@ -227,6 +233,22 @@ class SafetyGateway(
         is SafetyOperation.RemoteExec -> PermissionCategory.EXTERNAL_SERVICES
     }
 
+    /**
+     * The exact grant scope for [operation]: the same target string the
+     * policy engine matches grants against. A grant recorded with this
+     * pattern covers only this operation's target, never every target in
+     * the category.
+     */
+    fun narrowPatternFor(operation: SafetyOperation): String = when (operation) {
+        is SafetyOperation.FileOp -> operation.path
+        is SafetyOperation.ShellExec -> operation.workingDir ?: operation.command
+        is SafetyOperation.GitOp -> operation.repoPath
+        is SafetyOperation.McpToolCall -> "${operation.serverId}:${operation.toolName}"
+        is SafetyOperation.NetworkRequest -> operation.url
+        is SafetyOperation.ApkInstall -> operation.apkPath
+        is SafetyOperation.RemoteExec -> "${operation.target}:${operation.command}"
+    }
+
     private fun toPermissionRequest(
         operation: SafetyOperation,
         sessionId: String?,
@@ -234,15 +256,7 @@ class SafetyGateway(
         chatId: String? = null
     ): PermissionRequest {
         val category = categoryOf(operation)
-        val target = when (operation) {
-            is SafetyOperation.FileOp -> operation.path
-            is SafetyOperation.ShellExec -> operation.workingDir ?: operation.command
-            is SafetyOperation.GitOp -> operation.repoPath
-            is SafetyOperation.McpToolCall -> "${operation.serverId}:${operation.toolName}"
-            is SafetyOperation.NetworkRequest -> operation.url
-            is SafetyOperation.ApkInstall -> operation.apkPath
-            is SafetyOperation.RemoteExec -> "${operation.target}:${operation.command}"
-        }
+        val target = narrowPatternFor(operation)
         val command = when (operation) {
             is SafetyOperation.ShellExec -> operation.command
             is SafetyOperation.RemoteExec -> operation.command

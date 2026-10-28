@@ -1,6 +1,28 @@
 package com.codeair.mhe.workspace
 
 import java.io.File
+import java.nio.file.Files
+
+/**
+ * Deletes [file] without ever following a symlink: a symlinked entry is
+ * removed as a link only, and directory contents are deleted entry by
+ * entry. Unlike [File.deleteRecursively], a nested directory symlink can
+ * never cause target contents outside the tree to be deleted.
+ * Returns true when the entry is gone afterwards.
+ */
+internal fun deleteTreeWithoutFollowingSymlinks(file: File): Boolean {
+    if (Files.isSymbolicLink(file.toPath())) return file.delete()
+    if (file.isDirectory) {
+        val children = file.listFiles() ?: return file.delete()
+        var ok = true
+        for (child in children) {
+            if (!deleteTreeWithoutFollowingSymlinks(child)) ok = false
+        }
+        if (!file.delete()) ok = false
+        return ok
+    }
+    return file.delete()
+}
 
 /**
  * Controller for safe, interactive workspace file tree operations (create, rename, delete, duplicate, move)
@@ -118,7 +140,7 @@ class FileOperationsController {
             throw FileOpError.SourceNotFound("File or directory not found: $relativePath")
         }
         if (target.isDirectory) {
-            target.deleteRecursively()
+            deleteTreeWithoutFollowingSymlinks(target)
         } else {
             target.delete()
         }

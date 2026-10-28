@@ -3178,7 +3178,11 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         }
         val actual = digest(temporary, algorithm)
         if (!actual.equals(expectedChecksum, ignoreCase = true)) {
-            android.util.Log.w("RuntimeInstaller", "Bundle checksum mismatch: expected $expectedChecksum, got $actual. Continuing anyway.")
+            // Fail closed: an unverified bundle must never be renamed into
+            // place, extracted, or executed. Delete it and abort; only a
+            // fresh, owner-approved manifest hash may retry the download.
+            runCatching { temporary.delete() }
+            error("Bundle checksum mismatch: expected $expectedChecksum, got $actual. Unverified bundle discarded.")
         }
         destination.delete()
         check(temporary.renameTo(destination)) { "Could not finish download" }

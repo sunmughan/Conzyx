@@ -1,5 +1,10 @@
 package com.codeair.mhe.runtime
 
+import com.codeair.mhe.security.DangerSeverity
+import com.codeair.mhe.security.DangerousCommandDetector
+import com.codeair.mhe.security.SafetyGateway
+import com.codeair.mhe.security.SafetyOperation
+import com.codeair.mhe.security.SafetyVerdict
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -102,6 +107,17 @@ class WorkspaceToolExecutor(
     private val checkpoints: WorkspaceCheckpoints,
     private val projectSlug: String,
     private val cacheDir: File,
+    /**
+     * When set, every run_shell command passes through this gateway before
+     * execution: CRITICAL commands are denied, HIGH commands surface a
+     * per-command approval card via [onShellPrompt], and only ALLOW (or an
+     * approved prompt) executes. When null, the detector still refuses
+     * CRITICAL and HIGH commands with no prompt channel available.
+     */
+    private val safetyGateway: SafetyGateway? = null,
+    private val sessionId: String? = null,
+    private val projectId: String? = null,
+    private val onShellPrompt: (suspend (SafetyOperation.ShellExec) -> Boolean)? = null,
 ) : GeminiToolExecutor {
 
     @Volatile private var activeProcess: Process? = null
@@ -136,7 +152,7 @@ class WorkspaceToolExecutor(
             }.getOrElse { e -> "Error: ${e.message.orEmpty().ifBlank { "tool failed" }.take(500)}" }
         }
 
-    private fun runShell(command: String, workdir: String): String {
+    private suspend fun runShell(command: String, workdir: String): String {
         if (command.isBlank()) return "Error: command is empty."
         if (!installer.isInstalled()) return "Error: the Linux runtime is not installed."
         val cleanWorkdir = workdir.trim().trim('/')
@@ -145,6 +161,25 @@ class WorkspaceToolExecutor(
             command
         } else {
             "cd '${cleanWorkdir.replace("'", "'\\''")}' && $command"
+        }
+        // Safety gate: no model shell command reaches sh -c unchecked.
+        if (safetyGateway != null) {
+            val operation = SafetyOperation.ShellExec(fullCommand)
+            val decision = safetyGateway.authorize(operation, sessionId = sessionId, projectId = projectId)
+            if (decision.verdict == SafetyVerdict.DENY) {
+                return "Error: command refused: ${decision.reason}"
+            }
+            if (decision.verdict == SafetyVerdict.PROMPT) {
+                val approved = onShellPrompt?.invoke(operation) ?: false
+                if (!approved) {
+                    return "Error: command requires approval and was not approved: ${decision.reason}"
+                }
+            }
+        } else {
+            val eval = DangerousCommandDetector().evaluate(fullCommand)
+            if (eval.severity == DangerSeverity.CRITICAL || eval.severity == DangerSeverity.HIGH) {
+                return "Error: command refused: ${eval.reason}"
+            }
         }
         val installed = installer.installedRuntime()
         val outputFile = File(cacheDir, "gemini-shell-${System.nanoTime()}.log")

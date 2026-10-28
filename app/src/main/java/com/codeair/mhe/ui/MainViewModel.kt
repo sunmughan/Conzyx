@@ -69,6 +69,7 @@ import com.codeair.mhe.runtime.truncateHeadAndTail
 import com.codeair.mhe.runtime.supportsArm64Runtime
 import com.codeair.mhe.runtime.RuntimeFailureClassifier
 import com.codeair.mhe.runtime.WorkspaceCheckpoints
+import com.codeair.mhe.workspace.deleteTreeWithoutFollowingSymlinks
 import com.codeair.mhe.runtime.ProjectIndex
 import com.codeair.mhe.runtime.ContextEngine
 import com.codeair.mhe.runtime.RuntimeRetryPolicy
@@ -2871,7 +2872,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences.saveProjects(_state.value.projects)
         viewModelScope.launch(Dispatchers.IO) {
             val filesDir = getApplication<Application>().filesDir
-            File(filesDir, "workspaces/${project.id}").deleteRecursively()
+            // Delete every per-project store, not just the workspace:
+            // checkpoints (snapshots + latest baseline), the search index,
+            // project memory, and any external backup mirror. Otherwise a
+            // deleted project's contents (including .env files) stay
+            // recoverable and restorable. Symlink-safe: a nested symlink
+            // is removed as a link, never traversed.
+            deleteTreeWithoutFollowingSymlinks(File(filesDir, "workspaces/${project.id}"))
+            deleteTreeWithoutFollowingSymlinks(File(filesDir, "checkpoints/${project.id}"))
+            File(filesDir, "indexes/${project.id}.json").delete()
+            File(filesDir, "project_memory/${project.id}.json").delete()
+            val externalBackups = getApplication<Application>().getExternalFilesDir("backups")
+                ?: File(filesDir, "backups")
+            deleteTreeWithoutFollowingSymlinks(File(externalBackups, "workspaces_mirror/${project.id}"))
+            deleteTreeWithoutFollowingSymlinks(File(filesDir, "backups/workspaces_mirror/${project.id}"))
             terminalCoordinator.deleteTerminalHistory(project.id)
             preferences.deleteProjectChats(project.id)
         }
@@ -2927,6 +2941,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching {
                     val root = projectWorkspaceRoot(project)
                     val rootPath = root.canonicalFile.toPath()
+                    // Count secret files up front so the success message can
+                    // say they were left out, instead of silently dropping
+                    // files the user may have expected in the zip.
+                    val excludedSecretCount = root.walkTopDown()
+                        .filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }
+                        .count { isExportSecretFile(it.relativeTo(root).invariantSeparatorsPath) }
                     val output = getApplication<Application>().contentResolver.openOutputStream(uri)
                         ?: error("The selected location could not be opened")
                     output.buffered().use { stream ->
@@ -2959,12 +2979,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                         }
                     }
+                    excludedSecretCount
                 }
             }
             _state.update {
                 it.copy(
                     toastMessage = result.fold(
-                        onSuccess = { "${project.slug}.zip exported" },
+                        onSuccess = { excludedSecretCount ->
+                            "${project.slug}.zip exported" + if (excludedSecretCount > 0) {
+                                " ($excludedSecretCount secret files left out)"
+                            } else {
+                                ""
+                            }
+                        },
                         onFailure = { error -> "Export failed: ${error.message ?: "Unknown error"}" },
                     ),
                 )
@@ -3638,12 +3665,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Milestone 1: shared with EditorCoordinator — see coordinators package.
 
+    /**
+     * Secret-bearing file names that must never be zipped verbatim into a
+     * shared project export: environment files and private-key / credential
+     * stores at any depth. Excluded by default, not merely warned about.
+     */
+    private fun isExportSecretFile(relativePath: String): Boolean {
+        val fileName = relativePath.substringAfterLast('/')
+        return fileName == ".env" || fileName.startsWith(".env.") ||
+            fileName.endsWith(".pem") || fileName.endsWith(".key") ||
+            fileName.endsWith(".p12") || fileName.endsWith(".pfx") ||
+            fileName.endsWith(".keystore") || fileName.endsWith(".jks") ||
+            fileName == "credentials.json" || fileName == "client_secret.json"
+    }
+
     private fun isExportExcludedPath(relativePath: String): Boolean {
         val excludedNames = setOf(
             ".git", ".claude", ".gradle", ".idea", ".next", ".cache",
             "node_modules", ".venv", "venv", "__pycache__", "build",
         )
-        return relativePath.split('/').any { it in excludedNames } || isClaudeRuntimeMetadata(relativePath)
+        return relativePath.split('/').any { it in excludedNames } ||
+            isClaudeRuntimeMetadata(relativePath) || isExportSecretFile(relativePath)
     }
 
     fun addChatAttachments(uris: List<Uri>) {

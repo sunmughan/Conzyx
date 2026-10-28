@@ -236,7 +236,13 @@ class WorkspaceCheckpoints(private val filesDir: File) {
         val rootPath = root.canonicalFile.toPath()
         val parentPath = (file.parentFile ?: root).canonicalFile.toPath()
         require(parentPath.startsWith(rootPath)) { "Workspace path escapes project" }
-        return file
+        // Canonicalize the final component too: a symlink as the last path
+        // segment is invisible to the parent check above but is followed by
+        // later host-side File I/O. Resolve it and require the resolved
+        // target to stay inside the workspace.
+        val canonicalFile = file.canonicalFile
+        require(canonicalFile.toPath().startsWith(rootPath)) { "Workspace path escapes project" }
+        return canonicalFile
     }
 
     fun snapshot(root: File): Map<String, String> = root.walkTopDown()

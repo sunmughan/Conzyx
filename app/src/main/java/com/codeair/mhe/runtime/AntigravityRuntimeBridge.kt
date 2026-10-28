@@ -531,7 +531,8 @@ class AntigravityRuntimeBridge(
                 "/workspace/$projectSlug",
             ),
             explanation = "The Gemini API agent can run shell commands and read, write or delete " +
-                "files in the project workspace without asking again. " +
+                "files in the project workspace. Routine commands run without asking again; " +
+                "risky shell commands still ask for approval one by one. " +
                 "Approve only if you trust this task.",
             affectedPaths = listOf("/workspace/$projectSlug"),
             interactive = interactiveApprovals,
@@ -562,6 +563,19 @@ class AntigravityRuntimeBridge(
                 checkpoints = checkpoints,
                 projectSlug = projectSlug,
                 cacheDir = context.cacheDir,
+                safetyGateway = safetyGateway,
+                sessionId = sessionId,
+                projectId = projectSlug,
+                onShellPrompt = { operation ->
+                    launchGate.authorizeShellCommand(
+                        operation = operation,
+                        sessionId = sessionId,
+                        projectId = projectSlug,
+                        emit = { eventBus.emit(it) },
+                        chatId = chatKey,
+                        interactive = interactiveApprovals,
+                    )
+                },
             )
             toolExecutors[sessionId] = executor
             val loop = GeminiAgentLoop(executor)
@@ -628,11 +642,15 @@ class AntigravityRuntimeBridge(
             "normal file operations. Explain briefly what you did after the tools finish."
 
     override suspend fun respondToApproval(request: ToolRequest, approved: Boolean) {
-        launchGate.respondToApproval(request.approvalId, approved)
+        if (!launchGate.respondToApproval(request.approvalId, approved)) {
+            launchGate.respondToCommandApproval(request.approvalId, approved)
+        }
     }
 
     override suspend fun respondToApprovalWithLevel(request: ToolRequest, approved: Boolean, level: com.codeair.mhe.security.PermissionLevel) {
-        launchGate.respondToApproval(request.approvalId, approved, level)
+        if (!launchGate.respondToApproval(request.approvalId, approved, level)) {
+            launchGate.respondToCommandApproval(request.approvalId, approved, level)
+        }
     }
 
     override suspend fun stopSession(sessionId: String) {
