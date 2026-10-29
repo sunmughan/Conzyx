@@ -1641,7 +1641,22 @@ class RuntimeInstaller(private val context: Context) {
                     0.2f,
                     onProgress,
                 )
-                verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
+                // Same tolerance as the first-setup CPP branch: a verify
+                // timeout after a successful apt install must not fail the
+                // update. The installed binaries remain, so a later update
+                // retries the verify.
+                val cppVerify = runCatching {
+                    verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
+                }
+                if (cppVerify.isFailure) {
+                    onProgress(
+                        RuntimeInstallProgress(
+                            "C/C++ verify failed (will retry on next launch): ${cppVerify.exceptionOrNull()?.message?.take(120)}",
+                            1f,
+                        ),
+                    )
+                    return
+                }
                 val gccVer = runCatching {
                     runGuest(runtime.proot, "gcc -dumpversion")
                 }.getOrNull()?.takeIf { it.isNotBlank() } ?: "10.2"
@@ -1874,11 +1889,25 @@ class RuntimeInstaller(private val context: Context) {
                     from,
                     onProgress,
                 )
-                verifyGuest(
-                    proot,
-                    "gcc --version && g++ --version && make --version && cmake --version",
-                    "C/C++ tools could not be verified",
-                )
+                // Mirror the PYTHON branch: a verify timeout must not fail
+                // the whole setup. If apt installed the tools but the 60 s
+                // verify timed out, the next launch skips this stack via
+                // hasStackBinaries (gcc present) instead of failing setup.
+                runCatching {
+                    verifyGuest(
+                        proot,
+                        "gcc --version && g++ --version && make --version && cmake --version",
+                        "C/C++ tools could not be verified",
+                    )
+                }.onFailure { error ->
+                    verified = false
+                    onProgress(
+                        RuntimeInstallProgress(
+                            "C/C++ verify failed (will retry on next launch): ${error.message?.take(120)}",
+                            to,
+                        ),
+                    )
+                }
                 if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
             }
             DevStack.PHP -> {
@@ -2509,16 +2538,38 @@ class RuntimeInstaller(private val context: Context) {
         require(packages.isNotEmpty()) { "No packages selected" }
         writeResolver()
         val packageNames = packages.joinToString(" ")
-        val command = "export DEBIAN_FRONTEND=noninteractive; " +
-            "dpkg --configure -a && " +
-            "apt-get -o DPkg::Lock::Timeout=120 -f install -y && " +
-            "apt-get -o DPkg::Lock::Timeout=120 update && " +
-            "apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends $packageNames && " +
-            "apt-get clean && rm -rf /var/lib/apt/lists/*"
+        // Phased instead of one compound command: each phase reports its own
+        // STAGE event, so the setup headline and terminal visibly advance
+        // instead of sitting frozen on one step while apt works silently.
+        // Same commands, same order, same flags as before; only failure
+        // granularity improves (a failed update no longer masquerades as a
+        // failed install). Each phase keeps the previous 30-minute budget.
+        val env = "export DEBIAN_FRONTEND=noninteractive; "
+        onProgress(RuntimeInstallProgress("Repairing package state (dpkg --configure)", fraction))
         runGuestCommand(
             proot = proot,
-            command = command,
-            displayCommand = "dpkg --configure -a && apt-get -f install -y && apt-get install -y $packageNames",
+            command = env + "dpkg --configure -a && apt-get -o DPkg::Lock::Timeout=120 -f install -y",
+            displayCommand = "dpkg --configure -a && apt-get -f install -y",
+            fraction = fraction,
+            timeoutMs = 30 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Could not repair package state",
+        )
+        onProgress(RuntimeInstallProgress("Refreshing package lists (apt-get update)", fraction))
+        runGuestCommand(
+            proot = proot,
+            command = env + "apt-get -o DPkg::Lock::Timeout=120 update",
+            displayCommand = "apt-get update",
+            fraction = fraction,
+            timeoutMs = 30 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Could not refresh package lists",
+        )
+        onProgress(RuntimeInstallProgress("Installing $packageNames", fraction))
+        runGuestCommand(
+            proot = proot,
+            command = env + "apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends $packageNames && apt-get clean && rm -rf /var/lib/apt/lists/*",
+            displayCommand = "apt-get install -y $packageNames",
             fraction = fraction,
             timeoutMs = 30 * 60 * 1_000L,
             onProgress = onProgress,
@@ -2579,10 +2630,17 @@ class RuntimeInstaller(private val context: Context) {
             withTimeout(timeoutMs) {
                 var offset = 0L
                 var pending = ""
+                // Heartbeat: apt can work silently for minutes (dpkg
+                // configure, stalled repo fetch) while producing no output
+                // line. Without this, the UI cannot tell silent work from a
+                // dead process and looks frozen. Every 60 s of silence emits
+                // one liveness event; the hard timeout above is unchanged.
+                var lastOutputAt = System.currentTimeMillis()
                 while (running.isAlive || (native?.outputFile?.length() ?: 0L) > offset) {
                     coroutineContext.ensureActive()
                     val file = native?.outputFile
                     if (file != null && file.length() > offset) {
+                        lastOutputAt = System.currentTimeMillis()
                         RandomAccessFile(file, "r").use { input ->
                             input.seek(offset)
                             val available = (input.length() - offset).coerceAtMost(256 * 1024).toInt()
@@ -2610,6 +2668,18 @@ class RuntimeInstaller(private val context: Context) {
                             }
                         }
                     } else {
+                        if (System.currentTimeMillis() - lastOutputAt >= 60_000L) {
+                            lastOutputAt = System.currentTimeMillis()
+                            onProgress(
+                                RuntimeInstallProgress(
+                                    message = "Still working: no output for 60 s, command still running",
+                                    fraction = fraction,
+                                    terminalLine = "Still working: no output for 60 s, command still running",
+                                    indeterminate = true,
+                                    event = RuntimeInstallEvent.OUTPUT,
+                                ),
+                            )
+                        }
                         delay(80)
                     }
                 }
