@@ -368,9 +368,9 @@ class RuntimeInstaller(private val context: Context) {
         }
         // Upstream behavior (techjarves/Mobile-Harness): every
         // installer-selected stack is eligible, in every build. C/C++
-        // and PHP install through apt (which downloads online) even in
-        // the offline build; they are not bundled stacks, so there is
-        // nothing offline-only to gate them on.
+        // and PHP install from their bundled overlays when one resolves
+        // (embedded in the offline build, downloaded in the online build)
+        // and fall back to apt only when no bundle is available.
         val eligibleStacks = installerStacks
         val missingStacks = eligibleStacks.filterNot(::isStackInstalled)
         missingStacks.forEachIndexed { index, stack ->
@@ -916,16 +916,22 @@ class RuntimeInstaller(private val context: Context) {
                 onProgress(RuntimeInstallProgress("Android $cleanExpected is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "php" -> {
-                updateStack(DevStack.PHP, onProgress)
+                val bundle = latestRuntimeBundle("php", expectedVersion)
+                    ?: latestRuntimeBundle("php")
+                    ?: error("No verified runtime package is published for php $expectedVersion")
+                installRuntimeOverlay(bundle, "Installing PHP ${bundle.version}", 0.05f, 0.95f, onProgress)
+                File(rootfs, ".pocket-php-tools-version").writeText(bundle.version)
                 writeDevStackState(readDevStackState().apply { put(DevStack.PHP.name, true) })
-                val recordedVer = File(rootfs, ".pocket-php-tools-version").readTextOrNull()?.trim() ?: expectedVersion
-                onProgress(RuntimeInstallProgress("PHP $recordedVer is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                onProgress(RuntimeInstallProgress("PHP ${bundle.version} is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "cpp" -> {
-                updateStack(DevStack.CPP, onProgress)
+                val bundle = latestRuntimeBundle("cpp", expectedVersion)
+                    ?: latestRuntimeBundle("cpp")
+                    ?: error("No verified runtime package is published for cpp $expectedVersion")
+                installRuntimeOverlay(bundle, "Installing C/C++ ${bundle.version}", 0.05f, 0.95f, onProgress)
+                File(rootfs, ".pocket-cpp-tools-version").writeText(bundle.version)
                 writeDevStackState(readDevStackState().apply { put(DevStack.CPP.name, true) })
-                val recordedVer = File(rootfs, ".pocket-cpp-tools-version").readTextOrNull()?.trim() ?: expectedVersion
-                onProgress(RuntimeInstallProgress("C/C++ $recordedVer is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                onProgress(RuntimeInstallProgress("C/C++ ${bundle.version} is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "core" -> {
                 onProgress(RuntimeInstallProgress("Updating core packages and Node tooling", 0.1f))
@@ -1300,6 +1306,8 @@ class RuntimeInstaller(private val context: Context) {
                         "core" -> "Core"
                         "python" -> "Python"
                         "android" -> "Android"
+                        "cpp" -> "C/C++"
+                        "php" -> "PHP"
                         else -> id
                     },
                     fileName = item.getString("file"),
@@ -1311,6 +1319,8 @@ class RuntimeInstaller(private val context: Context) {
             "python" -> PYTHON_BUNDLE
             "android" -> ANDROID_BUNDLE
             "core" -> CORE_BUNDLE
+            "cpp" -> CPP_BUNDLE
+            "php" -> PHP_BUNDLE
             else -> null
         }
 
@@ -1324,6 +1334,8 @@ class RuntimeInstaller(private val context: Context) {
             "core" -> "mhe-core-arm64-"
             "python" -> "mhe-python-arm64-"
             "android" -> "mhe-android-arm64-"
+            "cpp" -> "conzyx-cpp-arm64-"
+            "php" -> "conzyx-php-arm64-"
             else -> return null
         }
 
@@ -1359,6 +1371,9 @@ class RuntimeInstaller(private val context: Context) {
                     label = when (id) {
                         "core" -> "Core"
                         "python" -> "Python"
+                        "android" -> "Android"
+                        "cpp" -> "C/C++"
+                        "php" -> "PHP"
                         else -> "Android"
                     },
                     fileName = selected.fileName,
@@ -1590,7 +1605,12 @@ class RuntimeInstaller(private val context: Context) {
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         val runtime = installedRuntime()
-        if (isStackInstalled(stack)) return
+        // Ground truth is binaries on disk, never the state flag alone: a
+        // phantom entry (flag true, binaries absent) must fall through to a
+        // full install instead of reporting success for tools that are not
+        // there. This is what makes Settings Install repair an existing
+        // install without any return to the setup screen.
+        if (hasWorkingStack(stack)) return
         applyStack(runtime.proot, stack, 0.05f, 0.95f, onProgress)
         onProgress(RuntimeInstallProgress("${stack.label} tools are ready", 1f))
     }
@@ -1606,12 +1626,22 @@ class RuntimeInstaller(private val context: Context) {
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         require(stack != DevStack.WEB) { "Web tools are part of the core runtime and cannot be updated separately" }
-        check(isStackInstalled(stack)) { stack.label + " is not installed" }
+        // No isStackInstalled gate here on purpose. Update means "ensure the
+        // latest tools are present": a phantom entry (flag true, binaries
+        // absent) or a never-installed stack is repaired by a full install
+        // in the branch below, never rejected with "is not installed".
+        // Settings Update on an existing install must work in every state.
         val runtime = installedRuntime()
         when (stack) {
             DevStack.PYTHON -> {
                 onProgress(RuntimeInstallProgress("Checking and updating Python environment", 0.1f))
                 val targetVersion = latestRuntimeBundle("python")?.version ?: ENV_PYTHON_VERSION
+                if (!hasWorkingStack(DevStack.PYTHON)) {
+                    // Phantom entry or never installed: repair with a full
+                    // overlay install instead of failing the update.
+                    installEnvironmentStack("python", targetVersion, onProgress)
+                    return
+                }
                 val currentVer = File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.trim()
                 val currentClean = currentVer?.substringBefore(" ")?.trim()
                 if (currentClean != targetVersion) {
@@ -1640,6 +1670,12 @@ class RuntimeInstaller(private val context: Context) {
             }
             DevStack.ANDROID -> {
                 val targetVersion = latestRuntimeBundle("android")?.version ?: ENV_ANDROID_VERSION
+                if (!hasWorkingStack(DevStack.ANDROID)) {
+                    // Phantom entry or never installed: repair with a full
+                    // toolchain install instead of reporting "up to date".
+                    installEnvironmentStack("android", targetVersion, onProgress)
+                    return
+                }
                 val currentVer = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.trim()
                 val currentClean = currentVer?.substringBefore(" ")?.trim()
                 if (currentClean != targetVersion) {
@@ -1649,6 +1685,15 @@ class RuntimeInstaller(private val context: Context) {
                 }
             }
             DevStack.CPP -> {
+                // Bundled install first: on an existing install this repairs
+                // the phantom state (flag true, binaries absent) with a full
+                // overlay install, no apt, no network, no dpkg. Only when no
+                // bundle resolves does the apt path below run.
+                val cppBundle = latestRuntimeBundle("cpp")
+                if (cppBundle != null) {
+                    installEnvironmentStack("cpp", cppBundle.version, onProgress)
+                    return
+                }
                 onProgress(RuntimeInstallProgress("Updating C/C++ compilers and build tools from Ubuntu repositories", 0.1f))
                 aptInstall(
                     runtime.proot,
@@ -1660,18 +1705,26 @@ class RuntimeInstaller(private val context: Context) {
                 // Same tolerance as the first-setup CPP branch: a verify
                 // timeout after a successful apt install must not fail the
                 // update. The installed binaries remain, so a later update
-                // retries the verify.
+                // retries the verify. But a verify failure with NO binaries
+                // on disk is a failed install, not a timeout: failing
+                // honestly here is what stops Settings from reporting
+                // "tools are ready" for tools that were never installed.
                 val cppVerify = runCatching {
                     verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
                 }
                 if (cppVerify.isFailure) {
+                    if (!hasStackBinaries(DevStack.CPP)) {
+                        throw IllegalStateException(
+                            "C/C++ tools could not be verified and no compiler binaries were found on disk",
+                            cppVerify.exceptionOrNull(),
+                        )
+                    }
                     onProgress(
                         RuntimeInstallProgress(
-                            "C/C++ verify failed (will retry on next launch): ${cppVerify.exceptionOrNull()?.message?.take(120)}",
+                            "C/C++ verify failed but compiler binaries are present; keeping installed tools (will retry verify on next launch)",
                             1f,
                         ),
                     )
-                    return
                 }
                 val gccVer = runCatching {
                     runGuest(runtime.proot, "gcc -dumpversion")
@@ -1680,6 +1733,13 @@ class RuntimeInstaller(private val context: Context) {
                 onProgress(RuntimeInstallProgress("C/C++ tools updated (GCC $gccVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.PHP -> {
+                // Bundled install first, same repair rule as C/C++: a phantom
+                // entry gets a full overlay install, no apt, no network.
+                val phpBundle = latestRuntimeBundle("php")
+                if (phpBundle != null) {
+                    installEnvironmentStack("php", phpBundle.version, onProgress)
+                    return
+                }
                 onProgress(RuntimeInstallProgress("Updating PHP environment from official repositories", 0.1f))
                 runCatching { preparePhpRepository(runtime.proot, onProgress) }.onFailure {
                     File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
@@ -1894,69 +1954,90 @@ class RuntimeInstaller(private val context: Context) {
                 installAndroidToolchain(proot, from, to, onProgress)
             }
             DevStack.CPP -> {
-                aptInstall(
-                    proot,
-                    listOf("build-essential", "cmake", "gdb"),
-                    "Installing C/C++ compilers and build tools",
-                    from,
-                    onProgress,
-                )
-                // Mirror the PYTHON branch: a verify timeout must not fail
-                // the whole setup. If apt installed the tools but the 60 s
-                // verify timed out, the next launch skips this stack via
-                // hasStackBinaries (gcc present) instead of failing setup.
-                runCatching {
-                    verifyGuest(
+                val cppBundle = latestRuntimeBundle("cpp")
+                if (cppBundle != null) {
+                    installRuntimeOverlay(cppBundle, "Installing C/C++ compilers and build tools", from, to, onProgress)
+                    File(rootfs, ".pocket-cpp-tools-version").writeText(cppBundle.version)
+                } else {
+                    aptInstall(
                         proot,
-                        "gcc --version && g++ --version && make --version && cmake --version",
-                        "C/C++ tools could not be verified",
+                        listOf("build-essential", "cmake", "gdb"),
+                        "Installing C/C++ compilers and build tools",
+                        from,
+                        onProgress,
                     )
-                }.onFailure { error ->
-                    verified = false
-                    onProgress(
-                        RuntimeInstallProgress(
-                            "C/C++ verify failed (will retry on next launch): ${error.message?.take(120)}",
-                            to,
-                        ),
-                    )
+                    // Mirror the PYTHON branch: a verify timeout must not fail
+                    // the whole setup. If apt installed the tools but the 60 s
+                    // verify timed out, the next launch skips this stack via
+                    // hasStackBinaries (gcc present) instead of failing setup.
+                    // But a verify failure with NO binaries on disk is a failed
+                    // install, not a timeout: throwing here is what stops
+                    // Settings from reporting "tools are ready" for tools that
+                    // were never installed.
+                    runCatching {
+                        verifyGuest(
+                            proot,
+                            "gcc --version && g++ --version && make --version && cmake --version",
+                            "C/C++ tools could not be verified",
+                        )
+                    }.onFailure { error ->
+                        if (!hasStackBinaries(DevStack.CPP)) {
+                            throw IllegalStateException(
+                                "C/C++ tools could not be verified and no compiler binaries were found on disk",
+                                error,
+                            )
+                        }
+                        onProgress(
+                            RuntimeInstallProgress(
+                                "C/C++ verify failed but compiler binaries are present; install kept (will retry verify on next launch)",
+                                to,
+                            ),
+                        )
+                    }
+                    if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
                 }
-                if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
             }
             DevStack.PHP -> {
-                runCatching { preparePhpRepository(proot, onProgress) }.onFailure {
-                    File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
-                }
-                val ppaFile = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list")
-                val hasPpa = ppaFile.isFile
-                val packages = if (hasPpa) {
-                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip")
+                val phpBundle = latestRuntimeBundle("php")
+                if (phpBundle != null) {
+                    installRuntimeOverlay(phpBundle, "Installing PHP and common extensions", from, to, onProgress)
+                    File(rootfs, ".pocket-php-tools-version").writeText(phpBundle.version)
                 } else {
-                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip")
+                    runCatching { preparePhpRepository(proot, onProgress) }.onFailure {
+                        File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
+                    }
+                    val ppaFile = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list")
+                    val hasPpa = ppaFile.isFile
+                    val packages = if (hasPpa) {
+                        listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip")
+                    } else {
+                        listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip")
+                    }
+                    val installResult = runCatching {
+                        aptInstall(
+                            proot,
+                            packages,
+                            "Installing PHP and common extensions",
+                            from,
+                            onProgress,
+                        )
+                    }
+                    if (installResult.isFailure && hasPpa) {
+                        ppaFile.delete()
+                        aptInstall(
+                            proot,
+                            listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
+                            "Installing PHP (Ubuntu repository)",
+                            from,
+                            onProgress,
+                        )
+                    } else if (installResult.isFailure) {
+                        throw installResult.exceptionOrNull() ?: IllegalStateException("Could not install PHP")
+                    }
+                    runCatching { installComposer(proot, from, onProgress) }
+                    verifyGuest(proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
+                    if (verified) File(rootfs, ".pocket-php-tools-version").writeText("8.4")
                 }
-                val installResult = runCatching {
-                    aptInstall(
-                        proot,
-                        packages,
-                        "Installing PHP and common extensions",
-                        from,
-                        onProgress,
-                    )
-                }
-                if (installResult.isFailure && hasPpa) {
-                    ppaFile.delete()
-                    aptInstall(
-                        proot,
-                        listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
-                        "Installing PHP (Ubuntu repository)",
-                        from,
-                        onProgress,
-                    )
-                } else if (installResult.isFailure) {
-                    throw installResult.exceptionOrNull() ?: IllegalStateException("Could not install PHP")
-                }
-                runCatching { installComposer(proot, from, onProgress) }
-                verifyGuest(proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
-                if (verified) File(rootfs, ".pocket-php-tools-version").writeText("8.4")
             }
             DevStack.BROWSER -> {
                 if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
@@ -2446,6 +2527,17 @@ class RuntimeInstaller(private val context: Context) {
             File(rootfs, "usr/bin/chromium").exists() ||
             File(rootfs, "usr/local/bin/pocket-browser").exists()
     }
+
+    /**
+     * Binaries on disk are the ground truth for install/update decisions.
+     * The .pocket-dev-stacks.json flag alone is never trusted: it can say
+     * installed while the tools are absent, and install/update must repair
+     * that state instead of believing it. Android keeps its stricter check
+     * because a bare version marker without the toolchain is not a working
+     * install.
+     */
+    private fun hasWorkingStack(stack: DevStack): Boolean =
+        if (stack == DevStack.ANDROID) isStackInstalled(stack) else hasStackBinaries(stack)
 
     private fun readDevStackState(): MutableMap<String, Boolean> {
         if (!devStacksFile.isFile) return mutableMapOf()
@@ -4126,6 +4218,18 @@ main().catch((err) => {
             fileName = "conzyx-android-arm64-2026.09.1.tar.zst",
             sha256 = "01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6",
             compressedBytes = 569_652_007L,
+        )
+        private val CPP_BUNDLE = RuntimeBundle(
+            label = "C/C++",
+            fileName = "conzyx-cpp-arm64-2026.10.1.tar.zst",
+            sha256 = "f85111ed9510319c6e9a14131f03964692eb52565a81489946abe582c6d4f073",
+            compressedBytes = 85_471_190L,
+        )
+        private val PHP_BUNDLE = RuntimeBundle(
+            label = "PHP",
+            fileName = "conzyx-php-arm64-2026.10.1.tar.zst",
+            sha256 = "59352239004fe3973dcdac0c0f0433e3dfc79d3db06336c286b8353a24e99254",
+            compressedBytes = 29_582_213L,
         )
         private val DSH_BUNDLE = RuntimeBundle(
             label = "DeepSeek Harness",

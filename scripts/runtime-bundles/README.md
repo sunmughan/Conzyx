@@ -45,6 +45,32 @@ to the phone used to build them. They do not support x86/x86_64 emulators or
 32-bit-only ARM devices. PocketDev must continue checking for `arm64-v8a` before
 installation.
 
+## Building the C/C++ and PHP bundles
+
+`build-cpp-php-from-ubuntu-ports.py` builds the `cpp` and `php` overlays
+from Ubuntu 20.04 (focal) ARM64 packages, without needing an ARM64 host:
+`.deb` data archives are architecture-independent to extract, so an x86_64
+host can assemble an ARM64 overlay with `dpkg-deb`, as long as every
+package comes from the focal arm64 package index and its SHA-256 is
+verified against that index.
+
+    python3 build-cpp-php-from-ubuntu-ports.py --component cpp --version 2026.10.1
+    python3 build-cpp-php-from-ubuntu-ports.py --component php --version 2026.10.1
+
+The script resolves the full Depends + Pre-Depends closure for the same
+seed lists the installer used to apt-install (build-essential, cmake, gdb,
+gcc, g++, make; php-cli, php-mbstring, php-xml, php-curl, php-zip, unzip),
+verifies each `.deb` SHA-256, extracts it, then replicates the postinst
+effects an overlay install would otherwise miss: compiler alternatives
+symlinks (gcc/g++/cc/c++) and PHP extension conf.d symlinks. Composer is
+downloaded from getcomposer.org and verified against its published
+SHA-256 checksum. The overlay is packed with `create_deterministic_tar.py`
+and compressed with zstd level 19. Publish the resulting
+`conzyx-<component>-arm64-<version>.tar.zst` files as assets of a
+`runtime-*` release on sunmughan/Conzyx, pin their SHA-256 digests in
+`.github/runtime-bundles.lock.json`, and CI fetches them into the offline
+APK exactly like the upstream bundles.
+
 ## Release requirements
 
 1. Build on a clean ARM64 Linux environment or a rooted ARM64 Android phone

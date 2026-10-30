@@ -167,6 +167,104 @@ jobs:
           PY
           du -h dist/runtime-bundles/*.tar.zst | sort -h
 
+      - name: Fetch Conzyx-owned CPP/PHP runtime bundles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, re, urllib.request
+          repo = "sunmughan/Conzyx"
+          token = os.environ["GH_TOKEN"]
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/releases?per_page=100",
+              headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(req, timeout=60) as response:
+              releases = json.load(response)
+
+          prefixes = {
+              "cpp": "conzyx-cpp-arm64-",
+              "php": "conzyx-php-arm64-",
+          }
+
+          def version_key(value):
+              return tuple(int(x) for x in re.findall(r"\d+", value)) or (0,)
+
+          selected = {}
+          for release in releases:
+              if release.get("draft") or release.get("prerelease"):
+                  continue
+              tag = release.get("tag_name", "")
+              if not tag.startswith("runtime-"):
+                  continue
+              for asset in release.get("assets", []):
+                  name = asset.get("name", "")
+                  for component, prefix in prefixes.items():
+                      if name.startswith(prefix) and name.endswith(".tar.zst"):
+                          version = name[len(prefix):-len(".tar.zst")]
+                          if version and re.fullmatch(r"[0-9A-Za-z._+-]+", version):
+                              candidate = (version_key(version), version, asset)
+                              current = selected.get(component)
+                              if current is None or candidate[:2] > current[:2]:
+                                  selected[component] = candidate
+
+          missing = sorted(set(prefixes) - set(selected))
+          if missing:
+              raise SystemExit(f"Missing Conzyx-owned runtime bundles: {', '.join(missing)}")
+
+          # Same owner-controlled pin rule as the upstream fetch: version AND
+          # digest must match .github/runtime-bundles.lock.json, or the build
+          # fails for manual review.
+          with open(".github/runtime-bundles.lock.json") as handle:
+              lock = json.load(handle)
+          for component, (_, version, asset) in selected.items():
+              entry = lock.get(component)
+              if entry is None:
+                  raise SystemExit(f"No lockfile entry for runtime bundle '{component}'; refusing to fetch an unpinned bundle")
+              api_digest = asset.get("digest", "").removeprefix("sha256:").lower()
+              if version != entry["version"]:
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' moved from locked {entry['version']} to {version}. "
+                      "Review the new runtime release, then update .github/runtime-bundles.lock.json in a commit."
+                  )
+              if api_digest != entry["sha256"].lower():
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' digest differs from the lockfile "
+                      f"({api_digest} != {entry['sha256']}). Refusing to trust a digest that changed with the release."
+                  )
+
+          with open("dist/runtime-bundles/manifest.json") as handle:
+              manifest = json.load(handle)
+          for component, (_, version, asset) in selected.items():
+              name = asset["name"]
+              out = os.path.join("dist/runtime-bundles", name)
+              download = urllib.request.Request(
+                  asset["url"],
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/octet-stream",
+                  },
+              )
+              with urllib.request.urlopen(download, timeout=600) as response, open(out, "wb") as target:
+                  target.write(response.read())
+              digest = lock[component]["sha256"]
+              actual = hashlib.sha256(open(out, "rb").read()).hexdigest()
+              if actual.lower() != digest.lower():
+                  raise SystemExit(f"SHA-256 mismatch for {name}: {actual} != {digest}")
+              manifest[component] = {
+                  "version": version,
+                  "file": name,
+                  "sha256": digest.lower(),
+                  "sizeBytes": os.path.getsize(out),
+              }
+          with open("dist/runtime-bundles/manifest.json", "w") as handle:
+              json.dump(manifest, handle, indent=2)
+          print(json.dumps({k: manifest[k] for k in prefixes}, indent=2))
+          PY
+          du -h dist/runtime-bundles/*.tar.zst | sort -h
+
       - name: Verify online build and unit tests
         shell: bash
         run: |
@@ -378,6 +476,104 @@ jobs:
           with open("dist/runtime-bundles/manifest.json", "w") as handle:
               json.dump(manifest, handle, indent=2)
           print(json.dumps(manifest, indent=2))
+          PY
+          du -h dist/runtime-bundles/*.tar.zst | sort -h
+
+      - name: Fetch Conzyx-owned CPP/PHP runtime bundles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, re, urllib.request
+          repo = "sunmughan/Conzyx"
+          token = os.environ["GH_TOKEN"]
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/releases?per_page=100",
+              headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(req, timeout=60) as response:
+              releases = json.load(response)
+
+          prefixes = {
+              "cpp": "conzyx-cpp-arm64-",
+              "php": "conzyx-php-arm64-",
+          }
+
+          def version_key(value):
+              return tuple(int(x) for x in re.findall(r"\d+", value)) or (0,)
+
+          selected = {}
+          for release in releases:
+              if release.get("draft") or release.get("prerelease"):
+                  continue
+              tag = release.get("tag_name", "")
+              if not tag.startswith("runtime-"):
+                  continue
+              for asset in release.get("assets", []):
+                  name = asset.get("name", "")
+                  for component, prefix in prefixes.items():
+                      if name.startswith(prefix) and name.endswith(".tar.zst"):
+                          version = name[len(prefix):-len(".tar.zst")]
+                          if version and re.fullmatch(r"[0-9A-Za-z._+-]+", version):
+                              candidate = (version_key(version), version, asset)
+                              current = selected.get(component)
+                              if current is None or candidate[:2] > current[:2]:
+                                  selected[component] = candidate
+
+          missing = sorted(set(prefixes) - set(selected))
+          if missing:
+              raise SystemExit(f"Missing Conzyx-owned runtime bundles: {', '.join(missing)}")
+
+          # Same owner-controlled pin rule as the upstream fetch: version AND
+          # digest must match .github/runtime-bundles.lock.json, or the build
+          # fails for manual review.
+          with open(".github/runtime-bundles.lock.json") as handle:
+              lock = json.load(handle)
+          for component, (_, version, asset) in selected.items():
+              entry = lock.get(component)
+              if entry is None:
+                  raise SystemExit(f"No lockfile entry for runtime bundle '{component}'; refusing to fetch an unpinned bundle")
+              api_digest = asset.get("digest", "").removeprefix("sha256:").lower()
+              if version != entry["version"]:
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' moved from locked {entry['version']} to {version}. "
+                      "Review the new runtime release, then update .github/runtime-bundles.lock.json in a commit."
+                  )
+              if api_digest != entry["sha256"].lower():
+                  raise SystemExit(
+                      f"Runtime bundle '{component}' digest differs from the lockfile "
+                      f"({api_digest} != {entry['sha256']}). Refusing to trust a digest that changed with the release."
+                  )
+
+          with open("dist/runtime-bundles/manifest.json") as handle:
+              manifest = json.load(handle)
+          for component, (_, version, asset) in selected.items():
+              name = asset["name"]
+              out = os.path.join("dist/runtime-bundles", name)
+              download = urllib.request.Request(
+                  asset["url"],
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/octet-stream",
+                  },
+              )
+              with urllib.request.urlopen(download, timeout=600) as response, open(out, "wb") as target:
+                  target.write(response.read())
+              digest = lock[component]["sha256"]
+              actual = hashlib.sha256(open(out, "rb").read()).hexdigest()
+              if actual.lower() != digest.lower():
+                  raise SystemExit(f"SHA-256 mismatch for {name}: {actual} != {digest}")
+              manifest[component] = {
+                  "version": version,
+                  "file": name,
+                  "sha256": digest.lower(),
+                  "sizeBytes": os.path.getsize(out),
+              }
+          with open("dist/runtime-bundles/manifest.json", "w") as handle:
+              json.dump(manifest, handle, indent=2)
+          print(json.dumps({k: manifest[k] for k in prefixes}, indent=2))
           PY
           du -h dist/runtime-bundles/*.tar.zst | sort -h
 
@@ -613,7 +809,7 @@ jobs:
               "notes": (
                   f"Conzyx {tag} — verified latest runtime assets and toolchain update controls. "
                   "Runtime bundles are resolved from the latest non-prerelease upstream runtime release and SHA-256 verified during CI. "
-                  "PHP uses the online Ubuntu package path with the PHP 8.4 package source and latest Composer release."
+                  "C/C++ and PHP ship as bundled overlays, so Settings installs them without apt, network, or dpkg."
               ),
               "artifacts": {
                   "online": {
@@ -634,19 +830,8 @@ jobs:
                   component("claude", "Claude Code", "claude", "Latest verified ARM64 Claude Code bundle."),
                   component("deepseek", "DeepSeek Harness", "dsh", "Latest verified ARM64 DeepSeek Harness bundle."),
                   component("antigravity", "Antigravity CLI", "agy", "Latest verified ARM64 Antigravity CLI bundle."),
-                  {
-                      "id": "php",
-                      "label": "PHP",
-                      "version": "8.4",
-                      "packageUrl": "",
-                      "sha256": "",
-                      "sizeBytes": 0,
-                      "status": "online-only",
-                      "minRuntimeGeneration": 1,
-                      "activeLink": "",
-                      "healthCommand": "php --version && composer --version",
-                      "notes": "PHP 8.4 package source via Ondřej PHP PPA for the Ubuntu 20.04 ARM64 runtime; Composer uses the official latest-stable release.",
-                  },
+                  component("cpp", "C/C++", "cpp", "Bundled ARM64 C/C++ overlay: GCC, G++, make, CMake, GDB."),
+                  component("php", "PHP", "php", "Bundled ARM64 PHP overlay: PHP CLI, common extensions, Composer."),
               ],
           }
           with open("mobile-harness-update.json", "w") as handle:

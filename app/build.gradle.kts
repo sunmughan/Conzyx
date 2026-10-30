@@ -27,7 +27,7 @@ val hasUploadSigning = listOf(
     uploadKeyAlias,
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
-val appVersionName = providers.gradleProperty("appVersionName").orNull ?: "3.5.15"
+val appVersionName = providers.gradleProperty("appVersionName").orNull ?: "3.5.16"
 val runtimeReleaseBaseUrl =
     "https://github.com/sunmughan/Conzyx/releases/download/v$appVersionName"
 val appUpdateManifestUrl =
@@ -53,6 +53,8 @@ val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAss
             "conzyx-android-arm64-*.tar.zst",
             "conzyx-dsh-arm64-*.tar.zst",
             "conzyx-agy-arm64-*.tar.zst",
+            "conzyx-cpp-arm64-*.tar.zst",
+            "conzyx-php-arm64-*.tar.zst",
         )
     }
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })
@@ -87,7 +89,7 @@ android {
         targetSdk = if (playBuild) 36 else 28
         // Keep literal defaults so F-Droid's static manifest parser can detect
         // the tagged release. Gradle properties may still override Play builds.
-        versionCode = 79
+        versionCode = 80
         versionName = appVersionName
         providers.gradleProperty("appVersionCode").orNull?.toIntOrNull()?.let { versionCode = it }
 

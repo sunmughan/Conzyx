@@ -1619,6 +1619,8 @@ private const val AGY_RUNTIME_DOWNLOAD_MB = 40
 private const val CODEX_RUNTIME_DOWNLOAD_MB = 150
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
 private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
+private const val CPP_RUNTIME_DOWNLOAD_MB = 86
+private const val PHP_RUNTIME_DOWNLOAD_MB = 30
 
 private fun setupTimeEstimate(selected: Set<DevStack>): String {
     var minimumMinutes = 3
@@ -1644,8 +1646,7 @@ private fun setupTimeEstimate(selected: Set<DevStack>): String {
 
 private fun stackDownloadLabel(stack: DevStack): String = when {
     stack == DevStack.WEB -> " · included"
-    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID) -> " · included"
-    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP) -> " · downloads online"
+    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID, DevStack.CPP, DevStack.PHP) -> " · included"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
     else -> ""
@@ -1653,7 +1654,6 @@ private fun stackDownloadLabel(stack: DevStack): String = when {
 
 private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind): String {
     if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-        if (selected.intersect(setOf(DevStack.CPP, DevStack.PHP)).isNotEmpty()) return "Bundled stacks are included in this offline app; C/C++ and PHP download online"
         return "All selected bundles are included in this offline app"
     }
     val total = CORE_RUNTIME_DOWNLOAD_MB +
@@ -1666,13 +1666,13 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
             AgentKind.CUSTOM -> 0
         } +
         (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0) +
-        (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0)
-    val laterPackages = selected.intersect(setOf(DevStack.CPP, DevStack.PHP))
+        (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0) +
+        (if (DevStack.CPP in selected) CPP_RUNTIME_DOWNLOAD_MB else 0) +
+        (if (DevStack.PHP in selected) PHP_RUNTIME_DOWNLOAD_MB else 0)
     return buildString {
         append("Download: ")
         append(total)
         append(" MB")
-        if (laterPackages.isNotEmpty()) append(" · C/PHP packages download later")
         if (total >= 500) append(" · Wi-Fi recommended")
     }
 }
