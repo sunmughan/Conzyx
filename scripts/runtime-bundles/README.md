@@ -47,29 +47,49 @@ installation.
 
 ## Building the C/C++ and PHP bundles
 
-`build-cpp-php-from-ubuntu-ports.py` builds the `cpp` and `php` overlays
-from Ubuntu 20.04 (focal) ARM64 packages, without needing an ARM64 host:
+`build-cpp-php-from-ubuntu-ports.py` builds the `cpp` overlay from
+Ubuntu 20.04 (focal) ARM64 packages, without needing an ARM64 host:
 `.deb` data archives are architecture-independent to extract, so an x86_64
 host can assemble an ARM64 overlay with `dpkg-deb`, as long as every
 package comes from the focal arm64 package index and its SHA-256 is
 verified against that index.
 
     python3 build-cpp-php-from-ubuntu-ports.py --component cpp --version 2026.10.1
-    python3 build-cpp-php-from-ubuntu-ports.py --component php --version 2026.10.1
 
 The script resolves the full Depends + Pre-Depends closure for the same
-seed lists the installer used to apt-install (build-essential, cmake, gdb,
-gcc, g++, make; php-cli, php-mbstring, php-xml, php-curl, php-zip, unzip),
-verifies each `.deb` SHA-256, extracts it, then replicates the postinst
-effects an overlay install would otherwise miss: compiler alternatives
-symlinks (gcc/g++/cc/c++) and PHP extension conf.d symlinks. Composer is
-downloaded from getcomposer.org and verified against its published
-SHA-256 checksum. The overlay is packed with `create_deterministic_tar.py`
-and compressed with zstd level 19. Publish the resulting
-`conzyx-<component>-arm64-<version>.tar.zst` files as assets of a
-`runtime-*` release on sunmughan/Conzyx, pin their SHA-256 digests in
-`.github/runtime-bundles.lock.json`, and CI fetches them into the offline
-APK exactly like the upstream bundles.
+seed list the installer used to apt-install (build-essential, cmake, gdb,
+gcc, g++, make), verifies each `.deb` SHA-256, extracts it, then
+replicates the postinst effects an overlay install would otherwise miss:
+compiler alternatives symlinks (gcc/g++/cc/c++). The overlay is packed
+with `create_deterministic_tar.py` and compressed with zstd level 19.
+
+## Building the PHP 8.4 bundle
+
+PHP is built by `build-php84-from-ondrej.py`, NOT by the focal script:
+Ondrej dropped focal entirely (its focal package index is an empty
+20-byte gzip since 2025-06-09), so no focal PHP 8.4 `.deb` exists. The
+guest rootfs is focal (glibc 2.31), while Ondrej jammy PHP 8.4 binaries
+require GLIBC_2.32-2.35 and would fail to start there, so the script
+relocates the jammy closure's shared libraries into a private prefix
+(`/opt/php8.4/lib` inside the overlay) and rewrites the loader linkage
+with patchelf (private interpreter + `RPATH=/opt/php8.4/lib` on the PHP
+binary, every extension, and every private library). The PHP binary,
+extensions, and conf.d symlinks keep their standard guest paths, so the
+app's binary checks and extension_dir keep working. The script refuses
+to build unless the resolved php8.4-cli version starts with `8.4.`, and
+it verifies every `.deb` SHA-256 against its index, every `NEEDED`
+entry against the private prefix, and the extension set (28 `.so` files
+plus json compiled into the PHP 8.4 binary, the same 29 functional
+extensions the 7.4 bundle carried). Composer is downloaded from
+getcomposer.org and verified against its published SHA-256 checksum.
+patchelf must be on PATH (or set the `PATCHELF` environment variable).
+
+    python3 build-php84-from-ondrej.py --version 2026.10.2
+
+Publish the resulting `conzyx-php-arm64-<version>.tar.zst` file as an
+asset of a `runtime-*` release on sunmughan/Conzyx, pin its SHA-256
+digest in `.github/runtime-bundles.lock.json`, and CI fetches it into
+the offline APK exactly like the upstream bundles.
 
 ## Release requirements
 

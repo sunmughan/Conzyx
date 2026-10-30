@@ -1620,7 +1620,7 @@ private const val CODEX_RUNTIME_DOWNLOAD_MB = 150
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
 private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
 private const val CPP_RUNTIME_DOWNLOAD_MB = 86
-private const val PHP_RUNTIME_DOWNLOAD_MB = 30
+private const val PHP_RUNTIME_DOWNLOAD_MB = 26
 
 private fun setupTimeEstimate(selected: Set<DevStack>): String {
     var minimumMinutes = 3

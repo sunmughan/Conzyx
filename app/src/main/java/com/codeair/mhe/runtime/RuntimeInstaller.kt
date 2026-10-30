@@ -4227,9 +4227,9 @@ main().catch((err) => {
         )
         private val PHP_BUNDLE = RuntimeBundle(
             label = "PHP",
-            fileName = "conzyx-php-arm64-2026.10.1.tar.zst",
-            sha256 = "59352239004fe3973dcdac0c0f0433e3dfc79d3db06336c286b8353a24e99254",
-            compressedBytes = 29_582_213L,
+            fileName = "conzyx-php-arm64-2026.10.2.tar.zst",
+            sha256 = "0555a71b232c276a84996d204d828e5cd27082c037b24d998ce28514a4d59e08",
+            compressedBytes = 25_480_901L,
         )
         private val DSH_BUNDLE = RuntimeBundle(
             label = "DeepSeek Harness",
