@@ -16,11 +16,38 @@ object BackgroundProtectionHelper {
         return powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
 
+    /**
+     * The Doze whitelist request. WARNING: this grants only the system Doze /
+     * App Standby exemption reported by [isBatteryOptimizationIgnored]. It does
+     * NOT set the per-app "App battery usage" option to Unrestricted, which on
+     * Android 15+ lives on a separate system screen (App info -> App battery
+     * usage -> Allow background usage -> Unrestricted) and on OEM skins is
+     * managed by the OEM battery app. Do not use this intent as the
+     * "Unrestricted" path, and never label a whitelist check "Unrestricted".
+     */
     fun getBatteryOptimizationIntent(context: Context): Intent {
         val packageName = context.packageName
         return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
             data = Uri.parse("package:$packageName")
         }
+    }
+
+    /**
+     * The real route to the Unrestricted choice. Android exposes NO public
+     * intent that lands directly on the per-app "App battery usage" page, so
+     * this opens the app-info page (ACTION_APPLICATION_DETAILS_SETTINGS),
+     * from which the user taps "App battery usage" and selects Unrestricted.
+     * That is one tap further than the ideal screen, and it is the closest
+     * documented route: do NOT substitute undocumented Settings sub-activities
+     * (component names), which break across OEM builds. Callers must treat the
+     * Unrestricted choice as user-confirmed, never as readable state: there is
+     * no public API that reports the App battery usage radio selection.
+     * This is the same destination as [getAppDetailsSettingsIntent]; it exists
+     * as a separate name so callers state their intent (battery usage) instead
+     * of reusing the generic app-info helper by accident.
+     */
+    fun getAppBatteryUsageIntent(context: Context): Intent {
+        return getAppDetailsSettingsIntent(context)
     }
 
     fun getAppDetailsSettingsIntent(context: Context): Intent {

@@ -814,11 +814,21 @@ private fun BackgroundTaskSetupScreen(
             ) == PackageManager.PERMISSION_GRANTED
         return runtimeGranted && androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
-    fun batteryUnrestricted(): Boolean = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    // Truthful naming: this reads ONLY the Doze whitelist. It is not the
+    // "App battery usage -> Unrestricted" choice, which no public API can
+    // read, so it must never gate or label the Background row on its own.
+    fun batteryWhitelisted(): Boolean = powerManager.isIgnoringBatteryOptimizations(context.packageName)
 
     var currentStep by rememberSaveable { mutableIntStateOf(0) }
     var notificationGranted by remember { mutableStateOf(notificationsAllowed()) }
-    var batteryGranted by remember { mutableStateOf(batteryUnrestricted()) }
+    var batteryWhitelisted by remember { mutableStateOf(batteryWhitelisted()) }
+    var batterySettingsOpened by rememberSaveable { mutableStateOf(false) }
+    // User attestation, set only by tapping "I set App battery usage to
+    // Unrestricted" AFTER returning from the real system screen. The app
+    // cannot verify that choice itself, so it must never be inferred from
+    // the whitelist or from merely dismissing a dialog.
+    var batteryUnrestrictedConfirmed by rememberSaveable { mutableStateOf(false) }
+    val batteryGranted = batteryUnrestrictedConfirmed
     var notificationDenied by rememberSaveable { mutableStateOf(false) }
     var taskProtectionConfirmed by rememberSaveable { mutableStateOf(false) }
 
@@ -832,13 +842,16 @@ private fun BackgroundTaskSetupScreen(
         if (notificationGranted) currentStep = 1
     }
     val batteryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        batteryGranted = batteryUnrestricted()
-        if (batteryGranted) currentStep = 2
+        // Re-check on return, but NEVER auto-advance: returning from Settings
+        // proves nothing about the Unrestricted radio, which only the user
+        // can confirm (see batteryUnrestrictedConfirmed).
+        batteryWhitelisted = batteryWhitelisted()
+        batterySettingsOpened = true
     }
 
     LaunchedEffect(Unit) {
         notificationGranted = notificationsAllowed()
-        batteryGranted = batteryUnrestricted()
+        batteryWhitelisted = batteryWhitelisted()
     }
 
     val currentIcon = when (currentStep) {
@@ -854,9 +867,9 @@ private fun BackgroundTaskSetupScreen(
     val currentDescription = when (currentStep) {
         0 -> "See live progress and receive an alert when Claude finishes or needs your attention."
         1 -> if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
-            "Allow Conzyx to continue tasks without pausing when switching to recents. On ${BackgroundProtectionHelper.getOemName()} devices, also enable Autostart."
+            "Allow Conzyx to continue tasks without pausing when switching to recents. On ${BackgroundProtectionHelper.getOemName()} devices, also enable Autostart. This opens system Settings: there, open App battery usage and select Unrestricted, then confirm here."
         } else {
-            "Allow Conzyx to continue a task when you lock the phone or switch to another app."
+            "Allow Conzyx to continue a task when you lock the phone or switch to another app. This opens system Settings: there, open App battery usage and select Unrestricted, then confirm here."
         }
         else -> if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
             "Keep the CPU & network active while tasks run. Make sure battery optimization is set to Unrestricted."
@@ -986,18 +999,22 @@ private fun BackgroundTaskSetupScreen(
                                 1 -> if (batteryGranted) {
                                     currentStep = 2
                                 } else {
-                                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                        data = Uri.parse("package:${context.packageName}")
+                                    // Open the REAL system screen path (app info -> App battery
+                                    // usage -> Unrestricted). The old code launched the
+                                    // REQUEST_IGNORE dialog here; tapping Allow on that dialog
+                                    // grants only the Doze whitelist and never touches the
+                                    // Unrestricted radio, which is why users came back with
+                                    // optimization still on. Fallback is the system battery
+                                    // optimization list, not a dialog.
+                                    runCatching {
+                                        batteryLauncher.launch(
+                                            BackgroundProtectionHelper.getAppBatteryUsageIntent(context),
+                                        )
+                                    }.onFailure {
+                                        batteryLauncher.launch(
+                                            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                                        )
                                     }
-                                    runCatching { batteryLauncher.launch(intent) }
-                                        .onFailure {
-                                            batteryLauncher.launch(
-                                                Intent(
-                                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                                    Uri.parse("package:${context.packageName}"),
-                                                ),
-                                            )
-                                        }
                                 }
                                 else -> {
                                     taskProtectionConfirmed = true
@@ -1022,6 +1039,41 @@ private fun BackgroundTaskSetupScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp))
+                    }
+                    if (currentStep == 1) {
+                        // Surface both states honestly: the whitelist is readable
+                        // and shown for what it is; the Unrestricted radio is not
+                        // readable, so it is only ever user-confirmed, never
+                        // inferred from this line or from returning to the app.
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            if (batteryWhitelisted) {
+                                "System Doze exemption: granted. This alone does not set App battery usage to Unrestricted."
+                            } else {
+                                "System Doze exemption: not granted. The Unrestricted choice on the system screen is what matters here."
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+                    if (currentStep == 1 && batterySettingsOpened && !batteryGranted) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                batteryUnrestrictedConfirmed = true
+                                currentStep = 2
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(13.dp),
+                        ) {
+                            Text(
+                                "I set App battery usage to Unrestricted",
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller() && (currentStep == 1 || currentStep == 2)) {
                         Spacer(Modifier.height(8.dp))
@@ -1486,17 +1538,15 @@ private fun RuntimeSetupPromptScreen(
                         // keep working through update/remove.
                         val installerStacks = DevStack.entries.filter { it != DevStack.BROWSER }
                         installerStacks.forEachIndexed { index, stack ->
-                            val isOfflineUnbundled = BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP)
                             DevStackChoiceRow(
                                 stack = stack,
-                                selected = !isOfflineUnbundled && (stack == DevStack.WEB || stack in selectedStacks),
-                                locked = stack == DevStack.WEB || isOfflineUnbundled,
+                                selected = stack == DevStack.WEB || stack in selectedStacks,
+                                locked = stack == DevStack.WEB,
                                 lockedReason = when {
                                     stack == DevStack.WEB -> "Web is included with the Core runtime — no separate download needed."
-                                    isOfflineUnbundled -> "${stack.label} is available in the online build only."
                                     else -> null
                                 },
-                                onClick = { if (!isOfflineUnbundled) onToggleStack(stack) },
+                                onClick = { onToggleStack(stack) },
                             )
                             if (index != installerStacks.lastIndex) {
                                 HorizontalDivider(modifier = Modifier.padding(start = 62.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -1595,14 +1645,17 @@ private fun setupTimeEstimate(selected: Set<DevStack>): String {
 private fun stackDownloadLabel(stack: DevStack): String = when {
     stack == DevStack.WEB -> " · included"
     BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID) -> " · included"
-    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP) -> " · Online only"
+    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP) -> " · downloads online"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
     else -> ""
 }
 
 private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind): String {
-    if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return "All selected bundles are included in this offline app"
+    if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+        if (selected.intersect(setOf(DevStack.CPP, DevStack.PHP)).isNotEmpty()) return "Bundled stacks are included in this offline app; C/C++ and PHP download online"
+        return "All selected bundles are included in this offline app"
+    }
     val total = CORE_RUNTIME_DOWNLOAD_MB +
         when (agent) {
             AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB

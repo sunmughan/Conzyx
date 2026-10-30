@@ -39,10 +39,25 @@ guest() {
 guest "printf 'nameserver $DNS_SERVER\\n' > /etc/resolv.conf; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade"
 guest "DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates curl wget unzip zip xz-utils zstd"
 guest "set -e; NODE_VERSION=v24.19.0; NODE_FILE=node-\\${NODE_VERSION}-linux-arm64.tar.gz; cd /tmp; curl -fsSLO https://nodejs.org/dist/\\${NODE_VERSION}/\\${NODE_FILE}; curl -fsSL https://nodejs.org/dist/\\${NODE_VERSION}/SHASUMS256.txt | grep \\\"  \\${NODE_FILE}\\\" | sha256sum -c -; mkdir -p /usr/local/lib/nodejs; tar -xzf \\${NODE_FILE} -C /usr/local/lib/nodejs; ln -sfn /usr/local/lib/nodejs/node-\\${NODE_VERSION} /usr/local/lib/nodejs/current; ln -sfn /usr/local/lib/nodejs/current/bin/node /usr/local/bin/node; ln -sfn /usr/local/lib/nodejs/current/bin/npm /usr/local/bin/npm; ln -sfn /usr/local/lib/nodejs/current/bin/npx /usr/local/bin/npx; rm -f /tmp/\\${NODE_FILE}"
+# Proot compatibility config, same set the app applies to live rootfs
+# installs before any dpkg run (see RuntimeInstaller.applyProotCompatConfig):
+# apt must not drop to the _apt user (proot cannot intercept setresuid)
+# and must not allocate a PTY for dpkg (SetupSlavePtyMagic can _exit(100)
+# under proot); dpkg must tolerate ENOSYS from fsync; postinst scripts
+# must not try to start services in a guest with no init (policy-rc.d
+# exit 101); dpkg triggers need a machine-id and postinst scripts need
+# /etc/hosts. The machine-id is a deterministic guest-container id derived
+# from the bundle version (not a host identity); the app's live path
+# writes a per-device random id only when the file is missing or blank.
+# man-db auto-update is pre-seeded off: its trigger is documented to
+# stall apt silently for minutes (Launchpad 2073797).
+guest "mkdir -p /etc/apt/apt.conf.d /etc/dpkg/dpkg.cfg.d; printf 'APT::Sandbox::User \\\"root\\\";\\nDPkg::Use-Pty \\\"false\\\";\\n' > /etc/apt/apt.conf.d/01-pocketdev-proot; printf 'force-unsafe-io\\n' > /etc/dpkg/dpkg.cfg.d/01-pocketdev-proot; printf '#!/bin/sh\\nexit 101\\n' > /usr/sbin/policy-rc.d; chmod +x /usr/sbin/policy-rc.d; printf '127.0.0.1 localhost\\n::1 localhost ip6-localhost ip6-loopback\\n' > /etc/hosts; printf 'pocketdev-core-$VERSION' | sha256sum | cut -c1-32 > /etc/machine-id; echo 'man-db man-db/auto-update boolean false' | debconf-set-selections 2>/dev/null || true"
 guest "apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /var/tmp/*"
 
 guest "mkdir -p /workspace /opt/pocketdev /root/.gradle/init.d; printf 'ubuntu-20.04.5-arm64\\n' > /.pocket-rootfs-version; printf 'core-bundle-$VERSION\\n' > /.pocket-core-tools-version; printf 'core-bundle-$VERSION\\n' > /.pocket-runtime-ready; printf 'ubuntu-maintenance-v1\\n' > /.pocket-system-upgrade-version; printf '{\\\"WEB\\\":true,\\\"PYTHON\\\":false,\\\"CPP\\\":false,\\\"PHP\\\":false,\\\"ANDROID\\\":false}\\n' > /.pocket-dev-stacks.json"
-guest "rm -rf /root/.cache /root/.npm /root/.composer /root/.gradle/caches /root/.ssh; find /var/log -type f -delete; rm -f /etc/ssh/ssh_host_* /etc/machine-id /var/lib/dbus/machine-id /root/.bash_history"
+# NOTE: /etc/machine-id is deliberately kept (proot compat, written above);
+# only the dbus copy is removed, dbus regenerates it from /etc/machine-id.
+guest "rm -rf /root/.cache /root/.npm /root/.composer /root/.gradle/caches /root/.ssh; find /var/log -type f -delete; rm -f /etc/ssh/ssh_host_* /var/lib/dbus/machine-id /root/.bash_history"
 
 adb_cmd shell "su -c 'umount $REMOTE/rootfs/sys; umount $REMOTE/rootfs/proc; umount $REMOTE/rootfs/dev; mkdir -p $REMOTE/rootfs/output; mount --bind $REMOTE/output $REMOTE/rootfs/output'"
 guest "export ZSTD_CLEVEL=19 ZSTD_NBTHREADS=0; tar --exclude='._*' --exclude='.DS_Store' --sort=name --mtime=2026-09-05T00:00:00Z --owner=0 --group=0 --numeric-owner --use-compress-program=/usr/bin/zstd -cf /output/pocketdev-core-arm64-$VERSION.tar.zst -C / ."

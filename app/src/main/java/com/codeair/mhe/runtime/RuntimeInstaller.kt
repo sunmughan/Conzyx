@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Collections
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -365,21 +366,12 @@ class RuntimeInstaller(private val context: Context) {
                 ),
             )
         }
-        val eligibleStacks = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            val dropped = installerStacks.filterNot { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
-            if (dropped.isNotEmpty()) {
-                onProgress(
-                    RuntimeInstallProgress(
-                        "Skipped ${dropped.joinToString { it.label }}: not included in the offline build. " +
-                            "Use the online build to install these stacks.",
-                        0.71f,
-                    )
-                )
-            }
-            installerStacks.filter { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
-        } else {
-            installerStacks
-        }
+        // Upstream behavior (techjarves/Mobile-Harness): every
+        // installer-selected stack is eligible, in every build. C/C++
+        // and PHP install through apt (which downloads online) even in
+        // the offline build; they are not bundled stacks, so there is
+        // nothing offline-only to gate them on.
+        val eligibleStacks = installerStacks
         val missingStacks = eligibleStacks.filterNot(::isStackInstalled)
         missingStacks.forEachIndexed { index, stack ->
             val slice = 0.26f / maxOf(1, missingStacks.size)
@@ -1902,10 +1894,6 @@ class RuntimeInstaller(private val context: Context) {
                 installAndroidToolchain(proot, from, to, onProgress)
             }
             DevStack.CPP -> {
-                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    onProgress(RuntimeInstallProgress("C/C++ tools are online-only (skipped in offline APK)", to))
-                    return
-                }
                 aptInstall(
                     proot,
                     listOf("build-essential", "cmake", "gdb"),
@@ -1935,10 +1923,6 @@ class RuntimeInstaller(private val context: Context) {
                 if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
             }
             DevStack.PHP -> {
-                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    onProgress(RuntimeInstallProgress("PHP tools are online-only (skipped in offline APK)", to))
-                    return
-                }
                 runCatching { preparePhpRepository(proot, onProgress) }.onFailure {
                     File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
                 }
@@ -2015,6 +1999,7 @@ class RuntimeInstaller(private val context: Context) {
         if (listFile.isFile) return
         onProgress(RuntimeInstallProgress("Configuring PHP repository", 0.15f))
         writeResolver()
+        applyProotCompatConfig(proot)
         val command = "export DEBIAN_FRONTEND=noninteractive; " +
             "dpkg --configure -a && " +
             "apt-get -o DPkg::Lock::Timeout=120 -f install -y && " +
@@ -2554,6 +2539,7 @@ class RuntimeInstaller(private val context: Context) {
             ),
         )
         writeResolver()
+        applyProotCompatConfig(proot)
         // Split into one phase per command (same commands, same order,
         // same flags as the old compound command): a stall in any phase
         // now names its own step instead of hiding behind one headline,
@@ -2605,6 +2591,7 @@ class RuntimeInstaller(private val context: Context) {
     ) {
         require(packages.isNotEmpty()) { "No packages selected" }
         writeResolver()
+        applyProotCompatConfig(proot)
         val packageNames = packages.joinToString(" ")
         // Phased instead of one compound command: each phase reports its own
         // STAGE event, so the setup headline and terminal visibly advance
@@ -3188,6 +3175,69 @@ printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",
         val dns = manager.getLinkProperties(manager.activeNetwork)?.dnsServers.orEmpty()
         val servers = dns.mapNotNull { it.hostAddress }.ifEmpty { listOf("8.8.8.8", "1.1.1.1") }
         File(rootfs, "etc/resolv.conf").writeText(servers.joinToString("\n") { "nameserver $it" } + "\n")
+    }
+
+    /**
+     * Proot compatibility config for the Ubuntu guest, written from the
+     * host side (no guest shell needed, so it works even when dpkg is
+     * wedged) and applied idempotently before every dpkg/apt run. The
+     * config set is the documented proot-Ubuntu workaround set: apt must
+     * not drop to the _apt user (proot fakes UID 0 but cannot intercept
+     * setresuid), must not allocate a PTY for dpkg (SetupSlavePtyMagic
+     * in the dpkg child can _exit(100) under proot), dpkg must tolerate
+     * ENOSYS from fsync, postinst scripts must not try to start services
+     * in a guest with no init (policy-rc.d exit 101), and dpkg triggers
+     * and postinst scripts need /etc/machine-id and /etc/hosts.
+     * /etc/passwd and /etc/group already ship valid in ubuntu-base and
+     * are left untouched; the APT sandbox-user line removes the _apt
+     * drop failure mode entirely. Nothing here touches the user's Linux
+     * home (workspace /root), deletes dpkg locks, or adds --force flags.
+     * The man-db preseed is the one guest command, and it is best effort:
+     * if debconf is absent the install still proceeds.
+     */
+    private suspend fun applyProotCompatConfig(proot: File) {
+        val aptConfDir = File(rootfs, "etc/apt/apt.conf.d")
+        aptConfDir.mkdirs()
+        File(aptConfDir, "01-pocketdev-proot").writeText(
+            "APT::Sandbox::User \"root\";\nDPkg::Use-Pty \"false\";\n",
+        )
+        val dpkgConfDir = File(rootfs, "etc/dpkg/dpkg.cfg.d")
+        dpkgConfDir.mkdirs()
+        File(dpkgConfDir, "01-pocketdev-proot").writeText("force-unsafe-io\n")
+        val policyRc = File(rootfs, "usr/sbin/policy-rc.d")
+        policyRc.parentFile?.mkdirs()
+        policyRc.writeText("#!/bin/sh\nexit 101\n")
+        policyRc.setExecutable(true)
+        // Only created when missing or blank: an existing id is never
+        // replaced, and this per-device random id is never shipped anywhere.
+        val machineId = File(rootfs, "etc/machine-id")
+        if (!machineId.isFile || machineId.readText().isBlank()) {
+            machineId.writeText(UUID.randomUUID().toString().replace("-", "") + "\n")
+        }
+        // Append-only: existing host entries are never removed or rewritten.
+        val hosts = File(rootfs, "etc/hosts")
+        val hostLines = if (hosts.isFile) hosts.readLines() else emptyList()
+        val missingHosts = buildString {
+            if (hostLines.none { it.trim().startsWith("127.0.0.1") }) append("127.0.0.1 localhost\n")
+            if (hostLines.none { it.trim().startsWith("::1") }) append("::1 localhost ip6-localhost ip6-loopback\n")
+        }
+        if (missingHosts.isNotEmpty()) {
+            hosts.appendText(missingHosts)
+        }
+        // man-db trigger: documented to stall apt silently for minutes
+        // (Launchpad 2073797). Pre-seeding auto-update off makes the
+        // trigger skip the index rebuild. Both debconf routes are tried
+        // because either tool may be absent; neither failure may fail
+        // the install, and the surrounding runCatching also swallows a
+        // guest timeout (a child timeout, not a parent cancellation).
+        runCatching {
+            runGuest(
+                proot,
+                "echo 'man-db man-db/auto-update boolean false' | debconf-set-selections 2>/dev/null || true; " +
+                    "echo 'set man-db/auto-update false' | debconf-communicate 2>/dev/null || true",
+                60_000L,
+            )
+        }
     }
 
     private fun checkArchiveSize(archive: File) {

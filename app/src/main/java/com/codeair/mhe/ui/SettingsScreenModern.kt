@@ -746,11 +746,15 @@ fun SettingsScreen(
                             )
                             OutlinedButton(
                                 onClick = {
-                                    val intent = BackgroundProtectionHelper.getBatteryOptimizationIntent(context)
+                                    // Open the real system screen path (app info -> App battery
+                                    // usage -> Unrestricted). The old code launched the
+                                    // REQUEST_IGNORE dialog here, which grants only the Doze
+                                    // whitelist and never touches the Unrestricted radio.
+                                    val intent = BackgroundProtectionHelper.getAppBatteryUsageIntent(context)
                                     runCatching { context.startActivity(intent.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
                                         .onFailure {
                                             runCatching {
-                                                context.startActivity(BackgroundProtectionHelper.getAppDetailsSettingsIntent(context).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                                                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
                                             }.onFailure {
                                                 Toast.makeText(context, "Could not open battery settings", Toast.LENGTH_SHORT).show()
                                             }
