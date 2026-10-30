@@ -521,6 +521,7 @@ fun PocketDevApp(
         state.startupStage == StartupStage.SETUP_REQUIRED -> RuntimeSetupPromptScreen(
             selectedStacks = state.selectedDevStacks,
             selectedAgent = state.agentKind,
+            missingCoreChecks = state.startupMissingChecks,
             themeMode = state.themeMode,
             onToggleTheme = viewModel::toggleTheme,
             onToggleStack = viewModel::toggleDevStack,
@@ -1144,6 +1145,7 @@ private fun getDevStackVisuals(stack: DevStack): DevStackVisuals = when (stack) 
 private fun RuntimeSetupPromptScreen(
     selectedStacks: Set<DevStack>,
     selectedAgent: AgentKind = AgentKind.CLAUDE_CODE,
+    missingCoreChecks: List<String> = emptyList(),
     themeMode: AppThemeMode = AppThemeMode.DARK,
     onToggleTheme: () -> Unit = {},
     onToggleStack: (DevStack) -> Unit,
@@ -1233,6 +1235,28 @@ private fun RuntimeSetupPromptScreen(
                     fontSize = 13.5.sp,
                     lineHeight = 19.sp,
                 )
+
+                // Loop diagnosis: when a previous setup "succeeded" yet the
+                // app lands back here, name the failing core check(s)
+                // instead of showing the same generic prompt again.
+                if (missingCoreChecks.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Setup check found:",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    missingCoreChecks.forEach { check ->
+                        Text(
+                            text = "• $check",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                        )
+                    }
+                }
 
                 Spacer(Modifier.height(20.dp))
 
@@ -1456,8 +1480,13 @@ private fun RuntimeSetupPromptScreen(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     Column {
-                        DevStack.entries.forEachIndexed { index, stack ->
-                            val isOfflineUnbundled = BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP, DevStack.BROWSER)
+                        // Browser Automation is not offered here: it
+                        // belongs to Pen Testing, which installs its own
+                        // tooling. Existing installs are untouched and
+                        // keep working through update/remove.
+                        val installerStacks = DevStack.entries.filter { it != DevStack.BROWSER }
+                        installerStacks.forEachIndexed { index, stack ->
+                            val isOfflineUnbundled = BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP)
                             DevStackChoiceRow(
                                 stack = stack,
                                 selected = !isOfflineUnbundled && (stack == DevStack.WEB || stack in selectedStacks),
@@ -1469,7 +1498,7 @@ private fun RuntimeSetupPromptScreen(
                                 },
                                 onClick = { if (!isOfflineUnbundled) onToggleStack(stack) },
                             )
-                            if (index != DevStack.entries.lastIndex) {
+                            if (index != installerStacks.lastIndex) {
                                 HorizontalDivider(modifier = Modifier.padding(start = 62.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             }
                         }
@@ -1566,7 +1595,7 @@ private fun setupTimeEstimate(selected: Set<DevStack>): String {
 private fun stackDownloadLabel(stack: DevStack): String = when {
     stack == DevStack.WEB -> " · included"
     BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID) -> " · included"
-    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP, DevStack.BROWSER) -> " · Online only"
+    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP) -> " · Online only"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
     else -> ""

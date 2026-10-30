@@ -115,6 +115,14 @@ class RuntimeCoordinator(
                 if (ready) installer.cleanupLegacyWorkspaceScaffolding()
             }
         }
+        // Name the failing check(s) for the setup screen: without this,
+        // a loop back to Device Check looks identical to a fresh install
+        // and the user cannot tell what is actually missing.
+        val missingChecks = if (!installed) {
+            withContext(Dispatchers.IO) { installer.missingCoreChecks() }
+        } else {
+            emptyList()
+        }
         host.updateState { current ->
             current.copy(
                 installedDevStacks = if (installed) installer.installedStacks() else current.installedDevStacks,
@@ -123,7 +131,7 @@ class RuntimeCoordinator(
         }
         when {
             !installed && setupSnapshot.status == RuntimeSetupStatus.ERROR -> onSetupSnapshot(setupSnapshot)
-            !installed -> host.updateState { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupProgress = 0f) }
+            !installed -> host.updateState { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupProgress = 0f, startupMissingChecks = missingChecks) }
             !preferences.onboardingComplete -> {
                 preferences.runtimeSetupComplete = true
                 host.updateState { it.copy(startupStage = StartupStage.MODEL_SETUP, startupProgress = 1f) }

@@ -18,6 +18,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -350,8 +352,21 @@ class RuntimeInstaller(private val context: Context) {
             coreToolsMarker.writeText(CORE_TOOLS_VERSION)
         }
 
+        // Browser Automation is no longer offered in the installer: it
+        // belongs to Pen Testing, which installs its own tooling. Drop it
+        // from any restored/older selection so it can never block setup
+        // again; existing installs keep working through update/remove.
+        val installerStacks = selectedStacks.filterNot { it == DevStack.BROWSER }
+        if (installerStacks.size != selectedStacks.size) {
+            onProgress(
+                RuntimeInstallProgress(
+                    "Browser Automation is no longer offered in the installer and was skipped",
+                    0.71f,
+                ),
+            )
+        }
         val eligibleStacks = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            val dropped = selectedStacks.filterNot { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
+            val dropped = installerStacks.filterNot { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
             if (dropped.isNotEmpty()) {
                 onProgress(
                     RuntimeInstallProgress(
@@ -361,9 +376,9 @@ class RuntimeInstaller(private val context: Context) {
                     )
                 )
             }
-            selectedStacks.filter { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
+            installerStacks.filter { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
         } else {
-            selectedStacks
+            installerStacks
         }
         val missingStacks = eligibleStacks.filterNot(::isStackInstalled)
         missingStacks.forEachIndexed { index, stack ->
@@ -380,6 +395,15 @@ class RuntimeInstaller(private val context: Context) {
             // Custom is bring-your-own-API: nothing to install.
             com.codeair.mhe.model.AgentKind.CUSTOM -> Unit
         }
+        // Loop fix: the core-ready marker used to exist only when baked
+        // into the core bundle at build time; app code only ever read it.
+        // A rootfs extracted from an older bundle therefore passed setup
+        // yet failed isInstalled() on the next launch and looped back to
+        // Device Check forever. Record completion here so every successful
+        // setup, not just fresh-bundle installs, satisfies isInstalled().
+        // The marker value matches the bundle format (core-bundle-<version>).
+        coreReadyMarker.parentFile?.mkdirs()
+        coreReadyMarker.writeText(coreToolsMarker.readTextOrNull()?.takeIf { it.isNotBlank() } ?: CORE_TOOLS_VERSION)
         onProgress(RuntimeInstallProgress("Setup complete", 1f))
         return InstalledRuntime(proot, rootfs)
     }
@@ -2347,6 +2371,23 @@ class RuntimeInstaller(private val context: Context) {
      * installed every tool keep all stacks without re-downloading anything.
      */
     fun migrateLegacyToolMarkers() {
+        // Loop fix, backfill (not legacy-gated): an old rootfs that is
+        // otherwise valid (bash, node, git, matching rootfs version,
+        // supported core tools) but predates the ready marker fails
+        // isInstalled() on the marker alone. Record completion in place
+        // instead of forcing a full core re-download. A genuinely broken
+        // core (missing binary or wrong version) is left untouched so
+        // ensureInstalled() still repairs it.
+        if (!coreReadyMarker.exists() &&
+            File(rootfs, "usr/bin/bash").isFile &&
+            File(rootfs, "usr/local/bin/node").exists() &&
+            File(rootfs, "usr/bin/git").exists() &&
+            rootfsMarker.readTextOrNull() == ROOTFS_VERSION &&
+            isSupportedCoreToolsVersion()
+        ) {
+            coreReadyMarker.parentFile?.mkdirs()
+            coreReadyMarker.writeText(coreToolsMarker.readTextOrNull()?.takeIf { it.isNotBlank() } ?: CORE_TOOLS_VERSION)
+        }
         if (!File(rootfs, "usr/bin/bash").isFile) return
         if (languageToolsMarker.readTextOrNull() != LANGUAGE_TOOLS_VERSION) return
         if (coreToolsMarker.readTextOrNull() != CORE_TOOLS_VERSION) coreToolsMarker.writeText(CORE_TOOLS_VERSION)
@@ -2513,15 +2554,42 @@ class RuntimeInstaller(private val context: Context) {
             ),
         )
         writeResolver()
-        val command = "export DEBIAN_FRONTEND=noninteractive; " +
-            "dpkg --configure -a && " +
-            "apt-get -o DPkg::Lock::Timeout=120 -f install -y && " +
-            "apt-get -o DPkg::Lock::Timeout=120 update && " +
-            "apt-get -o DPkg::Lock::Timeout=120 upgrade -y"
+        // Split into one phase per command (same commands, same order,
+        // same flags as the old compound command): a stall in any phase
+        // now names its own step instead of hiding behind one headline,
+        // and a failed phase stops the later phases exactly as && did.
+        val env = "export DEBIAN_FRONTEND=noninteractive; "
         runGuestCommand(
             proot = proot,
-            command = command,
-            displayCommand = "dpkg --configure -a && apt-get -f install -y && apt-get update && apt-get upgrade -y",
+            command = env + "dpkg --configure -a",
+            displayCommand = "dpkg --configure -a",
+            fraction = 0.69f,
+            timeoutMs = 35 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Ubuntu maintenance could not be completed",
+        )
+        runGuestCommand(
+            proot = proot,
+            command = env + "apt-get -o DPkg::Lock::Timeout=120 -f install -y",
+            displayCommand = "apt-get -f install -y",
+            fraction = 0.69f,
+            timeoutMs = 35 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Ubuntu maintenance could not be completed",
+        )
+        runGuestCommand(
+            proot = proot,
+            command = env + "apt-get -o DPkg::Lock::Timeout=120 update",
+            displayCommand = "apt-get update",
+            fraction = 0.69f,
+            timeoutMs = 35 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Ubuntu maintenance could not be completed",
+        )
+        runGuestCommand(
+            proot = proot,
+            command = env + "apt-get -o DPkg::Lock::Timeout=120 upgrade -y",
+            displayCommand = "apt-get upgrade -y",
             fraction = 0.69f,
             timeoutMs = 35 * 60 * 1_000L,
             onProgress = onProgress,
@@ -2545,11 +2613,26 @@ class RuntimeInstaller(private val context: Context) {
         // granularity improves (a failed update no longer masquerades as a
         // failed install). Each phase keeps the previous 30-minute budget.
         val env = "export DEBIAN_FRONTEND=noninteractive; "
+        // Split phase 1 further into a dpkg-only command and an apt-only
+        // command: a dpkg stall used to masquerade as an apt stall (and
+        // vice versa) behind one headline, and a stuck package never
+        // named itself. Same commands, same order, same flags; only
+        // failure granularity improves.
         onProgress(RuntimeInstallProgress("Repairing package state (dpkg --configure)", fraction))
         runGuestCommand(
             proot = proot,
-            command = env + "dpkg --configure -a && apt-get -o DPkg::Lock::Timeout=120 -f install -y",
-            displayCommand = "dpkg --configure -a && apt-get -f install -y",
+            command = env + "dpkg --configure -a",
+            displayCommand = "dpkg --configure -a",
+            fraction = fraction,
+            timeoutMs = 30 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Could not configure installed packages",
+        )
+        onProgress(RuntimeInstallProgress("Fixing broken packages (apt-get -f install)", fraction))
+        runGuestCommand(
+            proot = proot,
+            command = env + "apt-get -o DPkg::Lock::Timeout=120 -f install -y",
+            displayCommand = "apt-get -f install -y",
             fraction = fraction,
             timeoutMs = 30 * 60 * 1_000L,
             onProgress = onProgress,
@@ -2626,6 +2709,13 @@ class RuntimeInstaller(private val context: Context) {
         )
         val native = running as? NativeSpawnProcess
         val collected = StringBuilder()
+        // Non-interactive guest commands must never block reading stdin:
+        // the spawn leaves the stdin pipe open with no writer, so a
+        // maintainer script that reads input would wait forever. EOF it
+        // up front; installer commands are non-interactive by design
+        // (DEBIAN_FRONTEND=noninteractive), so nothing here reads stdin.
+        runCatching { running.outputStream.close() }
+        var lastDpkgLine: String? = null
         try {
             withTimeout(timeoutMs) {
                 var offset = 0L
@@ -2670,15 +2760,33 @@ class RuntimeInstaller(private val context: Context) {
                     } else {
                         if (System.currentTimeMillis() - lastOutputAt >= 60_000L) {
                             lastOutputAt = System.currentTimeMillis()
-                            onProgress(
-                                RuntimeInstallProgress(
-                                    message = "Still working: no output for 60 s, command still running",
-                                    fraction = fraction,
-                                    terminalLine = "Still working: no output for 60 s, command still running",
-                                    indeterminate = true,
-                                    event = RuntimeInstallEvent.OUTPUT,
-                                ),
-                            )
+                            // Surface what dpkg is actually doing: the
+                            // guest log names the package being
+                            // configured, so a stall names itself instead
+                            // of repeating the same heartbeat line.
+                            val dpkgLine = readDpkgLogTail()
+                            if (dpkgLine != null && dpkgLine != lastDpkgLine) {
+                                lastDpkgLine = dpkgLine
+                                onProgress(
+                                    RuntimeInstallProgress(
+                                        message = "dpkg: $dpkgLine",
+                                        fraction = fraction,
+                                        terminalLine = "dpkg: $dpkgLine",
+                                        indeterminate = true,
+                                        event = RuntimeInstallEvent.OUTPUT,
+                                    ),
+                                )
+                            } else {
+                                onProgress(
+                                    RuntimeInstallProgress(
+                                        message = "Still working: no output for 60 s, command still running",
+                                        fraction = fraction,
+                                        terminalLine = "Still working: no output for 60 s, command still running",
+                                        indeterminate = true,
+                                        event = RuntimeInstallEvent.OUTPUT,
+                                    ),
+                                )
+                            }
                         }
                         delay(80)
                     }
@@ -2688,6 +2796,30 @@ class RuntimeInstaller(private val context: Context) {
                     onProgress(RuntimeInstallProgress(line, fraction, terminalLine = line, indeterminate = true, event = RuntimeInstallEvent.OUTPUT))
                 }
             }
+        } catch (e: TimeoutCancellationException) {
+            // The old timeout just threw and the evidence was lost. Before
+            // failing, capture what the guest was stuck on (its process
+            // list, dpkg lock holders, and the dpkg log tail) so the
+            // error names the stuck package instead of a bare timeout.
+            // NonCancellable: the timeout already cancelled this scope,
+            // so a plain diagnostic call would die instantly.
+            val diagnostics = withContext(NonCancellable) {
+                runCatching {
+                    runGuest(
+                        proot,
+                        "ps -eo pid,etime,cmd | head -40; echo ---LOCKS---; " +
+                            "ls -l /var/lib/dpkg/lock* 2>/dev/null; " +
+                            "fuser /var/lib/dpkg/lock 2>/dev/null; echo ---DPKG-LOG---; " +
+                            "tail -20 /var/log/dpkg.log 2>/dev/null",
+                        30_000L,
+                    )
+                }.getOrNull().orEmpty().trim()
+            }
+            throw IllegalStateException(
+                "$failureMessage (timed out after ${timeoutMs / 1000}s). " +
+                    "Guest diagnostics: ${diagnostics.ifBlank { "unavailable" }}",
+                e,
+            )
         } finally {
             if (running.isAlive) running.destroy()
         }
@@ -2707,6 +2839,25 @@ class RuntimeInstaller(private val context: Context) {
         .replace(ANSI_ESCAPE, "")
         .filter { it == '\t' || it.code >= 32 }
         .take(MAX_TERMINAL_LINE)
+
+    /**
+     * Last non-blank line of the guest dpkg log, read bounded (last 4 KB)
+     * so a long install history never loads the whole file. Null when the
+     * log does not exist yet or has no content.
+     */
+    private fun readDpkgLogTail(): String? = runCatching {
+        val log = File(rootfs, "var/log/dpkg.log")
+        if (!log.isFile) return null
+        RandomAccessFile(log, "r").use { input ->
+            val length = input.length()
+            if (length == 0L) return null
+            val start = maxOf(0L, length - 4096L)
+            input.seek(start)
+            val bytes = ByteArray((length - start).toInt())
+            input.readFully(bytes)
+            bytes.toString(Charsets.UTF_8).lines().lastOrNull { it.isNotBlank() }?.trim()
+        }
+    }.getOrNull()
 
     private suspend fun verifyGuest(proot: File, command: String, failureMessage: String) {
         val verify = process(

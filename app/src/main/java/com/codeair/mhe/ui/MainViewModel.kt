@@ -227,6 +227,10 @@ data class AppUiState(
     val startupIndeterminate: Boolean = false,
     val startupError: String? = null,
     val startupErrorIsOffline: Boolean = false,
+    // Failing core checks behind a SETUP_REQUIRED gate (from
+    // missingCoreChecks()), so the setup screen names what is missing
+    // instead of showing a generic prompt. Empty when installed.
+    val startupMissingChecks: List<String> = emptyList(),
     val showDetailedSetupProgress: Boolean = false,
     val onboardingComplete: Boolean = false,
     val backgroundSetupComplete: Boolean = false,
