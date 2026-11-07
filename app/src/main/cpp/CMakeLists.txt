@@ -130,6 +130,6 @@ add_custom_command(TARGET prootloader-carrier POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:prootloader>" "$<TARGET_FILE:prootloader-carrier>"
 )
 
-foreach(target pocketspawn talloc android-shmem proot proot-carrier prootloader-carrier)
+foreach(target pocketspawn talloc android-shmem proot prootloader proot-carrier prootloader-carrier)
     target_link_options(${target} PRIVATE "-Wl,-z,max-page-size=16384")
 endforeach()
