@@ -407,4 +407,26 @@ class RuntimeRecoveryMatrixTest {
         val manager = WorkspaceCheckpointManager(tempFolder.newFolder("filesE3"))
         assertTrue(manager.detectWorkspaceCorruption(workspaceDir).isEmpty())
     }
+
+    // ------------------------------------------------------------------
+    // (f) Stack verify-failure decision (2026-11-07: the Python verify
+    // timed out after 60 s on a OnePlus 11 yet setup reported
+    // "Setup complete" and the stack was never retried).
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `stack verify failure with no binaries on disk is a failed install`() {
+        assertEquals(
+            StackVerifyFailureOutcome.FAIL_INSTALL,
+            resolveStackVerifyFailure(binariesPresent = false),
+        )
+    }
+
+    @Test
+    fun `stack verify failure with binaries present keeps the install unverified`() {
+        assertEquals(
+            StackVerifyFailureOutcome.KEEP_UNVERIFIED,
+            resolveStackVerifyFailure(binariesPresent = true),
+        )
+    }
 }

@@ -75,6 +75,22 @@ internal const val MAX_RUNTIME_ARCHIVE_ENTRIES = 1_000_000
 internal const val MAX_RUNTIME_ARCHIVE_FILE_BYTES = 1_073_741_824L
 internal const val EXTRACTION_TIMEOUT_MS = 1_800_000L
 
+/**
+ * One decision for every stack that verifies after install (Python, C/C++):
+ * a verify failure with no binaries on disk is a failed install and must
+ * abort setup honestly; a failure with binaries present keeps the tools but
+ * leaves them unverified (no version marker, no installed flag) so a later
+ * Settings Install/Update can retry. The kept case must never promise
+ * "will retry on next launch": setup never re-runs on launch, so the
+ * message has to name the real retry (Settings, stack, Update). This is
+ * the 2026-11-07 Python case: the verify timed out after 60 s on device,
+ * setup still reported "Setup complete", and the stack was never retried.
+ */
+internal enum class StackVerifyFailureOutcome { FAIL_INSTALL, KEEP_UNVERIFIED }
+
+internal fun resolveStackVerifyFailure(binariesPresent: Boolean): StackVerifyFailureOutcome =
+    if (binariesPresent) StackVerifyFailureOutcome.KEEP_UNVERIFIED else StackVerifyFailureOutcome.FAIL_INSTALL
+
 internal class RuntimeExtractionBudget {
     var entries = 0
         private set
@@ -761,8 +777,12 @@ class RuntimeInstaller(private val context: Context) {
             ?: if (isStackInstalled(DevStack.ANDROID)) ANDROID_BUNDLE.version else null
         androidVer?.let { put("android", it) }
 
+        // No bundle-version fallback for Python: a missing marker means the
+        // stack was never verified (see applyStack, PYTHON branch), and
+        // showing the bundle version would present unverified tools as
+        // installed. Settings then shows "Unknown version" until a real
+        // verify writes the marker.
         val pythonVer = File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
-            ?: if (isStackInstalled(DevStack.PYTHON)) PYTHON_BUNDLE.version else null
         pythonVer?.let { put("python", it) }
 
         val phpVer = File(rootfs, ".pocket-php-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
@@ -1702,29 +1722,26 @@ class RuntimeInstaller(private val context: Context) {
                     0.2f,
                     onProgress,
                 )
-                // Same tolerance as the first-setup CPP branch: a verify
-                // timeout after a successful apt install must not fail the
-                // update. The installed binaries remain, so a later update
-                // retries the verify. But a verify failure with NO binaries
-                // on disk is a failed install, not a timeout: failing
-                // honestly here is what stops Settings from reporting
-                // "tools are ready" for tools that were never installed.
+                // Same shared decision as the first-setup CPP branch
+                // (resolveStackVerifyFailure): a verify timeout after a
+                // successful apt install keeps the binaries unverified;
+                // a verify failure with NO binaries on disk fails honestly.
                 val cppVerify = runCatching {
                     verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
                 }
                 if (cppVerify.isFailure) {
-                    if (!hasStackBinaries(DevStack.CPP)) {
-                        throw IllegalStateException(
+                    when (resolveStackVerifyFailure(hasStackBinaries(DevStack.CPP))) {
+                        StackVerifyFailureOutcome.FAIL_INSTALL -> throw IllegalStateException(
                             "C/C++ tools could not be verified and no compiler binaries were found on disk",
                             cppVerify.exceptionOrNull(),
                         )
+                        StackVerifyFailureOutcome.KEEP_UNVERIFIED -> onProgress(
+                            RuntimeInstallProgress(
+                                "C/C++ verify failed but compiler binaries are present; kept unverified. Retry from Settings, C/C++, Update.",
+                                1f,
+                            ),
+                        )
                     }
-                    onProgress(
-                        RuntimeInstallProgress(
-                            "C/C++ verify failed but compiler binaries are present; keeping installed tools (will retry verify on next launch)",
-                            1f,
-                        ),
-                    )
                 }
                 val gccVer = runCatching {
                     runGuest(runtime.proot, "gcc -dumpversion")
@@ -1940,13 +1957,21 @@ class RuntimeInstaller(private val context: Context) {
                 runCatching {
                     verifyGuest(proot, "python3 --version && pip3 --version", "Python tools could not be verified")
                 }.onFailure { error ->
-                    verified = false
-                    onProgress(
-                        RuntimeInstallProgress(
-                            "Python verify failed (will retry on next launch): ${error.message?.take(120)}",
-                            to,
-                        ),
-                    )
+                    when (resolveStackVerifyFailure(hasStackBinaries(DevStack.PYTHON))) {
+                        StackVerifyFailureOutcome.FAIL_INSTALL -> throw IllegalStateException(
+                            "Python tools could not be verified and no Python binaries were found on disk",
+                            error,
+                        )
+                        StackVerifyFailureOutcome.KEEP_UNVERIFIED -> {
+                            verified = false
+                            onProgress(
+                                RuntimeInstallProgress(
+                                    "Python verify failed but Python binaries are present; kept unverified. Retry from Settings, Python, Update.",
+                                    to,
+                                ),
+                            )
+                        }
+                    }
                 }
                 if (verified) File(rootfs, ".pocket-python-tools-version").writeText(PYTHON_BUNDLE.version)
             }
@@ -1966,14 +1991,9 @@ class RuntimeInstaller(private val context: Context) {
                         from,
                         onProgress,
                     )
-                    // Mirror the PYTHON branch: a verify timeout must not fail
-                    // the whole setup. If apt installed the tools but the 60 s
-                    // verify timed out, the next launch skips this stack via
-                    // hasStackBinaries (gcc present) instead of failing setup.
-                    // But a verify failure with NO binaries on disk is a failed
-                    // install, not a timeout: throwing here is what stops
-                    // Settings from reporting "tools are ready" for tools that
-                    // were never installed.
+                    // Same shared decision as PYTHON (resolveStackVerifyFailure):
+                    // a verify timeout with binaries on disk keeps the tools
+                    // unverified; with no binaries it is a failed install.
                     runCatching {
                         verifyGuest(
                             proot,
@@ -1981,18 +2001,18 @@ class RuntimeInstaller(private val context: Context) {
                             "C/C++ tools could not be verified",
                         )
                     }.onFailure { error ->
-                        if (!hasStackBinaries(DevStack.CPP)) {
-                            throw IllegalStateException(
+                        when (resolveStackVerifyFailure(hasStackBinaries(DevStack.CPP))) {
+                            StackVerifyFailureOutcome.FAIL_INSTALL -> throw IllegalStateException(
                                 "C/C++ tools could not be verified and no compiler binaries were found on disk",
                                 error,
                             )
+                            StackVerifyFailureOutcome.KEEP_UNVERIFIED -> onProgress(
+                                RuntimeInstallProgress(
+                                    "C/C++ verify failed but compiler binaries are present; kept unverified. Retry from Settings, C/C++, Update.",
+                                    to,
+                                ),
+                            )
                         }
-                        onProgress(
-                            RuntimeInstallProgress(
-                                "C/C++ verify failed but compiler binaries are present; install kept (will retry verify on next launch)",
-                                to,
-                            ),
-                        )
                     }
                     if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
                 }
