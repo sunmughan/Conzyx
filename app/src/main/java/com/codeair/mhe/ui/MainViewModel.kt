@@ -3791,21 +3791,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         val mimeType = resolver.getType(uri).orEmpty().ifBlank { "application/octet-stream" }
-        val extension = displayName.substringAfterLast('.', "").lowercase()
-        val supportedTextExtensions = setOf(
-            "txt", "md", "markdown", "json", "jsonl", "csv", "tsv", "xml", "yaml", "yml", "log",
-            "kt", "kts", "java", "py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "htm",
-            "css", "scss", "sass", "less", "c", "cc", "cpp", "h", "hpp", "sh", "bash", "zsh",
-            "gradle", "properties", "toml", "ini", "conf", "sql", "pdf", "out", "err", "env",
-        )
-        val isPdf = mimeType == "application/pdf" || extension == "pdf"
-        val isNoExtension = !displayName.contains('.') || extension.isBlank()
-        val isLogOrText = mimeType.startsWith("text/") || extension in supportedTextExtensions ||
-            isNoExtension || mimeType == "application/octet-stream" || mimeType.contains("log") || extension.contains("log")
-        val supported = mimeType.startsWith("image/") || isPdf ||
-            mimeType.startsWith("text/") || mimeType == "application/json" || mimeType == "application/xml" ||
-            mimeType.endsWith("+json") || mimeType.endsWith("+xml") || isLogOrText
-        require(supported) { "Only images, PDF documents, and text or log files are supported" }
+        require(agentChatController.isSupportedAttachment(mimeType, displayName)) {
+            "Only images, PDF documents, text or log files, and zip, rar, or 7z archives are supported"
+        }
         require(declaredSize <= MAX_ATTACHMENT_BYTES || declaredSize < 0) { "$displayName is larger than 25 MB" }
         val safeName = sanitizeAttachmentName(displayName)
         val root = projectWorkspaceRoot(project).canonicalFile
