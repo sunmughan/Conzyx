@@ -25,6 +25,26 @@ class AgentChatController {
         const val MAX_SYSTEM_MESSAGE_BLOCKS = 8
         val TASK_RESULT_MARKER: Regex =
             Regex("""Task id "([^"]+)" finished with result: Command exited with code (-?\d+)""")
+
+        /** Text/log extensions a picked file may carry. */
+        val SUPPORTED_TEXT_EXTENSIONS: Set<String> = setOf(
+            "txt", "md", "markdown", "json", "jsonl", "csv", "tsv", "xml", "yaml", "yml", "log",
+            "kt", "kts", "java", "py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "htm",
+            "css", "scss", "sass", "less", "c", "cc", "cpp", "h", "hpp", "sh", "bash", "zsh",
+            "gradle", "properties", "toml", "ini", "conf", "sql", "pdf", "out", "err", "env",
+        )
+
+        /** Archive extensions a picked file may carry. */
+        val ARCHIVE_EXTENSIONS: Set<String> = setOf("zip", "rar", "7z")
+
+        /** MIME types a picked archive may report. */
+        val ARCHIVE_MIME_TYPES: Set<String> = setOf(
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/vnd.rar",
+            "application/x-rar-compressed",
+            "application/x-7z-compressed",
+        )
     }
 
     /**
@@ -37,6 +57,27 @@ class AgentChatController {
             .trim('.')
             .take(100)
         return clean.ifBlank { "attachment-${UUID.randomUUID().toString().take(8)}" }
+    }
+
+    /**
+     * Decides whether a picked file may be attached to a chat message.
+     * Pure function of the resolver MIME type and the display name only.
+     * Archives (zip/rar/7z) are supported so project patches can be picked
+     * from internal storage and handed to the agent, alongside images,
+     * PDFs, and text/log files. Anything else (executables, APKs, ...) stays out.
+     */
+    fun isSupportedAttachment(mimeType: String, displayName: String): Boolean {
+        val mime = mimeType.lowercase()
+        val extension = displayName.substringAfterLast('.', "").lowercase()
+        val isPdf = mime == "application/pdf" || extension == "pdf"
+        val isNoExtension = !displayName.contains('.') || extension.isBlank()
+        val isLogOrText = mime.startsWith("text/") || extension in SUPPORTED_TEXT_EXTENSIONS ||
+            isNoExtension || mime == "application/octet-stream" || mime.contains("log") ||
+            extension.contains("log")
+        val isArchive = extension in ARCHIVE_EXTENSIONS || mime in ARCHIVE_MIME_TYPES
+        return mime.startsWith("image/") || isPdf || mime.startsWith("text/") ||
+            mime == "application/json" || mime == "application/xml" ||
+            mime.endsWith("+json") || mime.endsWith("+xml") || isLogOrText || isArchive
     }
 
     /**
