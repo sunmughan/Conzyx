@@ -17,15 +17,15 @@ Suggested Play Console wording:
 ## Coding task service (RuntimeExecutionService)
 
 - **Manifest subtype:** "User-started local development task".
-- **Trigger:** The user sends a coding task from an open project, starts a terminal/agent session, or starts the Pen Testing backend from the Pen Testing screen.
-- **Purpose:** Keep the explicitly started local work active while the user switches apps or locks the screen. The same service hosts three user-started workloads: agent coding sessions, terminal sessions, and the Pen Testing (PentAGI) backend session started from the Pen Testing screen.
-- **Why foreground execution is required:** File edits, test commands, terminal sessions, and the local Pen Testing backend can run longer than a normal background-execution window. The notification shows current progress and a Stop action.
-- **User impact if deferred:** The task is interrupted and partial changes require inspection or rollback; the Pen Testing backend stops mid-assessment.
-- **Stop behavior:** The app and ongoing notification stop the active process and preserve recoverable task state. The Pen Testing screen's Stop control stops its backend stack and its service session.
+- **Trigger:** The user sends a coding task from an open project or starts a terminal/agent session.
+- **Purpose:** Keep the explicitly started local work active while the user switches apps or locks the screen. The same service hosts two user-started workloads: agent coding sessions and terminal sessions.
+- **Why foreground execution is required:** File edits, test commands, and terminal sessions can run longer than a normal background-execution window. The notification shows current progress and a Stop action.
+- **User impact if deferred:** The task is interrupted and partial changes require inspection or rollback.
+- **Stop behavior:** The app and ongoing notification stop the active process and preserve recoverable task state.
 
 Suggested Play Console wording:
 
-> User-started local development task: a coding agent session, a terminal session, or the on-device Pen Testing backend, each started explicitly by the user in the app. The ongoing notification shows task progress and provides an immediate Stop action.
+> User-started local development task: a coding agent session or a terminal session, each started explicitly by the user in the app. The ongoing notification shows task progress and provides an immediate Stop action.
 
 ## Session keep-alive service (KeepAliveService)
 
@@ -52,6 +52,5 @@ Record one continuous, reviewer-accessible video:
 5. Background the app and show the ongoing task notification and Stop action.
 6. Return to the app, stop or complete the task, and show that the notification disappears.
 7. Background the app with no task running and show the keep-alive notification; return to the app and show that it disappears.
-8. Open Pen Testing, start the backend, show the ongoing "Pen Testing" notification, background the app briefly, return, and stop the backend from the Pen Testing screen.
 
 Do not show real API keys, private source code, email notifications, or personal device information in the recording.

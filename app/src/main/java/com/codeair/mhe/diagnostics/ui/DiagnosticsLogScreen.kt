@@ -52,7 +52,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.codeair.mhe.runtime.RuntimeInstaller
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -64,8 +63,6 @@ private enum class LogSource(val label: String) {
     APP("App Log"),
     SYSTEM("System Log"),
     RUNTIME_SETUP("Runtime Setup"),
-    PENTEST_SETUP("Pen Testing Setup"),
-    PENTEST_BACKEND("Pen Testing Backend"),
     LATEST_COMMAND("Latest Command Output"),
 }
 
@@ -75,7 +72,6 @@ private const val MAX_LINES = 800
 fun DiagnosticsLogScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val installer = remember { RuntimeInstaller(context.applicationContext) }
     var source by remember { mutableStateOf(LogSource.APP) }
     var logText by remember { mutableStateOf("Loading...") }
     var autoScroll by remember { mutableStateOf(true) }
@@ -86,10 +82,8 @@ fun DiagnosticsLogScreen(onBack: () -> Unit) {
             LogSource.APP -> File(context.filesDir, "crash.log")
             LogSource.SYSTEM -> null
             LogSource.RUNTIME_SETUP -> File(context.filesDir, "setup/runtime-setup.log")
-            LogSource.PENTEST_SETUP -> File(context.cacheDir, "pentagi-setup.log")
-            LogSource.PENTEST_BACKEND -> installer.penTestingBackendLog()
             LogSource.LATEST_COMMAND -> context.cacheDir.listFiles()
-                ?.filter { it.name.endsWith(".log") && it.name != "pentagi-setup.log" }
+                ?.filter { it.name.endsWith(".log") }
                 ?.maxByOrNull { it.lastModified() }
         }
     }

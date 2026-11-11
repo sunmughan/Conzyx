@@ -134,7 +134,6 @@ import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -343,7 +342,6 @@ fun PocketDevApp(
             OverlayScreen.APP_FACTORY -> appPreferences.appFactoryOnboardingSeen
             OverlayScreen.TEAM_STUDIO -> appPreferences.teamStudioOnboardingSeen
             OverlayScreen.CLOUD_HYBRID -> appPreferences.cloudHybridOnboardingSeen
-            OverlayScreen.PEN_TESTING -> appPreferences.penTestingOnboardingSeen
             else -> true
         }
         if (seen) {
@@ -351,7 +349,6 @@ fun PocketDevApp(
                 OverlayScreen.APP_FACTORY -> navigator.openAppFactory()
                 OverlayScreen.TEAM_STUDIO -> navigator.openTeamStudio()
                 OverlayScreen.CLOUD_HYBRID -> navigator.openCloudHybrid()
-                OverlayScreen.PEN_TESTING -> navigator.openPenTesting()
                 else -> Unit
             }
         } else {
@@ -363,7 +360,6 @@ fun PocketDevApp(
             OverlayScreen.APP_FACTORY -> appPreferences.appFactoryOnboardingSeen = true
             OverlayScreen.TEAM_STUDIO -> appPreferences.teamStudioOnboardingSeen = true
             OverlayScreen.CLOUD_HYBRID -> appPreferences.cloudHybridOnboardingSeen = true
-            OverlayScreen.PEN_TESTING -> appPreferences.penTestingOnboardingSeen = true
             else -> Unit
         }
     }
@@ -468,14 +464,6 @@ fun PocketDevApp(
             updatesAvailable = marketplaceUpdatesAvailable,
             onUpdateItem = { item -> viewModel.updateMarketplaceItem(item) },
             onScreenOpened = { viewModel.checkMarketplaceUpdates() },
-        )
-        return
-    }
-
-    if (navigator.showPenTestingScreen) {
-        BackHandler(onBack = { navigator.closeOverlay() })
-        com.codeair.mhe.pentest.ui.PenTestingSetupScreen(
-            onBack = { navigator.closeOverlay() },
         )
         return
     }
@@ -678,7 +666,6 @@ fun PocketDevApp(
             onOpenAppFactory = { openStudio(OverlayScreen.APP_FACTORY) },
             onOpenTeamStudio = { openStudio(OverlayScreen.TEAM_STUDIO) },
             onOpenCloudHybrid = { openStudio(OverlayScreen.CLOUD_HYBRID) },
-            onOpenPenTesting = { openStudio(OverlayScreen.PEN_TESTING) },
             onOpenDiagnostics = { navigator.openDiagnostics() },
             onOpenAllProjects = { navigator.openAllProjects() },
         )
@@ -1532,10 +1519,10 @@ private fun RuntimeSetupPromptScreen(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     Column {
-                        // Browser Automation is not offered here: it
-                        // belongs to Pen Testing, which installs its own
-                        // tooling. Existing installs are untouched and
-                        // keep working through update/remove.
+                        // Browser Automation is not offered here: it is
+                        // managed separately from the installer stacks.
+                        // Existing installs are untouched and keep working
+                        // through update/remove.
                         val installerStacks = DevStack.entries.filter { it != DevStack.BROWSER }
                         installerStacks.forEachIndexed { index, stack ->
                             DevStackChoiceRow(
@@ -2527,7 +2514,6 @@ private fun RootScreenHost(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
-    onOpenPenTesting: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     onOpenAllProjects: () -> Unit = {},
 ) {
@@ -2607,7 +2593,6 @@ private fun RootScreenHost(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
-                    onOpenPenTesting = onOpenPenTesting,
                     onOpenAllProjects = onOpenAllProjects,
                 )
                 RootScreen.AGENT -> AgentScreen(
@@ -3832,13 +3817,6 @@ private fun StudioOnboardingDialog(
             "Job Pipeline" to "Every job in one pipeline: running, completed, and where each one ran.",
             "Routing Policies" to "Rules that decide what runs on your phone and what goes to the cloud.",
         )
-        OverlayScreen.PEN_TESTING -> listOf(
-            "Pen Testing" to "Pen Testing puts a full AI penetration testing lab on your phone: describe a target in plain words and a team of AI agents tests it and hands you a report.",
-            "One-Tap Setup" to "Tap Setup Pen Testing once. The backend downloads, installs its database, and starts itself, with live progress. First setup takes 10 to 15 minutes.",
-            "How It Works" to "You describe the target and the goal. AI agents plan the test and run professional security tools against it, all on your device.",
-            "Web UI" to "When ready, Open Web UI opens the testing interface in the app's own browser. Stop and Start control the backend anytime.",
-            "Good To Know" to "Needs the core Linux runtime installed first, and internet for the one-time download. Reinstall and logs are one tap away.",
-        )
         else -> listOf("" to "")
     }
     var page by remember { mutableStateOf(0) }
@@ -3894,7 +3872,6 @@ private fun StudioCardsSection(
     onOpenAppFactory: () -> Unit,
     onOpenTeamStudio: () -> Unit,
     onOpenCloudHybrid: () -> Unit,
-    onOpenPenTesting: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
@@ -4034,55 +4011,6 @@ private fun StudioCardsSection(
                 }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(112.dp)
-                    .clickable { onOpenPenTesting() },
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Pen Testing",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.weight(1f))
-        }
     }
 }
 
@@ -4114,7 +4042,6 @@ private fun ProjectsScreen(
     onOpenAppFactory: () -> Unit = {},
     onOpenTeamStudio: () -> Unit = {},
     onOpenCloudHybrid: () -> Unit = {},
-    onOpenPenTesting: () -> Unit = {},
     onOpenAllProjects: () -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
@@ -4444,7 +4371,6 @@ private fun ProjectsScreen(
                     onOpenAppFactory = onOpenAppFactory,
                     onOpenTeamStudio = onOpenTeamStudio,
                     onOpenCloudHybrid = onOpenCloudHybrid,
-                    onOpenPenTesting = onOpenPenTesting,
                 )
             }
         }

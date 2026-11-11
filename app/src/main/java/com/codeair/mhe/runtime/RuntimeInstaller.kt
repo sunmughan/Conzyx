@@ -369,9 +369,9 @@ class RuntimeInstaller(private val context: Context) {
             coreToolsMarker.writeText(CORE_TOOLS_VERSION)
         }
 
-        // Browser Automation is no longer offered in the installer: it
-        // belongs to Pen Testing, which installs its own tooling. Drop it
-        // from any restored/older selection so it can never block setup
+        // Browser Automation is not offered in the installer: it is
+        // managed separately from the installer stacks. Drop it from
+        // any restored/older selection so it can never block setup
         // again; existing installs keep working through update/remove.
         val installerStacks = selectedStacks.filterNot { it == DevStack.BROWSER }
         if (installerStacks.size != selectedStacks.size) {
@@ -546,209 +546,6 @@ class RuntimeInstaller(private val context: Context) {
         githubCliMarker.writeText(GITHUB_CLI_VERSION)
         check(isGitHubCliInstalled()) { "GitHub CLI installation is incomplete" }
         onProgress(RuntimeInstallProgress("GitHub CLI is ready", 1f))
-    }
-
-    fun penTestingSetupDir(): File = File(rootfs, PENTESTING_GUEST_SETUP_DIR.removePrefix("/"))
-
-    fun isPenTestingInstalled(): Boolean {
-        val dir = penTestingSetupDir()
-        return dir.resolve("setup-and-boot.sh").isFile &&
-            File(dir, "pentagi-arm64-proot").canExecute()
-    }
-
-    fun penTestingBackendLog(): File {
-        val direct = File(rootfs, "root/pentagi-data/backend-direct.log")
-        val script = File(rootfs, "root/pentagi-data/backend.log")
-        return if (direct.isFile && (!script.isFile || direct.lastModified() >= script.lastModified())) direct else script
-    }
-
-    data class AppFileEntry(
-        val name: String,
-        val isDirectory: Boolean,
-        val sizeBytes: Long,
-        val sizeDisplay: String,
-    )
-
-    suspend fun listAppFiles(relativePath: String): List<AppFileEntry> = withContext(Dispatchers.IO) {
-        val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
-        val safePath = sanitizeGuestPath(relativePath) ?: return@withContext emptyList()
-        val output = runGuest(proot, "ls -la --time-style=long-iso " + shellEscape("/root/$safePath") + " 2>/dev/null")
-        parseLsOutput(output)
-    }
-
-    suspend fun deleteAppPath(relativePath: String): Boolean = withContext(Dispatchers.IO) {
-        val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
-        val safePath = sanitizeGuestPath(relativePath) ?: return@withContext false
-        if (safePath.isEmpty()) return@withContext false
-        val exit = runGuestExitCode(proot, "rm -rf " + shellEscape("/root/$safePath"))
-        exit == 0
-    }
-
-    private fun sanitizeGuestPath(relativePath: String): String? {
-        val normalized = relativePath.trim().trim('/').replace(Regex("/+"), "/")
-        if (normalized.contains("..")) return null
-        if (normalized.isEmpty()) return ""
-        val parts = normalized.split("/")
-        if (parts.any { it.isEmpty() || it == "." || it == ".." }) return null
-        return parts.joinToString("/")
-    }
-
-    private fun shellEscape(path: String): String = "'" + path.replace("'", "'\\''") + "'"
-
-    private fun parseLsOutput(output: String): List<AppFileEntry> {
-        val entries = mutableListOf<AppFileEntry>()
-        for (line in output.lines()) {
-            if (line.isBlank() || line.startsWith("total ")) continue
-            val parts = line.trim().split(Regex("\\s+"))
-            if (parts.size < 9) continue
-            val perms = parts[0]
-            if (perms.length < 10) continue
-            val isDir = perms[0] == 'd'
-            val sizeBytes = parts[4].toLongOrNull() ?: 0L
-            val name = parts.subList(8, parts.size).joinToString(" ")
-            if (name == "." || name == "..") continue
-            entries.add(AppFileEntry(name, isDir, sizeBytes, formatBytes(sizeBytes)))
-        }
-        return entries.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-    }
-
-    private fun formatBytes(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val kb = bytes / 1024.0
-        if (kb < 1024) return "%.1f KB".format(kb)
-        val mb = kb / 1024.0
-        if (mb < 1024) return "%.1f MB".format(mb)
-        return "%.2f GB".format(mb / 1024.0)
-    }
-
-    fun cleanPenTestingInstall() {
-        penTestingSetupDir().deleteRecursively()
-        File(rootfs, "root/pgdata").deleteRecursively()
-        File(rootfs, "root/pentagi-data").deleteRecursively()
-    }
-
-    suspend fun downloadPenTestingBundle(onBytes: suspend (downloaded: Long, total: Long) -> Unit): File {
-        val downloaded = File(downloads, "pentagi-ondevice-test.tar.gz")
-        downloadVerified(PENTESTING_BUNDLE_URL, downloaded, PENTESTING_BUNDLE_SHA256, onBytes = onBytes)
-        return downloaded
-    }
-
-    suspend fun extractPenTestingBundle(archive: File) = withContext(Dispatchers.IO) {
-        val destination = penTestingSetupDir()
-        destination.mkdirs()
-        TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
-            var entry: TarArchiveEntry? = tar.nextEntry
-            while (entry != null) {
-                val cleanName = entry.name.removePrefix("./").substringAfter('/', "")
-                if (cleanName.isNotBlank()) {
-                    val target = safeChild(destination, cleanName)
-                    when {
-                        entry.isDirectory -> target.mkdirs()
-                        entry.isSymbolicLink -> {
-                            val linkTarget = resolveArchiveSymlinkTarget(destination, target, entry.linkName)
-                            target.parentFile?.mkdirs()
-                            if (target.exists() || java.nio.file.Files.isSymbolicLink(target.toPath())) target.delete()
-                            Os.symlink(linkTarget, target.absolutePath)
-                        }
-                        entry.isFile -> {
-                            target.parentFile?.mkdirs()
-                            FileOutputStream(target).use { output -> tar.copyTo(output) }
-                        }
-                    }
-                }
-                entry = tar.nextEntry
-            }
-        }
-        val binary = File(destination, "pentagi-arm64-proot")
-        check(binary.isFile) { "Pen testing bundle did not contain the backend binary" }
-        Os.chmod(binary.absolutePath, 0b111101101)
-        File(destination, ".pocket-pentesting-version").writeText(PENTESTING_BUNDLE_VERSION)
-    }
-
-    fun startPenTestingSetup(outputFile: File): Process {
-        val runtime = installedRuntime()
-        return process(
-            proot = runtime.proot,
-            rootfs = runtime.rootfs,
-            workspace = File(runtime.rootfs, "root"),
-            environment = emptyMap(),
-            guestCommand = listOf(
-                "/usr/bin/env", "bash", "-lc",
-                "cd /root/pentagi-setup && chmod +x setup-and-boot.sh pentagi-arm64-proot && ./setup-and-boot.sh",
-            ),
-            outputFile = outputFile,
-        )
-    }
-
-    fun startPenTestingStack(outputFile: File): Process {
-        val runtime = installedRuntime()
-        return process(
-            proot = runtime.proot,
-            rootfs = runtime.rootfs,
-            workspace = File(runtime.rootfs, "root"),
-            environment = PenTestingStackSpec.environment(PENTESTING_API_PORT),
-            guestCommand = listOf(
-                "/usr/bin/env", "bash", "-lc",
-                PenTestingStackSpec.guestScript(),
-            ),
-            outputFile = outputFile,
-        )
-    }
-
-    var penTestingBackendProcess: Process?
-        get() = sharedPenTestingProcess
-        set(value) {
-            val old = sharedPenTestingProcess
-            if (old != null && old !== value) {
-                try { if (old.isAlive) old.destroyForcibly() } catch (e: Exception) {}
-            }
-            sharedPenTestingProcess = value
-        }
-
-    suspend fun stopPenTestingStack(): Boolean = withContext(Dispatchers.IO) {
-        val proc = sharedPenTestingProcess
-        if (proc != null) {
-            try {
-                if (proc.isAlive) {
-                    proc.destroy()
-                    val deadline = System.currentTimeMillis() + 10_000L
-                    while (proc.isAlive && System.currentTimeMillis() < deadline) {
-                        Thread.sleep(200)
-                    }
-                    if (proc.isAlive) proc.destroyForcibly()
-                }
-            } catch (e: Exception) {}
-            sharedPenTestingProcess = null
-        }
-        stopPenTestingBackend()
-        !isPenTestingApiUp()
-    }
-
-    suspend fun stopPenTestingBackend(): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val runtime = installedRuntime()
-            val proc = process(
-                proot = runtime.proot,
-                rootfs = runtime.rootfs,
-                workspace = File(runtime.rootfs, "root"),
-                environment = emptyMap(),
-                guestCommand = listOf(
-                    "/usr/bin/env", "bash", "-lc",
-                    "kill $(cat /root/pentagi-data/backend.pid) 2>/dev/null",
-                ),
-            )
-            proc.waitFor() == 0
-        }.getOrDefault(false)
-    }
-
-    suspend fun isPenTestingApiUp(port: Int = PENTESTING_API_PORT): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            (URL("http://127.0.0.1:$port/api/v1/info").openConnection() as HttpURLConnection).run {
-                connectTimeout = 3_000
-                readTimeout = 3_000
-                responseCode == 200
-            }
-        }.getOrDefault(false)
     }
 
     /**
@@ -4177,14 +3974,7 @@ main().catch((err) => {
         private const val GITHUB_CLI_VERSION = "2.100.0"
         private const val GITHUB_CLI_RELEASE_URL = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz"
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
-        const val PENTESTING_BUNDLE_URL = "https://github.com/sunmughan/Conzyx/releases/download/pentagi-ondevice-1/pentagi-ondevice-test.tar.gz"
-        private const val PENTESTING_BUNDLE_SHA256 = "1011bcc1f81969d97626a2334b510586c28589b878711d89207a77eaa88c6f5e"
 
-        @Volatile
-        private var sharedPenTestingProcess: Process? = null
-        private const val PENTESTING_BUNDLE_VERSION = "9"
-        const val PENTESTING_API_PORT = 18080
-        const val PENTESTING_GUEST_SETUP_DIR = "/root/pentagi-setup"
         private const val LEGACY_README = "# Pocket Dev project\n\nThis project is managed locally on Android.\n"
         private const val LEGACY_INDEX = "<!doctype html><title>Pocket Dev</title><h1>Hello from Android</h1>\n"
         private const val ROOTFS_VERSION = "ubuntu-20.04.5-arm64"

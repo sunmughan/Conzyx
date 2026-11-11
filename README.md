@@ -28,7 +28,6 @@ A platform that does not exist on mobile devices. Run a real Linux development e
 - [What is Conzyx?](#-what-is-conzyx)
 - [Documentation](#-documentation)
 - [Features](#-features)
-  - [Pen Testing](#-pen-testing)
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Building from Source](#-building-from-source)
@@ -133,15 +132,6 @@ Want the full in-depth guide? Start here:
 - AI app blueprints: screens, navigation, data layer, and state models from a high-level concept
 - Project scaffolding for Jetpack Compose, Flutter, React Native, and HTML5 web apps
 - On-device Gradle APK builds, APK signing verification, release keystores, and Play Store listing preparation
-
-### 🎯 Pen Testing
-
-A full multi-agent AI penetration testing system running on your phone. Describe a target and a goal in plain language; specialized AI agents plan the work, run professional security tools, and hand you a report.
-
-- One-tap **Setup Pen Testing** from the Studios card: downloads the verified backend package, installs PostgreSQL with pgvector, and boots the backend inside the proot Linux environment. No Docker needed.
-- **Open Web UI** launches the backend's web interface at `127.0.0.1:18080` inside the app's own in-app browser.
-- Stop, restart, reinstall, and view backend logs from the same screen.
-- Requires the core Linux runtime installed first; first setup needs internet once and takes 10-15 minutes.
 
 ### ☁️ Cloud Build via GitHub Actions
 
@@ -354,23 +344,6 @@ When all four are set, the `upload` signing config is applied to release builds 
 
 </details>
 
-<details>
-<summary><b>Pen Testing</b></summary>
-
-The Pen Testing studio runs a multi-agent AI penetration testing backend on the device.
-
-**What setup does** (one tap on **Setup Pen Testing**):
-
-1. Downloads `pentagi-ondevice-test.tar.gz` (about 57MB) from the `pentagi-ondevice-1` GitHub release and verifies its SHA-256 checksum.
-2. Extracts it into the proot Linux environment at `/root/pentagi-setup`.
-3. Runs the setup script: installs PostgreSQL with the pgvector extension, initializes the database, and boots the backend with the proot-native executor. No Docker daemon is required.
-
-**Requirements:** the core Linux runtime must be installed first; internet is needed once for the download; first setup takes 10-15 minutes with live progress. Leaving the setup screen cancels the run.
-
-**Using it:** once ready, **Open Web UI** opens the backend interface at `http://127.0.0.1:18080` in the app's in-app browser. **Stop** shuts the backend down; **Start Pen Testing** boots it again; **Reinstall** re-runs setup; **View Logs** tails the backend log at `<rootfs>/root/pentagi-data/backend.log`.
-
-</details>
-
 ---
 
 ## 🗂️ Project Structure
@@ -438,12 +411,6 @@ Conzyx/
 |  +--------------------------------------------------------------+  |
 |  |              Safety Engine                                   |  |
 |  |  Command interception - File shielding - Permissions - Audit |  |
-|  +--------------------------------------------------------------+  |
-|                                                                    |
-|  +--------------------------------------------------------------+  |
-|  |  Pen Testing: multi-agent AI penetration testing backend    |  |
-|  |  PostgreSQL + pgvector - Web UI at 127.0.0.1:18080          |  |
-|  |  One-tap setup - proot-native execution, no Docker needed   |  |
 |  +--------------------------------------------------------------+  |
 |                                                                    |
 |  +--------------------------------------------------------------+  |
