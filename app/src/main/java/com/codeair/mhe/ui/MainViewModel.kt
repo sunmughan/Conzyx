@@ -25,6 +25,12 @@ import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.ChangeItem
 import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ChatAttachment
+import com.codeair.mhe.model.QueuedPrompt
+import com.codeair.mhe.model.enqueuePrompt
+import com.codeair.mhe.model.dequeuePrompt
+import com.codeair.mhe.model.removeQueuedPrompt
+import com.codeair.mhe.model.moveQueuedPrompt
+import com.codeair.mhe.model.shouldDrainPromptQueue
 import com.codeair.mhe.model.ExecutionMode
 import com.codeair.mhe.model.ActiveRoadmap
 import com.codeair.mhe.model.RoadmapComment
@@ -107,6 +113,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.codeair.mhe.ui.coordinators.isClaudeRuntimeMetadata
 import com.codeair.mhe.ui.coordinators.guestRootFor
@@ -282,6 +290,10 @@ data class AppUiState(
         ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."),
     ),
     val pendingAttachments: List<ChatAttachment> = emptyList(),
+    // P1 prompt queue (2026-11-11): follow-ups typed while a task runs in
+    // THIS chat, waiting to auto-start when it finishes cleanly. Per-chat
+    // only — a queue never follows the user into another chat.
+    val queuedPrompts: List<QueuedPrompt> = emptyList(),
     val pendingApproval: ToolRequest? = null,
     val changes: List<ChangeItem> = emptyList(),
     val activity: List<ActivityItem> = emptyList(),
@@ -2193,6 +2205,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 previewReady = slice?.previewReady ?: false,
                 previewUrl = slice?.previewUrl,
                 pendingAttachments = emptyList(),
+                // P1: the queue follows the slice when the project was left
+                // mid-run, else it comes off disk with the transcript.
+                queuedPrompts = slice?.queuedPrompts ?: preferences.loadQueuedPrompts(project.id, activeChat.id),
             )
         }
         // The per-chat stash is fresher than the project slice (background
@@ -2298,6 +2313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 previewReady = false,
                 previewUrl = null,
                 pendingAttachments = emptyList(),
+                queuedPrompts = emptyList(),
             )
         }
     }
@@ -3199,6 +3215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 taskFinishedAtMillis = null,
                 pendingApproval = null,
                 pendingAttachments = emptyList(),
+                queuedPrompts = emptyList(),
             )
         }
     }
@@ -3217,6 +3234,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update {
                 applyChatSliceToState(it, stash, chatId).copy(pendingAttachments = emptyList())
             }
+            // P1 backstop: if this chat's task finished while the user was
+            // away (or the app died mid-drain), a waiting prompt starts now.
+            drainNextQueuedPrompt(project.id, chatId)
             return
         }
         val saved = dropActiveSessionInterruptedRow(preferences.loadMessages(project.id, chat.id))
@@ -3235,8 +3255,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 taskFinishedAtMillis = null,
                 pendingApproval = null,
                 pendingAttachments = emptyList(),
+                queuedPrompts = preferences.loadQueuedPrompts(project.id, chat.id),
             )
         }
+        drainNextQueuedPrompt(project.id, chat.id)
     }
 
     fun renameChat(chatId: String, newTitle: String) {
@@ -3286,6 +3308,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     messages = msgs,
                     activeRoadmap = loadedRoadmap,
                     scratchpadItems = loadedScratchpad,
+                    queuedPrompts = preferences.loadQueuedPrompts(project.id, nextChat.id),
                 )
             }
         } else {
@@ -3698,7 +3721,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value
         val project = current.activeProject ?: return
         val chatId = current.activeChatId ?: return
-        if (current.isRunning || uris.isEmpty()) return
+        // P1/P2a: no isRunning guard here anymore. Files staged while a task
+        // runs bind to the NEXT queued prompt (sendPrompt consumes the staged
+        // files into the queue) instead of being silently refused.
+        if (uris.isEmpty()) return
         val remaining = (MAX_ATTACHMENTS_PER_MESSAGE - current.pendingAttachments.size).coerceAtLeast(0)
         if (remaining == 0) {
             _state.update { it.copy(toastMessage = "You can attach up to $MAX_ATTACHMENTS_PER_MESSAGE files per message") }
@@ -3852,64 +3878,133 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Same-chat guard only: _state reflects the ACTIVE chat (stash/restore),
         // so this blocks a second agent in the SAME running chat, never another
         // chat or project. No start throttle: user sessions start unthrottled.
-        if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
+        if (prompt.isBlank() && attachments.isEmpty()) return
+        if (state.value.isRunning) {
+            // P1: the composer stays live while a task runs — Send queues the
+            // prompt under the running task instead of dropping it.
+            enqueuePromptForActiveChat(prompt, attachments)
+            return
+        }
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
         beginSession(project, requestText, attachments)
     }
 
-    private fun beginSession(project: Project, requestText: String, attachments: List<ChatAttachment>, admissionChecked: Boolean = false) {
+    /**
+     * P1: queue a follow-up in the ACTIVE chat while its task runs. The
+     * staged attachments travel with the queued prompt; the composer clears
+     * so the next prompt starts clean. Persisted immediately so the queue
+     * survives process death.
+     */
+    private fun enqueuePromptForActiveChat(text: String, attachments: List<ChatAttachment>) {
+        val project = _state.value.activeProject ?: return
+        val chatId = _state.value.activeChatId ?: return
+        val queued = QueuedPrompt(
+            text = text.trim().ifBlank { "Please review the attached files." },
+            attachments = attachments,
+            mode = _state.value.executionMode,
+        )
+        _state.update {
+            it.copy(
+                queuedPrompts = enqueuePrompt(it.queuedPrompts, queued),
+                pendingAttachments = emptyList(),
+            )
+        }
+        persistQueuedPrompts(project.id, chatId, _state.value.queuedPrompts)
+    }
+
+    /** P1: drop a queued prompt (long-press a chip). The running task is untouched. */
+    fun cancelQueuedPrompt(promptId: String) {
+        val project = _state.value.activeProject ?: return
+        val chatId = _state.value.activeChatId ?: return
+        _state.update { it.copy(queuedPrompts = removeQueuedPrompt(it.queuedPrompts, promptId)) }
+        persistQueuedPrompts(project.id, chatId, _state.value.queuedPrompts)
+    }
+
+    /** P1: move a queued prompt to a new position in the queue (drag a chip). */
+    fun reorderQueuedPrompt(promptId: String, toIndex: Int) {
+        val project = _state.value.activeProject ?: return
+        val chatId = _state.value.activeChatId ?: return
+        _state.update { it.copy(queuedPrompts = moveQueuedPrompt(it.queuedPrompts, promptId, toIndex)) }
+        persistQueuedPrompts(project.id, chatId, _state.value.queuedPrompts)
+    }
+
+    /**
+     * P1 "Send now": stop the current task and start this queued prompt
+     * immediately. The prompt leaves the queue FIRST so a later finish event
+     * can never re-drain it; stopTask puts the old session on the ignore
+     * list, so its trailing failure event cannot touch the new session.
+     */
+    fun sendQueuedPromptNow(promptId: String) {
+        val project = _state.value.activeProject ?: return
+        val chatId = _state.value.activeChatId ?: return
+        val queued = _state.value.queuedPrompts.firstOrNull { it.id == promptId } ?: return
+        _state.update { it.copy(queuedPrompts = removeQueuedPrompt(it.queuedPrompts, promptId)) }
+        persistQueuedPrompts(project.id, chatId, _state.value.queuedPrompts)
+        if (_state.value.isRunning) stopTask()
+        beginSession(project, queued.text, queued.attachments, chatId = chatId, executionMode = queued.mode)
+    }
+
+    private val queuedPromptsPersistMutex = Mutex()
+
+    /** Serialised disk write for the queue: rapid queue edits must not race. */
+    private fun persistQueuedPrompts(projectId: String, chatId: String, prompts: List<QueuedPrompt>) {
+        viewModelScope.launch {
+            queuedPromptsPersistMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching { preferences.saveQueuedPrompts(projectId, chatId, prompts) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Start a task. [chatId] defaults to the active chat; the P1 drain and
+     * "Send now" pass the queued prompt's own chat, so a background chat's
+     * queued prompt starts in THAT chat (its own session, messages and
+     * roadmap), never in whatever chat the user happens to be looking at.
+     * [executionMode] is the mode captured when the prompt was queued.
+     */
+    private fun beginSession(
+        project: Project,
+        requestText: String,
+        attachments: List<ChatAttachment>,
+        admissionChecked: Boolean = false,
+        chatId: String? = null,
+        executionMode: ExecutionMode? = null,
+    ) {
         // No same-project running guard and no max-agents queue: a task in one
         // chat must never block starting an agent in another chat/project.
+        val targetChatId = chatId ?: _state.value.activeChatId ?: return
         val sessionId = UUID.randomUUID().toString()
-        sessionChats[sessionId] = _state.value.activeChatId ?: ""
+        sessionChats[sessionId] = targetChatId
         val mentionedPaths = resolveMentionedWorkspacePaths(requestText, project)
-        updateActiveChatTitle(requestText)
-        val mode = _state.value.executionMode
+        updateActiveChatTitle(requestText, targetChatId)
+        val mode = executionMode ?: _state.value.executionMode
         val modeInstruction = agentChatController.buildModeInstruction(mode, requestText)
-        _state.update {
-            val startedAt = System.currentTimeMillis()
-            val thinkItem = ActivityItem("Think", requestPlanningSummary(requestText, it.agentKind), false)
-            val initialScratchpad = deriveScratchpadItems(it.activeRoadmap, listOf(thinkItem), true)
-            it.copy(
-                messages = it.messages + ChatMessage(fromUser = true, text = requestText, attachments = attachments),
-                pendingAttachments = emptyList(),
-                isRunning = true,
-                streamingMessageId = null,
-                activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + it.activity,
-                liveProcess = listOf(thinkItem),
-                scratchpadItems = initialScratchpad,
-                liveThinking = true,
-                activeThinkingBlockId = null,
-                taskStartedAtMillis = startedAt,
-                taskFinishedAtMillis = null,
-                workSegmentStartedAtMillis = startedAt,
-                currentTaskRequest = requestText,
-                lastTaskOutcome = null,
-                pendingApproval = null,
-            )
-        }
-        val activeProj = state.value.activeProject
-        if (activeProj != null) {
-            val workspaceDir = File(getApplication<Application>().filesDir, "projects/${activeProj.id}")
-            agentOrchestrator.startTask(
-                projectId = activeProj.id,
-                workspaceDir = workspaceDir,
-                userGoal = requestText,
-                plan = emptyList(),
-            )
-            agentOrchestrator.saveState(getApplication<Application>().filesDir, activeProj.id)
-        }
+        // Scoped state: the active chat mutates _state directly, a background
+        // chat mutates its stash copy (updateSessionScoped routes both).
+        updateSessionScoped(project.id, targetChatId) { startSessionState(it, requestText, attachments) }
+        val workspaceDir = File(getApplication<Application>().filesDir, "projects/${project.id}")
+        agentOrchestrator.startTask(
+            projectId = project.id,
+            workspaceDir = workspaceDir,
+            userGoal = requestText,
+            plan = emptyList(),
+        )
+        agentOrchestrator.saveState(getApplication<Application>().filesDir, project.id)
+        val scopedAfterStart = sessionScopeFor(project.id, targetChatId)
         agentSessionController.startSession(
             sessionId = sessionId,
             projectId = project.id,
             projectTitle = project.name,
-            chatId = _state.value.activeChatId.orEmpty(),
+            chatId = targetChatId,
             prompt = requestText,
-            roadmap = _state.value.activeRoadmap,
+            roadmap = scopedAfterStart.activeRoadmap,
         )
         touchProject(project.id)
-        persistMessages()
-        val history = agentChatController.compactSystemMessageDumps(state.value.messages)
+        if (targetChatId == _state.value.activeChatId) persistMessages()
+        else persistProjectMessages(project.id, targetChatId)
+        val history = agentChatController.compactSystemMessageDumps(scopedAfterStart.messages)
         val runtimePrompt = agentChatController.buildEnrichedPrompt(
             requestText = requestText,
             modeInstruction = modeInstruction,
@@ -3976,6 +4071,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 onRuntimeEvent(project.id, RuntimeEvent.SessionFailed(sessionId, failureReason))
             }
         }
+    }
+
+    /**
+     * The state a chat enters when a task starts: user message appended,
+     * running flags set, outcome/approval cleared. Pure over the passed
+     * state so it applies identically to the active chat (_state) and to a
+     * background chat's scoped copy (updateSessionScoped).
+     */
+    private fun startSessionState(
+        current: AppUiState,
+        requestText: String,
+        attachments: List<ChatAttachment>,
+    ): AppUiState {
+        val startedAt = System.currentTimeMillis()
+        val thinkItem = ActivityItem("Think", requestPlanningSummary(requestText, current.agentKind), false)
+        val initialScratchpad = deriveScratchpadItems(current.activeRoadmap, listOf(thinkItem), true)
+        return current.copy(
+            messages = current.messages + ChatMessage(fromUser = true, text = requestText, attachments = attachments),
+            pendingAttachments = emptyList(),
+            isRunning = true,
+            streamingMessageId = null,
+            activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + current.activity,
+            liveProcess = listOf(thinkItem),
+            scratchpadItems = initialScratchpad,
+            liveThinking = true,
+            activeThinkingBlockId = null,
+            taskStartedAtMillis = startedAt,
+            taskFinishedAtMillis = null,
+            workSegmentStartedAtMillis = startedAt,
+            currentTaskRequest = requestText,
+            lastTaskOutcome = null,
+            pendingApproval = null,
+        )
     }
 
     private fun resolveMentionedWorkspacePaths(prompt: String, project: Project): List<String> =
@@ -4185,6 +4313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runtimeRecoveryStatus = slice.runtimeRecoveryStatus,
         runtimeRecoveryAttempt = slice.runtimeRecoveryAttempt,
         runtimeRecoveryCanResume = slice.runtimeRecoveryCanResume,
+        queuedPrompts = slice.queuedPrompts,
         activeRoadmap = slice.activeRoadmap,
         scratchpadItems = slice.scratchpadItems,
         lastTaskOutcome = slice.lastTaskOutcome,
@@ -4218,6 +4347,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runtimeRecoveryStatus = state.runtimeRecoveryStatus,
         runtimeRecoveryAttempt = state.runtimeRecoveryAttempt,
         runtimeRecoveryCanResume = state.runtimeRecoveryCanResume,
+        queuedPrompts = state.queuedPrompts,
         activeRoadmap = state.activeRoadmap,
         scratchpadItems = state.scratchpadItems,
         pendingOrchestratorTransition = previous?.pendingOrchestratorTransition,
@@ -4238,7 +4368,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val stash = chatLiveStash[chatId]
             if (stash != null) return applyChatSliceToState(current, stash, chatId)
             val diskMessages = preferences.loadMessages(projectId, chatId)
-            return current.copy(activeChatId = chatId, messages = diskMessages)
+            return current.copy(
+                activeChatId = chatId,
+                messages = diskMessages,
+                queuedPrompts = preferences.loadQueuedPrompts(projectId, chatId),
+            )
         }
         val slice = projectSessionStates.value[projectId] ?: ProjectSessionState(projectId = projectId)
         return applySliceToState(current, slice)
@@ -4252,7 +4386,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (chatId != null) {
             val seed = chatLiveStash[chatId] ?: run {
                 val diskMessages = preferences.loadMessages(projectId, chatId)
-                ProjectSessionState(projectId = projectId, activeChatId = chatId, messages = diskMessages)
+                ProjectSessionState(
+                    projectId = projectId,
+                    activeChatId = chatId,
+                    messages = diskMessages,
+                    queuedPrompts = preferences.loadQueuedPrompts(projectId, chatId),
+                )
             }
             val updated = transform(applyChatSliceToState(_state.value, seed, chatId))
             chatLiveStash[chatId] = chatSliceFromState(projectId, chatId, updated)
@@ -4852,6 +4991,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastAssistantDeltaPersistAtMillis[event.sessionId] = System.currentTimeMillis()
             }
         }
+        // P1: a terminal event may leave a queued prompt waiting in this chat.
+        // The drain gate reads the settled state, so a queued prompt never
+        // starts a new turn while the old one is still running, waiting on an
+        // approval, or recoverable — the early-fire bug AntiGravity fixed in
+        // 2.30.0 (Nov 9, 2026). A failed or user-stopped task keeps its queue.
+        if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
+            drainNextQueuedPrompt(projectId, eventChatId)
+        }
+    }
+
+    /**
+     * P1: start the next queued prompt in [chatId] when the previous turn
+     * finished cleanly. The prompt leaves the queue before beginSession, so
+     * a re-entrant finish event can never start it twice.
+     */
+    private fun drainNextQueuedPrompt(projectId: String, chatId: String?) {
+        val scoped = sessionScopeFor(projectId, chatId)
+        val (next, _) = dequeuePrompt(scoped.queuedPrompts)
+        if (next == null) return
+        if (!shouldDrainPromptQueue(
+                isRunning = scoped.isRunning,
+                hasCompletedOutcome = scoped.lastTaskOutcome?.state == com.codeair.mhe.session.EngineeringState.COMPLETED,
+                hasPendingApproval = scoped.pendingApproval != null,
+                canResume = scoped.runtimeRecoveryCanResume,
+                queue = scoped.queuedPrompts,
+            )) return
+        val targetChatId = scoped.activeChatId ?: chatId ?: return
+        val project = _state.value.projects.firstOrNull { it.id == projectId } ?: return
+        updateSessionScoped(projectId, targetChatId) { it.copy(queuedPrompts = removeQueuedPrompt(it.queuedPrompts, next.id)) }
+        persistQueuedPrompts(projectId, targetChatId, sessionScopeFor(projectId, targetChatId).queuedPrompts)
+        beginSession(project, next.text, next.attachments, chatId = targetChatId, executionMode = next.mode)
     }
 
     private fun ensureCompletionMessage(state: AppUiState, totalDurationText: String): AppUiState =
@@ -5497,16 +5667,21 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         }
     }
 
-    private fun updateActiveChatTitle(prompt: String) {
+    /**
+     * Titles the chat a session just started in. [chatId] defaults to the
+     * active chat; the P1 drain passes the queued prompt's own chat so a
+     * background chat gets its title, not the chat on screen.
+     */
+    private fun updateActiveChatTitle(prompt: String, chatId: String? = null) {
         val project = _state.value.activeProject ?: return
-        val chatId = _state.value.activeChatId ?: return
+        val targetChatId = chatId ?: _state.value.activeChatId ?: return
         val now = System.currentTimeMillis()
         val title = prompt.replace(Regex("\\s+"), " ").trim().let {
             if (it.length <= 42) it else it.take(39).trimEnd() + "…"
         }
         _state.update { current ->
             val chats = current.projectChats.map { chat ->
-                if (chat.id == chatId) {
+                if (chat.id == targetChatId) {
                     chat.copy(
                         title = if (chat.title == "New chat") title else chat.title,
                         updatedAtMillis = now,

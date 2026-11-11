@@ -4,6 +4,7 @@ import android.content.Context
 import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ChatAttachment
+import com.codeair.mhe.model.QueuedPrompt
 import com.codeair.mhe.model.Project
 import com.codeair.mhe.model.ProjectKind
 import com.codeair.mhe.model.ProjectChat
@@ -515,6 +516,77 @@ class AppPreferences(private val context: Context) {
         return loadLegacyMessages(file)
     }
 
+    /**
+     * P1 prompt queue (2026-11-11): the per-chat queue lives in its own
+     * small file next to the transcript (`<chatId>.queued.json`), written
+     * atomically (tmp + rename, same as the transcript) so a crash mid-write
+     * never leaves a torn queue behind. A missing file is an empty queue.
+     */
+    fun saveQueuedPrompts(projectId: String, chatId: String, prompts: List<QueuedPrompt>) {
+        val arr = JSONArray()
+        prompts.forEach { queued ->
+            arr.put(JSONObject().apply {
+                put("id", queued.id)
+                put("text", queued.text)
+                put("mode", queued.mode.name)
+                put("createdAtMillis", queued.createdAtMillis)
+                put("attachments", JSONArray().apply {
+                    queued.attachments.forEach { attachment ->
+                        put(JSONObject().apply {
+                            put("id", attachment.id)
+                            put("displayName", attachment.displayName)
+                            put("relativePath", attachment.relativePath)
+                            put("mimeType", attachment.mimeType)
+                            put("sizeBytes", attachment.sizeBytes)
+                        })
+                    }
+                })
+            })
+        }
+        val projectDir = File(chatsDir, projectId).also { it.mkdirs() }
+        val destination = File(projectDir, "$chatId.queued.json")
+        val temporary = File(projectDir, ".$chatId.queued.json.tmp")
+        temporary.writeText(arr.toString())
+        if (!temporary.renameTo(destination)) {
+            temporary.copyTo(destination, overwrite = true)
+            temporary.delete()
+        }
+    }
+
+    fun loadQueuedPrompts(projectId: String, chatId: String): List<QueuedPrompt> {
+        val file = File(File(chatsDir, projectId), "$chatId.queued.json")
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(file.readText())
+            (0 until arr.length()).mapNotNull { i ->
+                runCatching {
+                    val obj = arr.getJSONObject(i)
+                    QueuedPrompt(
+                        id = obj.getString("id"),
+                        text = obj.getString("text"),
+                        attachments = obj.optJSONArray("attachments")?.let { attachments ->
+                            (0 until attachments.length()).mapNotNull { index ->
+                                runCatching {
+                                    val attachment = attachments.getJSONObject(index)
+                                    ChatAttachment(
+                                        id = attachment.getString("id"),
+                                        displayName = attachment.getString("displayName"),
+                                        relativePath = attachment.getString("relativePath"),
+                                        mimeType = attachment.getString("mimeType"),
+                                        sizeBytes = attachment.getLong("sizeBytes"),
+                                    )
+                                }.getOrNull()
+                            }
+                        } ?: emptyList(),
+                        mode = runCatching { ExecutionMode.valueOf(obj.getString("mode")) }
+                            .getOrDefault(ExecutionMode.UNIFIED),
+                        createdAtMillis = obj.optLong("createdAtMillis", System.currentTimeMillis()),
+                    )
+                }.getOrNull()
+            }
+        }.getOrDefault(emptyList())
+    }
+
     fun deleteProjectChats(projectId: String) {
         File(chatsDir, projectId).deleteRecursively()
         File(chatsDir, "$projectId.json").delete()
@@ -544,6 +616,8 @@ class AppPreferences(private val context: Context) {
         val projectDir = File(chatsDir, projectId)
         File(projectDir, "$chatId.json").delete()
         File(projectDir, ".$chatId.json.tmp").delete()
+        File(projectDir, "$chatId.queued.json").delete()
+        File(projectDir, ".$chatId.queued.json.tmp").delete()
         val currentChats = loadProjectChats(projectId).filterNot { it.id == chatId }
         saveProjectChats(projectId, currentChats)
         if (getLastActiveChatId(projectId) == chatId) {

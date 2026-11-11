@@ -48,6 +48,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -106,6 +107,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudQueue
@@ -259,6 +261,7 @@ import com.codeair.mhe.model.DiffLineType
 import com.codeair.mhe.model.Project
 import com.codeair.mhe.model.ProjectKind
 import com.codeair.mhe.model.ProjectChat
+import com.codeair.mhe.model.QueuedPrompt
 import com.codeair.mhe.model.ProviderKind
 import com.codeair.mhe.model.ProviderProfile
 import com.codeair.mhe.model.inferredDshApiForUrl
@@ -288,6 +291,7 @@ import com.codeair.mhe.ui.theme.PocketBlue
 import com.codeair.mhe.ui.theme.PocketGreen
 import com.codeair.mhe.ui.theme.PocketOrange
 import java.io.ByteArrayInputStream
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -5601,6 +5605,10 @@ private fun WorkspaceScreen(
                     onResetEmergencyKillSwitch = onResetEmergencyKillSwitch,
                     onApprovalWithLevel = onApprovalWithLevel,
                     onOpenFileByPath = onOpenFileByPath,
+                    queuedPrompts = state.queuedPrompts,
+                    onCancelQueuedPrompt = { viewModel?.cancelQueuedPrompt(it) },
+                    onMoveQueuedPrompt = { id, index -> viewModel?.reorderQueuedPrompt(id, index) },
+                    onSendQueuedPromptNow = { viewModel?.sendQueuedPromptNow(it) },
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -6369,6 +6377,13 @@ private fun ChatTab(
     emergencyKillSwitchActive: Boolean = false,
     onResetEmergencyKillSwitch: () -> Unit = {},
     onApprovalWithLevel: (com.codeair.mhe.security.PermissionLevel, Boolean) -> Unit = { _, _ -> },
+    // P1 prompt queue (2026-11-11): the prompts waiting under the running
+    // task in this chat. Defaults keep the read-only ChatTab call site
+    // working untouched.
+    queuedPrompts: List<QueuedPrompt> = emptyList(),
+    onCancelQueuedPrompt: (String) -> Unit = {},
+    onMoveQueuedPrompt: (String, Int) -> Unit = { _, _ -> },
+    onSendQueuedPromptNow: (String) -> Unit = {},
 ) {
     val view = LocalView.current
     // Keep the screen on while the selected agent is working in this chat. Released automatically
@@ -6765,6 +6780,17 @@ private fun ChatTab(
                     }
                 }
 
+                // P1: prompts queued under the running task, in start order.
+                if (queuedPrompts.isNotEmpty()) {
+                    QueuedPromptsSection(
+                        queuedPrompts = queuedPrompts,
+                        onCancelQueuedPrompt = onCancelQueuedPrompt,
+                        onMoveQueuedPrompt = onMoveQueuedPrompt,
+                        onSendQueuedPromptNow = onSendQueuedPromptNow,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+
                 val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
 
                 if (mentionCandidates.isNotEmpty()) {
@@ -6992,6 +7018,44 @@ private fun ChatTab(
                             )
                         }
 
+                        // P1: the composer stays live while a task runs — the
+                        // send button queues the prompt under the running task
+                        // (onSend routes to the queue while isRunning) and the
+                        // red Stop button stays right next to it. No keyboard
+                        // shortcut: the on-screen button IS the queue action.
+                        Box(
+                            modifier = Modifier
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .clickable(
+                                    enabled = canSend,
+                                    onClick = {
+                                        if (canSend) {
+                                            onSend(prompt)
+                                            prompt = ""
+                                            mentionQuery = null
+                                        }
+                                    },
+                                )
+                                .align(Alignment.Bottom),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(
+                                        color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = CircleShape,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowUpward,
+                                    contentDescription = if (isRunning) "Queue prompt" else "Send",
+                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            }
+                        }
                         if (isRunning) {
                             Box(
                                 modifier = Modifier
@@ -7017,44 +7081,130 @@ private fun ChatTab(
                                     )
                                 }
                             }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clickable(
-                                        enabled = canSend,
-                                        onClick = {
-                                            if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
-                                                mentionQuery = null
-                                            }
-                                        },
-                                    )
-                                    .align(Alignment.Bottom),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(
-                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowUpward,
-                                        contentDescription = "Send",
-                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(19.dp),
-                                    )
-                                }
-                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * P1 prompt queue chips (2026-11-11): the prompts waiting under the running
+ * task, in start order. Touch gestures only — there is no keyboard on a
+ * phone, so every action is an on-screen gesture or button:
+ * - long-press the chip body to cancel it,
+ * - long-press the drag handle, then drag up/down to reorder,
+ * - "Send now" stops the current task and starts this prompt immediately.
+ * The handle is a sibling of the chip body, never nested inside the cancel
+ * gesture, so a drag can never accidentally cancel a prompt.
+ */
+@Composable
+private fun QueuedPromptsSection(
+    queuedPrompts: List<QueuedPrompt>,
+    onCancelQueuedPrompt: (String) -> Unit,
+    onMoveQueuedPrompt: (String, Int) -> Unit,
+    onSendQueuedPromptNow: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        queuedPrompts.forEachIndexed { index, queued ->
+            QueuedPromptChip(
+                queued = queued,
+                position = index + 1,
+                index = index,
+                count = queuedPrompts.size,
+                onCancel = {
+                    onCancelQueuedPrompt(queued.id)
+                    Toast.makeText(context, "Queued prompt cancelled", Toast.LENGTH_SHORT).show()
+                },
+                onMove = { toIndex -> onMoveQueuedPrompt(queued.id, toIndex) },
+                onSendNow = { onSendQueuedPromptNow(queued.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun QueuedPromptChip(
+    queued: QueuedPrompt,
+    position: Int,
+    index: Int,
+    count: Int,
+    onCancel: () -> Unit,
+    onMove: (Int) -> Unit,
+    onSendNow: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(14.dp),
+            )
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onCancel,
+            )
+            .padding(start = 4.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Drag handle only: long-press here starts a drag (the reorder
+        // commits once, on release, from the total drag distance), while a
+        // long-press on the chip body cancels. The two gestures never share
+        // a touch target.
+        Icon(
+            imageVector = Icons.Default.DragHandle,
+            contentDescription = "Drag to reorder",
+            modifier = Modifier
+                .size(40.dp)
+                .pointerInput(queued.id) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { dragOffsetY = 0f },
+                        onDragEnd = {
+                            val chipHeightPx = with(density) { 56.dp.toPx() }
+                            val step = (dragOffsetY / chipHeightPx).roundToInt()
+                            dragOffsetY = 0f
+                            if (step != 0) onMove((index + step).coerceIn(0, count - 1))
+                        },
+                        onDragCancel = { dragOffsetY = 0f },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            dragOffsetY += dragAmount.y
+                        },
+                    )
+                }
+                .padding(10.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "Queued $position",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = queued.text,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (queued.attachments.isNotEmpty()) {
+                Text(
+                    text = "${queued.attachments.size} file${if (queued.attachments.size == 1) "" else "s"} attached",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        TextButton(onClick = onSendNow) {
+            Text("Send now", fontSize = 13.sp)
         }
     }
 }

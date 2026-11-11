@@ -5,6 +5,7 @@ import com.codeair.mhe.model.ActiveRoadmap
 import com.codeair.mhe.model.ChangeItem
 import com.codeair.mhe.model.ChatMessage
 import com.codeair.mhe.model.ProjectChat
+import com.codeair.mhe.model.QueuedPrompt
 import com.codeair.mhe.model.ScratchpadItem
 import com.codeair.mhe.model.ToolRequest
 import com.codeair.mhe.session.EngineeringState
@@ -135,6 +136,7 @@ fun applyChatSliceToState(base: AppUiState, slice: ProjectSessionState, chatId: 
         runtimeRecoveryStatus = slice.runtimeRecoveryStatus,
         runtimeRecoveryAttempt = slice.runtimeRecoveryAttempt,
         runtimeRecoveryCanResume = slice.runtimeRecoveryCanResume,
+        queuedPrompts = slice.queuedPrompts,
         activeRoadmap = slice.activeRoadmap,
         scratchpadItems = slice.scratchpadItems,
         lastTaskOutcome = slice.lastTaskOutcome,
@@ -162,6 +164,7 @@ fun chatSliceFromState(projectId: String, chatId: String, state: AppUiState): Pr
         runtimeRecoveryStatus = state.runtimeRecoveryStatus,
         runtimeRecoveryAttempt = state.runtimeRecoveryAttempt,
         runtimeRecoveryCanResume = state.runtimeRecoveryCanResume,
+        queuedPrompts = state.queuedPrompts,
         activeRoadmap = state.activeRoadmap,
         scratchpadItems = state.scratchpadItems,
         lastTaskOutcome = state.lastTaskOutcome,
@@ -191,6 +194,10 @@ data class ProjectSessionState(
     val runtimeRecoveryStatus: String? = null,
     val runtimeRecoveryAttempt: Int = 0,
     val runtimeRecoveryCanResume: Boolean = false,
+    // P1 prompt queue (2026-11-11): per-chat follow-ups waiting for a clean
+    // finish. Travels with the chat slice so the queue survives leaving the
+    // chat and leaving the project; disk persistence is separate (AppPreferences).
+    val queuedPrompts: List<QueuedPrompt> = emptyList(),
     val activeRoadmap: ActiveRoadmap? = null,
     val scratchpadItems: List<ScratchpadItem> = emptyList(),
     val pendingOrchestratorTransition: OrchestratorTransition? = null,
