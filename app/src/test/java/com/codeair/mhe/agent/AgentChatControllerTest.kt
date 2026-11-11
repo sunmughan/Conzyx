@@ -288,4 +288,15 @@ class AgentChatControllerTest {
 
         assertEquals(listOf("file1.kt", "dir/file2.kt"), resolved)
     }
+
+    @Test
+    fun `resolveMentionedWorkspacePaths resolves mentioned folders too`() {
+        val workspace = tempFolder.newFolder("project-folders")
+        File(workspace, "src").apply { mkdir() }
+        File(workspace, "src/Main.kt").apply { writeText("// main") }
+
+        val resolved = controller.resolveMentionedWorkspacePaths("Check @src and @src/Main.kt", workspace)
+
+        assertEquals(listOf("src", "src/Main.kt"), resolved)
+    }
 }

@@ -1,5 +1,6 @@
 package com.codeair.mhe.agent
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,5 +70,18 @@ class AttachmentSupportTest {
         assertFalse(controller.isSupportedAttachment("application/x-msdownload", "setup.exe"))
         assertFalse(controller.isSupportedAttachment("application/x-executable", "tool.bin"))
         assertFalse(controller.isSupportedAttachment("application/vnd.android.package-archive", "app.apk"))
+    }
+
+    @Test
+    fun `downscaled dimensions cap the longest side at 2000 and keep aspect ratio`() {
+        assertEquals(2000 to 1500, controller.downscaledDimensions(4000, 3000))
+        assertEquals(750 to 2000, controller.downscaledDimensions(1500, 4000))
+        assertEquals(2000 to 2000, controller.downscaledDimensions(3000, 3000))
+    }
+
+    @Test
+    fun `downscaled dimensions leave images inside the cap untouched`() {
+        assertEquals(1000 to 800, controller.downscaledDimensions(1000, 800))
+        assertEquals(2000 to 1000, controller.downscaledDimensions(2000, 1000))
     }
 }

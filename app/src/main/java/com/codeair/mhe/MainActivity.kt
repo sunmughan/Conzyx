@@ -32,6 +32,10 @@ class MainActivity : ComponentActivity() {
             vm.handleNotificationRoute(notificationRoute)
             AppCrashLogger.log("MainActivity.onCreate: notification route handled")
 
+            // P2c: a share from another app stages into the active chat.
+            vm.handleSharedIntent(intent)
+            AppCrashLogger.log("MainActivity.onCreate: shared intent handled")
+
             setContent {
                 val state by vm.state.collectAsStateWithLifecycle()
                 PocketTheme(themeMode = state.themeMode) {
@@ -54,6 +58,8 @@ class MainActivity : ComponentActivity() {
                 val vm = ViewModelProvider(this)[MainViewModel::class.java]
                 vm.handleNotificationRoute(route)
             }
+            // P2c: a share arriving while the app is already running.
+            ViewModelProvider(this)[MainViewModel::class.java].handleSharedIntent(intent)
             AppCrashLogger.log("MainActivity.onNewIntent completed")
         } catch (throwable: Throwable) {
             AppCrashLogger.logThrowable("MainActivity.onNewIntent FAILED", throwable)

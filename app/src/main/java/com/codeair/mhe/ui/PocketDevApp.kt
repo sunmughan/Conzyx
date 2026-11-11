@@ -22,6 +22,7 @@ import android.widget.Toast
 import com.codeair.mhe.BuildConfig
 import com.codeair.mhe.R
 import com.codeair.mhe.data.AppPreferences
+import com.codeair.mhe.agent.AgentChatController
 import com.codeair.mhe.ui.navigation.OverlayScreen
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -131,6 +132,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
@@ -611,6 +613,10 @@ fun PocketDevApp(
             onUseSuggestedProjectRoot = viewModel::useSuggestedProjectRoot,
             onExportProject = viewModel::exportActiveProject,
             onAddAttachments = viewModel::addChatAttachments,
+            onPrepareCameraPhoto = viewModel::prepareCameraPhoto,
+            onCameraPhotoTaken = viewModel::confirmCameraPhoto,
+            sharedTextPrefill = state.sharedTextPrefill,
+            onSharedTextPrefillConsumed = viewModel::consumeSharedTextPrefill,
             onRemoveAttachment = viewModel::removePendingAttachment,
             onOpenAttachment = viewModel::openChatAttachment,
             onSaveAttachmentToUri = viewModel::saveChatAttachmentToStorage,
@@ -5048,6 +5054,13 @@ private fun WorkspaceScreen(
     onUseSuggestedProjectRoot: () -> Unit,
     onExportProject: (Uri) -> Unit,
     onAddAttachments: (List<Uri>) -> Unit,
+    // P2b: camera capture. prepare returns the FileProvider Uri the camera
+    // app writes to; taken registers the photo (or deletes it on cancel).
+    onPrepareCameraPhoto: () -> Uri? = { null },
+    onCameraPhotoTaken: (Uri, Boolean) -> Unit = { _, _ -> },
+    // P2c: text shared from another app, prefilled into the composer once.
+    sharedTextPrefill: String? = null,
+    onSharedTextPrefillConsumed: () -> Unit = {},
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onSaveAttachmentToUri: (ChatAttachment, Uri) -> Unit = { _, _ -> },
@@ -5577,6 +5590,10 @@ private fun WorkspaceScreen(
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("*/*"))
                     },
+                    onPrepareCameraPhoto = onPrepareCameraPhoto,
+                    onCameraPhotoTaken = onCameraPhotoTaken,
+                    sharedTextPrefill = sharedTextPrefill,
+                    onSharedTextPrefillConsumed = onSharedTextPrefillConsumed,
                     onRemoveAttachment = onRemoveAttachment,
                     onOpenAttachment = onOpenAttachment,
                     onSaveAttachment = {
@@ -6353,6 +6370,12 @@ private fun ChatTab(
     workspaceFiles: List<WorkspaceEntry>,
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
+    // P2b: camera capture (see WorkspaceScreen for the contract).
+    onPrepareCameraPhoto: () -> Uri? = { null },
+    onCameraPhotoTaken: (Uri, Boolean) -> Unit = { _, _ -> },
+    // P2c: text shared from another app, prefilled into the composer once.
+    sharedTextPrefill: String? = null,
+    onSharedTextPrefillConsumed: () -> Unit = {},
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onSaveAttachment: (ChatAttachment) -> Unit = {},
@@ -6393,6 +6416,15 @@ private fun ChatTab(
         onDispose { view.keepScreenOn = false }
     }
     var prompt by rememberSaveable { mutableStateOf("") }
+
+    // P2c: text shared from another app lands in the composer.
+    LaunchedEffect(sharedTextPrefill) {
+        val prefill = sharedTextPrefill
+        if (!prefill.isNullOrBlank()) {
+            prompt = if (prompt.isBlank()) prefill else "$prompt\n$prefill"
+            onSharedTextPrefillConsumed()
+        }
+    }
     var inputFocused by remember { mutableStateOf(false) }
     var inputLineCount by remember { mutableStateOf(1) }
     var inputSectionHeight by remember { mutableStateOf(0.dp) }
@@ -6437,11 +6469,13 @@ private fun ChatTab(
         )
     }
 
+    // P5: @-mention picker. Typing @ in the composer lists matching
+    // workspace files AND folders; tapping one inserts the mention, and
+    // resolveMentionedWorkspacePaths() turns it into agent context.
     val mentionCandidates = remember(workspaceFiles, mentionQuery) {
         val query = mentionQuery?.trim()?.lowercase() ?: return@remember emptyList<WorkspaceEntry>()
         workspaceFiles
             .asSequence()
-            .filter { !it.isDirectory }
             .filter { query.isBlank() || it.path.lowercase().contains(query) }
             .take(8)
             .toList()
@@ -6453,6 +6487,21 @@ private fun ChatTab(
     }
 
     val context = LocalContext.current
+
+    // P2b: camera capture. The launcher lives here, next to the tools menu
+    // that opens it; the ViewModel owns the photo file.
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            val uri = pendingCameraUri
+            pendingCameraUri = null
+            if (uri != null) onCameraPhotoTaken(uri, success)
+        },
+    )
+    val hasCamera = remember {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+    }
 
     val speechRecognizerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -6857,7 +6906,7 @@ private fun ChatTab(
                                 .width(IntrinsicSize.Max)
                                 .padding(vertical = 4.dp),
                         ) {
-                            val attachEnabled = pendingAttachments.size < 5
+                            val attachEnabled = pendingAttachments.size < AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE
                             Row(
                                 modifier = Modifier
                                     .clickable {
@@ -6881,6 +6930,35 @@ private fun ChatTab(
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = if (attachEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            }
+                            // P2b: camera capture. Hidden on devices with no camera.
+                            if (hasCamera) {
+                                Row(
+                                    modifier = Modifier
+                                        .clickable {
+                                            toolsOpen = false
+                                            val uri = onPrepareCameraPhoto()
+                                            if (uri != null) {
+                                                pendingCameraUri = uri
+                                                takePictureLauncher.launch(uri)
+                                            }
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoCamera,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "Take photo",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
                             }
                             Row(
                                 modifier = Modifier

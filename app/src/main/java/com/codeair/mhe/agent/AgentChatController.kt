@@ -11,6 +11,7 @@ import com.codeair.mhe.model.StepStatus
 import com.codeair.mhe.model.TaskStatus
 import java.io.File
 import java.util.UUID
+import kotlin.math.roundToInt
 
 /**
  * Controller responsible for managing chat execution, message history,
@@ -45,6 +46,22 @@ class AgentChatController {
             "application/x-rar-compressed",
             "application/x-7z-compressed",
         )
+
+        /** Longest side, in pixels, an attached image may keep (AntiGravity parity: 2000 px). */
+        const val MAX_IMAGE_SIDE_PX = 2000
+    }
+
+    /**
+     * Largest side of an image after downscaling to [MAX_IMAGE_SIDE_PX] px,
+     * keeping the aspect ratio. Images already inside the cap come back
+     * unchanged, as do degenerate sizes.
+     */
+    fun downscaledDimensions(width: Int, height: Int, maxSide: Int = MAX_IMAGE_SIDE_PX): Pair<Int, Int> {
+        if (width <= 0 || height <= 0) return width to height
+        val longest = maxOf(width, height)
+        if (longest <= maxSide) return width to height
+        val scale = maxSide.toDouble() / longest
+        return maxOf(1, (width * scale).roundToInt()) to maxOf(1, (height * scale).roundToInt())
     }
 
     /**
@@ -82,6 +99,8 @@ class AgentChatController {
 
     /**
      * Resolves `@path/to/file` mentions from the prompt within the given workspace.
+     * Files and folders both resolve: a folder mention points the agent at the
+     * whole directory, a file mention at one file.
      */
     fun resolveMentionedWorkspacePaths(prompt: String, workspace: File?): List<String> {
         val validWorkspace = runCatching { workspace?.canonicalFile }.getOrNull() ?: return emptyList()
@@ -96,7 +115,7 @@ class AgentChatController {
         return candidates.filter { relativePath ->
             runCatching {
                 val target = File(validWorkspace, relativePath).canonicalFile
-                target.isFile && target.toPath().startsWith(workspacePath)
+                (target.isFile || target.isDirectory) && target.toPath().startsWith(workspacePath)
             }.getOrDefault(false)
         }.take(16)
     }

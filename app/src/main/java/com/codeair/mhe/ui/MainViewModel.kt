@@ -2,8 +2,13 @@ package com.codeair.mhe.ui
 
 import android.app.Application
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.os.SystemClock
 import android.os.Build
 import android.system.Os
@@ -11,8 +16,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.IntentCompat
 import androidx.documentfile.provider.DocumentFile
 import com.codeair.mhe.files.SharedExport
+import com.codeair.mhe.agent.AgentChatController
+import com.codeair.mhe.agent.SharedContent
+import com.codeair.mhe.agent.ShareIntentParser
 import com.codeair.mhe.BuildConfig
 import com.codeair.mhe.AppCrashLogger
 import com.codeair.mhe.data.ApiKeyVault
@@ -290,6 +299,9 @@ data class AppUiState(
         ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."),
     ),
     val pendingAttachments: List<ChatAttachment> = emptyList(),
+    // P2c: text from a share received from another app, waiting for the
+    // composer to pick it up. Null once consumed.
+    val sharedTextPrefill: String? = null,
     // P1 prompt queue (2026-11-11): follow-ups typed while a task runs in
     // THIS chat, waiting to auto-start when it finishes cleanly. Per-chat
     // only — a queue never follows the user into another chat.
@@ -2242,6 +2254,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val pending = sessionBridge(project.id).loadPendingChanges(project.id)
             if (_state.value.activeProject?.id == project.id) _state.update { it.copy(changes = pending) }
         }
+        applyPendingShare()
     }
 
     fun closeProject() {
@@ -3717,6 +3730,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isClaudeRuntimeMetadata(relativePath) || isExportSecretFile(relativePath)
     }
 
+    // P2b: the photo file the camera app is currently writing to, if any.
+    private var pendingCameraPhoto: File? = null
+    // P2c: a share that arrived before any chat was open; applied when a project opens.
+    private var pendingShare: SharedContent? = null
+
     fun addChatAttachments(uris: List<Uri>) {
         val current = _state.value
         val project = current.activeProject ?: return
@@ -3725,9 +3743,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // runs bind to the NEXT queued prompt (sendPrompt consumes the staged
         // files into the queue) instead of being silently refused.
         if (uris.isEmpty()) return
-        val remaining = (MAX_ATTACHMENTS_PER_MESSAGE - current.pendingAttachments.size).coerceAtLeast(0)
+        val remaining = (AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE - current.pendingAttachments.size).coerceAtLeast(0)
         if (remaining == 0) {
-            _state.update { it.copy(toastMessage = "You can attach up to $MAX_ATTACHMENTS_PER_MESSAGE files per message") }
+            _state.update { it.copy(toastMessage = "You can attach up to ${AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE} files per message") }
             return
         }
         viewModelScope.launch {
@@ -3750,6 +3768,152 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (added.isNotEmpty()) refreshProjectFiles()
         }
+    }
+
+    /**
+     * P2b: the FileProvider Uri the camera app writes the next photo to.
+     * The photo file is created straight inside attachments/<chatId>/, so a
+     * successful capture needs no copy afterwards. Returns null (with a
+     * toast) when no chat is open or the attachment cap is already reached.
+     * No CAMERA permission is needed: the system camera app does the capture.
+     */
+    fun prepareCameraPhoto(): Uri? {
+        val project = _state.value.activeProject ?: run {
+            _state.update { it.copy(toastMessage = "Open a project chat first") }
+            return null
+        }
+        val chatId = _state.value.activeChatId ?: run {
+            _state.update { it.copy(toastMessage = "Open a project chat first") }
+            return null
+        }
+        if (_state.value.pendingAttachments.size >= AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE) {
+            _state.update { it.copy(toastMessage = "You can attach up to ${AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE} files per message") }
+            return null
+        }
+        return runCatching {
+            val root = projectWorkspaceRoot(project).canonicalFile
+            val folder = File(root, "attachments/$chatId").apply { mkdirs() }.canonicalFile
+            require(folder.toPath().startsWith(root.toPath())) { "Unsafe attachment folder" }
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+            var file = File(folder, "photo-$stamp.jpg")
+            var suffix = 2
+            while (file.exists()) file = File(folder, "photo-$stamp-${suffix++}.jpg")
+            pendingCameraPhoto = file
+            val app = getApplication<Application>()
+            FileProvider.getUriForFile(app, "${app.packageName}.files", file)
+        }.onFailure { error ->
+            pendingCameraPhoto = null
+            _state.update { it.copy(toastMessage = error.message ?: "Could not start the camera") }
+        }.getOrNull()
+    }
+
+    /**
+     * P2b: registers a captured photo as a staged attachment (downscaled
+     * like any other large photo), or deletes the empty file when the
+     * capture was cancelled.
+     */
+    fun confirmCameraPhoto(uri: Uri, success: Boolean) {
+        val file = pendingCameraPhoto
+        pendingCameraPhoto = null
+        if (!success || file == null) {
+            file?.delete()
+            return
+        }
+        // A stale callback from an older capture must not register this file.
+        val app = getApplication<Application>()
+        val expectedUri = runCatching {
+            FileProvider.getUriForFile(app, "${app.packageName}.files", file)
+        }.getOrNull()
+        if (expectedUri != uri) {
+            file.delete()
+            return
+        }
+        val project = _state.value.activeProject ?: run {
+            file.delete()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val root = projectWorkspaceRoot(project).canonicalFile
+                val canonical = file.canonicalFile
+                require(canonical.isFile && canonical.toPath().startsWith(root.toPath())) { "Photo is unavailable" }
+                require(canonical.length() in 1..MAX_ATTACHMENT_BYTES) { "Photo is larger than 25 MB" }
+                val finalSize = downscaleImageIfNeeded(canonical, "image/jpeg") ?: canonical.length()
+                ChatAttachment(
+                    displayName = canonical.name,
+                    relativePath = canonical.relativeTo(root).invariantSeparatorsPath,
+                    mimeType = "image/jpeg",
+                    sizeBytes = finalSize,
+                )
+            }.onSuccess { attachment ->
+                _state.update { state ->
+                    if (state.pendingAttachments.size >= AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE) {
+                        state.copy(toastMessage = "You can attach up to ${AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE} files per message")
+                    } else {
+                        state.copy(pendingAttachments = state.pendingAttachments + attachment)
+                    }
+                }
+                refreshProjectFiles()
+            }.onFailure { error ->
+                file.delete()
+                _state.update { it.copy(toastMessage = error.message ?: "Could not attach photo") }
+            }
+        }
+    }
+
+    /**
+     * P2c: a share received from another app. Stages its files into this
+     * chat and prefills the composer with its text. When no chat is open
+     * yet, the share waits and applies when the first project opens.
+     */
+    fun handleSharedIntent(intent: Intent) {
+        val action = intent.action ?: return
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+        // Process a share intent once: a recreated activity re-delivers the
+        // same Intent object, and staging twice would duplicate the files.
+        intent.action = null
+        val uris = when (action) {
+            Intent.ACTION_SEND ->
+                listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE ->
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                    ?: emptyList()
+            else -> return
+        }
+        val parsed = ShareIntentParser.parse(
+            action,
+            intent.getStringExtra(Intent.EXTRA_TEXT),
+            uris.map { it.toString() },
+        ) ?: run {
+            _state.update { it.copy(toastMessage = "Nothing to share") }
+            return
+        }
+        if (_state.value.activeProject == null || _state.value.activeChatId == null) {
+            pendingShare = parsed
+            return
+        }
+        applySharedContent(parsed)
+    }
+
+    /** P2c: the composer has picked up the shared text. */
+    fun consumeSharedTextPrefill() {
+        _state.update { it.copy(sharedTextPrefill = null) }
+    }
+
+    private fun applySharedContent(content: SharedContent) {
+        if (content.text.isNotBlank()) {
+            _state.update { it.copy(sharedTextPrefill = content.text) }
+        }
+        if (content.uriStrings.isNotEmpty()) {
+            addChatAttachments(content.uriStrings.map { Uri.parse(it) })
+        }
+    }
+
+    /** Applies a share that arrived before any chat was open. Called when a project opens. */
+    private fun applyPendingShare() {
+        val pending = pendingShare ?: return
+        pendingShare = null
+        applySharedContent(pending)
     }
 
     fun removePendingAttachment(attachmentId: String) {
@@ -3848,12 +4012,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             destination.delete()
             throw error
         }
+        // P2e: downscale large photos before sending (AntiGravity caps at
+        // 2000 px/side). Best effort: a downscale failure keeps the original.
+        if (mimeType.startsWith("image/")) {
+            runCatching { downscaleImageIfNeeded(destination, mimeType) }
+                .onSuccess { newSize -> if (newSize != null) copied = newSize }
+        }
         return ChatAttachment(
             displayName = displayName.take(120),
             relativePath = destination.relativeTo(root).invariantSeparatorsPath,
             mimeType = mimeType,
             sizeBytes = copied,
         )
+    }
+
+    /**
+     * Downscales a JPEG/PNG image in place when its longest side exceeds the
+     * cap. Returns the new file size, or null when nothing changed or the
+     * downscale failed (the original file is left untouched then).
+     */
+    private fun downscaleImageIfNeeded(file: File, mimeType: String): Long? {
+        val lowerMime = mimeType.lowercase()
+        val isJpeg = lowerMime == "image/jpeg" || lowerMime == "image/jpg"
+        val isPng = lowerMime == "image/png"
+        if (!isJpeg && !isPng) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        val width = bounds.outWidth
+        val height = bounds.outHeight
+        if (width <= 0 || height <= 0) return null
+        val (targetWidth, targetHeight) = agentChatController.downscaledDimensions(width, height)
+        if (targetWidth == width && targetHeight == height) return null
+        val ratio = maxOf(width / targetWidth, height / targetHeight)
+        val sampleSize = Integer.highestOneBit(ratio).coerceAtLeast(1)
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, decodeOptions) ?: return null
+        val scaled = Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true)
+        val format = if (isPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+        val temp = File(file.parentFile, "${file.name}.downscale.tmp")
+        try {
+            var ok = false
+            runCatching {
+                temp.outputStream().buffered().use { out -> ok = scaled.compress(format, 85, out) }
+            }
+            if (ok && temp.exists() && temp.length() > 0) {
+                temp.copyTo(file, overwrite = true)
+                return file.length()
+            }
+            return null
+        } finally {
+            temp.delete()
+            if (scaled !== decoded) decoded.recycle()
+            scaled.recycle()
+        }
     }
 
     private fun sanitizeAttachmentName(name: String): String =
@@ -6130,7 +6341,6 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     companion object {
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
-        private const val MAX_ATTACHMENTS_PER_MESSAGE = 5
         private const val MAX_PROCESS_OUTPUT_BYTES = 512 * 1024
         private const val MAX_ATTACHMENT_BYTES = 25L * 1024L * 1024L
         private const val MAX_EDITABLE_FILE_CHARS = 512_000
