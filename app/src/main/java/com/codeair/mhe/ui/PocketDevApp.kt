@@ -7126,6 +7126,7 @@ private fun QueuedPromptsSection(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun QueuedPromptChip(
     queued: QueuedPrompt,
