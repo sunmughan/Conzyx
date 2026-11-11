@@ -3772,17 +3772,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * P2b: the FileProvider Uri the camera app writes the next photo to.
-     * The photo file is created straight inside attachments/<chatId>/, so a
-     * successful capture needs no copy afterwards. Returns null (with a
-     * toast) when no chat is open or the attachment cap is already reached.
-     * No CAMERA permission is needed: the system camera app does the capture.
+     * The photo is captured into a throwaway file under shared/camera/ (a
+     * dedicated FileProvider root; the workspace root must stay unexposed)
+     * and copied into attachments/<chatId>/ on confirm. Returns null (with
+     * a toast) when no chat is open or the attachment cap is already
+     * reached. No CAMERA permission is needed: the system camera app does
+     * the capture.
      */
     fun prepareCameraPhoto(): Uri? {
-        val project = _state.value.activeProject ?: run {
-            _state.update { it.copy(toastMessage = "Open a project chat first") }
-            return null
-        }
-        val chatId = _state.value.activeChatId ?: run {
+        if (_state.value.activeProject == null || _state.value.activeChatId == null) {
             _state.update { it.copy(toastMessage = "Open a project chat first") }
             return null
         }
@@ -3791,15 +3789,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return null
         }
         return runCatching {
-            val root = projectWorkspaceRoot(project).canonicalFile
-            val folder = File(root, "attachments/$chatId").apply { mkdirs() }.canonicalFile
-            require(folder.toPath().startsWith(root.toPath())) { "Unsafe attachment folder" }
+            val app = getApplication<Application>()
+            val folder = File(app.filesDir, "shared/camera").apply { mkdirs() }.canonicalFile
             val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
             var file = File(folder, "photo-$stamp.jpg")
             var suffix = 2
             while (file.exists()) file = File(folder, "photo-$stamp-${suffix++}.jpg")
             pendingCameraPhoto = file
-            val app = getApplication<Application>()
             FileProvider.getUriForFile(app, "${app.packageName}.files", file)
         }.onFailure { error ->
             pendingCameraPhoto = null
@@ -3808,8 +3804,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * P2b: registers a captured photo as a staged attachment (downscaled
-     * like any other large photo), or deletes the empty file when the
+     * P2b: stages a captured photo as a workspace attachment (downscaled
+     * like any other large photo), or deletes the throwaway file when the
      * capture was cancelled.
      */
     fun confirmCameraPhoto(uri: Uri, success: Boolean) {
@@ -3832,19 +3828,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             file.delete()
             return
         }
+        val chatId = _state.value.activeChatId ?: run {
+            file.delete()
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                val root = projectWorkspaceRoot(project).canonicalFile
-                val canonical = file.canonicalFile
-                require(canonical.isFile && canonical.toPath().startsWith(root.toPath())) { "Photo is unavailable" }
-                require(canonical.length() in 1..MAX_ATTACHMENT_BYTES) { "Photo is larger than 25 MB" }
-                val finalSize = downscaleImageIfNeeded(canonical, "image/jpeg") ?: canonical.length()
-                ChatAttachment(
-                    displayName = canonical.name,
-                    relativePath = canonical.relativeTo(root).invariantSeparatorsPath,
-                    mimeType = "image/jpeg",
-                    sizeBytes = finalSize,
-                )
+                stageCameraPhoto(project, chatId, file)
             }.onSuccess { attachment ->
                 _state.update { state ->
                     if (state.pendingAttachments.size >= AgentChatController.MAX_ATTACHMENTS_PER_MESSAGE) {
@@ -3859,6 +3849,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(toastMessage = error.message ?: "Could not attach photo") }
             }
         }
+    }
+
+    /**
+     * P2b: copies a captured photo from the shared/camera throwaway file
+     * into this chat's workspace attachments folder and deletes the
+     * throwaway. The copy is size-capped and the photo is downscaled like
+     * any other large JPEG.
+     */
+    private fun stageCameraPhoto(project: Project, chatId: String, source: File): ChatAttachment {
+        val app = getApplication<Application>()
+        val cameraDir = File(app.filesDir, "shared/camera").canonicalFile
+        val canonical = source.canonicalFile
+        require(canonical.isFile && canonical.toPath().startsWith(cameraDir.toPath())) { "Photo is unavailable" }
+        require(canonical.length() in 1..MAX_ATTACHMENT_BYTES) { "Photo is larger than 25 MB" }
+        val root = projectWorkspaceRoot(project).canonicalFile
+        val folder = File(root, "attachments/$chatId").apply { mkdirs() }.canonicalFile
+        require(folder.toPath().startsWith(root.toPath())) { "Unsafe attachment folder" }
+        val stem = canonical.nameWithoutExtension
+        var destination = File(folder, canonical.name)
+        var suffix = 2
+        while (destination.exists()) destination = File(folder, "$stem-${suffix++}.jpg")
+        var copied = 0L
+        try {
+            canonical.inputStream().buffered().use { input ->
+                destination.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        require(copied <= MAX_ATTACHMENT_BYTES) { "Photo is larger than 25 MB" }
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+        } catch (error: Throwable) {
+            destination.delete()
+            throw error
+        }
+        source.delete()
+        val finalSize = downscaleImageIfNeeded(destination, "image/jpeg") ?: destination.length()
+        return ChatAttachment(
+            displayName = destination.name,
+            relativePath = destination.relativeTo(root).invariantSeparatorsPath,
+            mimeType = "image/jpeg",
+            sizeBytes = finalSize,
+        )
     }
 
     /**

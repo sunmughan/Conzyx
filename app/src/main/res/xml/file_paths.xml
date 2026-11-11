@@ -2,6 +2,8 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="shared_install" path="shared/install/" />
     <files-path name="shared_open" path="shared/open/" />
-    <!-- P2b: camera photos are captured straight into attachments/<chatId>/ under the workspace root. -->
-    <files-path name="workspaces" path="workspaces/" />
+    <!-- P2b: camera capture target. Stays under shared/ so the FileProvider
+         guard (SharedExportTest) keeps passing; the photo is copied into
+         the workspace attachments folder on confirm. -->
+    <files-path name="shared_camera" path="shared/camera/" />
 </paths>
