@@ -141,4 +141,33 @@ class ApiKeyFailoverCoordinatorTest {
         val later = now + ApiKeyFailoverCoordinator.QUOTA_COOLDOWN_MS + 1
         assertEquals("1", coordinator.nextKey(creds, later)?.id)
     }
+
+    @Test
+    fun `rotate activates the next healthy key`() {
+        val creds = listOf(cred("1", "Primary", true), cred("2", "Backup"))
+        val activated = mutableListOf<String>()
+        val next = coordinator.rotate(creds, { id -> activated.add(id); true }, "HTTP 429: rate limit exceeded")
+        assertEquals("2", next?.id)
+        assertEquals("secret-2", next?.secret)
+        assertEquals(listOf("2"), activated)
+        assertEquals(1, coordinator.failedCount())
+    }
+
+    @Test
+    fun `rotate returns null for a single key`() {
+        val creds = listOf(cred("1", "Primary", true))
+        assertNull(coordinator.rotate(creds, { true }, "HTTP 401: unauthorized"))
+    }
+
+    @Test
+    fun `rotate returns null for a non-key failure`() {
+        val creds = listOf(cred("1", "Primary", true), cred("2", "Backup"))
+        assertNull(coordinator.rotate(creds, { true }, "network unreachable"))
+    }
+
+    @Test
+    fun `rotate returns null when activation fails`() {
+        val creds = listOf(cred("1", "Primary", true), cred("2", "Backup"))
+        assertNull(coordinator.rotate(creds, { false }, "HTTP 429: rate limit exceeded"))
+    }
 }

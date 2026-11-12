@@ -29,6 +29,13 @@ import org.json.JSONObject
  */
 class CustomAgentBridge(
     private val secretFor: (ProviderProfile) -> String?,
+    /**
+     * Phase 4: rotates to the next healthy key when the provider rejects
+     * the current one (HTTP 401/403/429). Returns the new secret, or null
+     * when there is nothing else to try. When null, the bridge fails the
+     * session on a key failure exactly as before.
+     */
+    private val rotateKey: ((providerId: String, reason: String) -> String?)? = null,
 ) : RuntimeBridge {
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
@@ -91,8 +98,8 @@ class CustomAgentBridge(
             // whole response is done. Endpoints that ignore stream=true fall back
             // to a single full response, which is then emitted chunked as before.
             val (text, streamed) = when (resolveApiType(provider)) {
-                ApiType.ANTHROPIC -> callAnthropic(baseUrl, secret, model, prompt, conversationHistory, sessionId)
-                ApiType.OPENAI -> callOpenAi(baseUrl, secret, model, prompt, conversationHistory, sessionId)
+                ApiType.ANTHROPIC -> callAnthropic(baseUrl, secret, model, prompt, conversationHistory, sessionId, provider.kind.name)
+                ApiType.OPENAI -> callOpenAi(baseUrl, secret, model, prompt, conversationHistory, sessionId, provider.kind.name)
             }
             if (text.isBlank()) {
                 eventBus.emit(RuntimeEvent.SessionFailed(sessionId, "The API returned an empty response."))
@@ -148,6 +155,7 @@ class CustomAgentBridge(
         prompt: String,
         history: List<ChatMessage>,
         sessionId: String,
+        providerId: String,
     ): Pair<String, Boolean> {
         val messages = historyMessages(history)
         messages.put(JSONObject().put("role", "user").put("content", prompt))
@@ -159,6 +167,7 @@ class CustomAgentBridge(
             .toString()
         val (response, streamed) = postStreaming(
             "$baseUrl/chat/completions", secret, body, anthropic = false, sessionId = sessionId,
+            providerId = providerId,
             onDelta = { chunk -> eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, chunk)) },
             extractDelta = { json ->
                 json.optJSONArray("choices")?.optJSONObject(0)
@@ -186,6 +195,7 @@ class CustomAgentBridge(
         prompt: String,
         history: List<ChatMessage>,
         sessionId: String,
+        providerId: String,
     ): Pair<String, Boolean> {
         val messages = historyMessages(history)
         messages.put(JSONObject().put("role", "user").put("content", prompt))
@@ -197,6 +207,7 @@ class CustomAgentBridge(
             .toString()
         val (response, streamed) = postStreaming(
             "$baseUrl/messages", secret, body, anthropic = true, sessionId = sessionId,
+            providerId = providerId,
             onDelta = { chunk -> eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, chunk)) },
             extractDelta = { json ->
                 if (json.optString("type") == "content_block_delta") {
@@ -239,12 +250,20 @@ class CustomAgentBridge(
         body: String,
         anthropic: Boolean,
         sessionId: String,
+        providerId: String,
         onDelta: (String) -> Unit,
         extractDelta: (JSONObject) -> String,
     ): Pair<String, Boolean> {
         // QA Medium: one transient 429/5xx used to be final. The initial
         // request is retried with backoff before the error path throws.
+        // Phase 4: a 401/403/429 rotates to the next healthy key instead of
+        // retrying the dead one. Rotation happens at most once per request.
+        // shortcut: a 200 response carrying an error payload does not rotate
+        // (only the HTTP status is checked); that upgrade parses the error
+        // body for quota/auth signals before failing.
         var attempt = 0
+        var currentSecret = secret
+        var rotated = false
         while (true) {
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -254,15 +273,25 @@ class CustomAgentBridge(
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Accept", "text/event-stream")
                 if (anthropic) {
-                    setRequestProperty("x-api-key", secret)
+                    setRequestProperty("x-api-key", currentSecret)
                     setRequestProperty("anthropic-version", "2023-06-01")
                 } else {
-                    setRequestProperty("Authorization", "Bearer $secret")
+                    setRequestProperty("Authorization", "Bearer $currentSecret")
                 }
             }
             try {
                 conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 val code = conn.responseCode
+                if (!rotated && rotateKey != null && code in KEY_FAILURE_CODES) {
+                    val next = rotateKey(providerId, "HTTP $code")
+                        ?.takeIf { it.isNotBlank() && it != currentSecret }
+                    if (next != null) {
+                        rotated = true
+                        currentSecret = next
+                        runCatching { conn.disconnect() }
+                        continue
+                    }
+                }
                 if (HttpRetry.isRetryable(code) &&
                     attempt < HttpRetry.MAX_ATTEMPTS - 1
                 ) {
@@ -359,4 +388,11 @@ class CustomAgentBridge(
     override suspend fun loadPendingChanges(projectId: String): List<ChangeItem> = emptyList()
     override suspend fun undoFileChange(projectId: String, path: String): Boolean = false
     override suspend fun acceptFileChange(projectId: String, path: String): Boolean = false
+
+    private companion object {
+        // HTTP statuses that mean "this key is dead" (matches
+        // ApiKeyFailoverCoordinator.isKeyFailure): rotating to the next key
+        // beats retrying the same one.
+        val KEY_FAILURE_CODES = setOf(401, 403, 429)
+    }
 }

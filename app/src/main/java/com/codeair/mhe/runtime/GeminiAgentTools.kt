@@ -87,6 +87,33 @@ internal fun geminiFunctionDeclarations(): JSONArray {
                 emptyList(),
             ),
         )
+        put(
+            declaration(
+                "list_mcp_tools",
+                "List the tools offered by the project's configured MCP servers. " +
+                    "Call this first to discover what external tools are available before calling one.",
+                JSONObject(),
+                emptyList(),
+            ),
+        )
+        put(
+            declaration(
+                "call_mcp_tool",
+                "Call one tool on one MCP server. The server_id and tool_name come from list_mcp_tools. " +
+                    "Arguments must match the tool's input schema. The call is permission-checked and " +
+                    "audit-logged; a denied or approval-required tool returns an error instead of running.",
+                JSONObject()
+                    .put("server_id", stringProp("The MCP server id from list_mcp_tools."))
+                    .put("tool_name", stringProp("The tool name from list_mcp_tools."))
+                    .put(
+                        "arguments",
+                        JSONObject()
+                            .put("type", "object")
+                            .put("description", "Arguments for the tool, matching its input schema."),
+                    ),
+                listOf("server_id", "tool_name"),
+            ),
+        )
     }
 }
 
@@ -118,9 +145,17 @@ class WorkspaceToolExecutor(
     private val sessionId: String? = null,
     private val projectId: String? = null,
     private val onShellPrompt: (suspend (SafetyOperation.ShellExec) -> Boolean)? = null,
+    /**
+     * Phase 4: the MCP tools this agent may call. When null, the MCP
+     * function declarations still exist but every call fails closed with
+     * "not available" — the model is never told a tool ran when it did not.
+     */
+    private val mcpTools: McpAgentTools? = null,
 ) : GeminiToolExecutor {
 
     @Volatile private var activeProcess: Process? = null
+
+    private val mcpRouter = McpToolRouter(mcpTools, projectId)
 
     fun cancel() {
         runCatching { activeProcess?.destroyForcibly() }
@@ -147,10 +182,23 @@ class WorkspaceToolExecutor(
                         args.getString("new_text"),
                     )
                     "list_dir" -> listDir(args.optString("path", ""))
+                    "list_mcp_tools" -> mcpRouter.listTools()
+                    "call_mcp_tool" -> mcpRouter.callTool(
+                        args.getString("server_id"),
+                        args.getString("tool_name"),
+                        mcpArguments(args),
+                    )
                     else -> "Error: unknown tool '$name'."
                 }
             }.getOrElse { e -> "Error: ${e.message.orEmpty().ifBlank { "tool failed" }.take(500)}" }
         }
+
+    // The model may pass arguments as a JSON object or as a JSON string;
+    // anything else is an empty object, never a crash.
+    private fun mcpArguments(args: JSONObject): JSONObject =
+        args.optJSONObject("arguments")
+            ?: runCatching { JSONObject(args.optString("arguments")) }.getOrNull()
+            ?: JSONObject()
 
     private suspend fun runShell(command: String, workdir: String): String {
         if (command.isBlank()) return "Error: command is empty."

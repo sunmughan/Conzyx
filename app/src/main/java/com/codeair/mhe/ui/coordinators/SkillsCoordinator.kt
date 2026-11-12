@@ -1,6 +1,7 @@
 package com.codeair.mhe.ui.coordinators
 
 import android.net.Uri
+import androidx.core.content.FileProvider
 import com.codeair.mhe.data.AppPreferences
 import com.codeair.mhe.model.DevStack
 import com.codeair.mhe.runtime.RuntimeInstallEvent
@@ -69,6 +70,35 @@ class SkillsCoordinator(
                 }
             }.onFailure { error ->
                 host.updateState { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill update failed.") }
+            }
+        }
+    }
+
+    /**
+     * Phase 4: exports an installed skill as a portable zip and hands the
+     * share URI to the UI (skillsExportUri). The screen fires the share
+     * sheet once and clears the URI; the zip stays in the cache dir.
+     */
+    fun exportSkill(name: String) {
+        if (host.state().skillsBusy) return
+        host.updateState { it.copy(skillsBusy = true, skillsMessage = "Exporting $name…") }
+        host.scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.exportSkill(name) } }
+            result.onSuccess { zip ->
+                val uri = FileProvider.getUriForFile(
+                    host.appContext,
+                    "${host.appContext.packageName}.files",
+                    zip,
+                )
+                host.updateState {
+                    it.copy(
+                        skillsBusy = false,
+                        skillsExportUri = uri,
+                        skillsMessage = "Exported $name.zip — share it from the share sheet.",
+                    )
+                }
+            }.onFailure { error ->
+                host.updateState { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill export failed.") }
             }
         }
     }

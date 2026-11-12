@@ -64,6 +64,26 @@ class ApiKeyFailoverCoordinator {
     }
 
     /**
+     * Rotates to the next healthy key after [reason] killed the active one.
+     * Returns the newly activated credential, or null when there is nothing
+     * else to try: no credentials, a non-key failure, a single key, or an
+     * activation failure. The failed key stays recorded for the session so
+     * it is not picked again.
+     */
+    fun rotate(
+        credentials: List<ApiKeyCredential>,
+        activate: (String) -> Boolean,
+        reason: String,
+    ): ApiKeyCredential? {
+        val failed = credentials.firstOrNull { it.isActive } ?: credentials.firstOrNull() ?: return null
+        if (!recordFailure(failed.id, reason)) return null
+        val next = nextKey(credentials) ?: return null
+        if (next.id == failed.id) return null
+        if (!activate(next.id)) return null
+        return next
+    }
+
+    /**
      * Selects the next key to try from [credentials] (active key first).
      * Skips keys that failed this session, preferring keys never exhausted; falls back
      * to the key whose quota cooldown elapsed longest ago.

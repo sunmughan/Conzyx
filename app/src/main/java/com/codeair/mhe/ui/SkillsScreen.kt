@@ -1,5 +1,6 @@
 package com.codeair.mhe.ui
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,6 +66,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +75,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -117,6 +120,11 @@ fun SkillsScreen(
     onToggleSkill: (String, Boolean) -> Unit = { _, _ -> },
     onCheckUpdates: () -> Unit = {},
     onUpdate: (String) -> Unit = {},
+    // Phase 4: export an installed skill as a portable zip; exportUri fires
+    // the share sheet once, then onExportShared clears it.
+    onExport: (String) -> Unit = {},
+    exportUri: Uri? = null,
+    onExportShared: () -> Unit = {},
     autoUpdateEnabled: Boolean = true,
     onToggleAutoUpdate: (Boolean) -> Unit = {},
     mcpServers: List<McpServerInfo> = emptyList(),
@@ -151,6 +159,21 @@ fun SkillsScreen(
     }
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(onImportFolder)
+    }
+
+    // Phase 4: an exported skill zip arrives as a share URI; fire the
+    // share sheet once, then clear it so it is never shared twice.
+    val context = LocalContext.current
+    LaunchedEffect(exportUri) {
+        exportUri?.let { uri ->
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(send, "Share skill"))
+            onExportShared()
+        }
     }
 
     Scaffold(
@@ -386,6 +409,7 @@ fun SkillsScreen(
                             onUpdate = { onUpdate(skill.name) },
                             onRemove = { onRemove(skill.name) },
                             onToggleEnabled = { onToggleSkill(skill.name, it) },
+                            onExport = { onExport(skill.name) },
                         )
                     }
                 }
@@ -1061,6 +1085,7 @@ private fun SkillCard(
     onUpdate: () -> Unit,
     onRemove: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
+    onExport: () -> Unit = {},
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(
@@ -1093,6 +1118,7 @@ private fun SkillCard(
                 if (updateAvailable && skill.source.startsWith("https://github.com/", ignoreCase = true)) {
                     TextButton(onClick = onUpdate, enabled = !busy) { Text("Update", fontSize = 12.sp) }
                 }
+                TextButton(onClick = onExport, enabled = !busy) { Text("Export", fontSize = 12.sp) }
                 IconButton(onClick = onRemove, enabled = !busy, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Remove skill", modifier = Modifier.size(18.dp))
                 }

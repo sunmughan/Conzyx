@@ -331,6 +331,9 @@ data class AppUiState(
     val skillSearchResults: List<SkillSearchResult> = emptyList(),
     val skillsBusy: Boolean = false,
     val skillsMessage: String? = null,
+    // Phase 4: share URI for an exported skill zip; cleared after the
+    // share sheet fires so it is never shared twice.
+    val skillsExportUri: Uri? = null,
     val skillUpdates: Set<String> = emptySet(),
     val skillScanReport: SkillScanReport? = null,
     val skillScanBusy: Boolean = false,
@@ -466,6 +469,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mcpPermissionManager = mcpPermissionManager,
         mcpServerResolver = { serverId -> mcpRegistry.getServer(serverId) },
     )
+    // Phase 4: the agent loop's view of the MCP registry. Permission
+    // evaluation and audit logging stay inside McpToolRegistry; this adapter
+    // only maps outcomes to the plain text the model consumes. A denied or
+    // approval-required tool is an error string, never a silent success.
+    // Declared BEFORE the runtime fields below: the antigravityRuntime
+    // field initializer reads this value, and field initializers run in
+    // declaration order, so a later declaration would pass null.
+    private val mcpAgentTools = object : com.codeair.mhe.runtime.McpAgentTools {
+        override fun listTools(projectId: String?): String {
+            val servers = mcpRegistry.listServers(projectId).filter { it.enabled }
+            if (servers.isEmpty()) return "No MCP servers are configured for this project."
+            return servers.joinToString("\n") { server ->
+                val tools = runCatching { mcpToolRegistry.discover(server.id, projectId) }
+                    .getOrElse { e -> return@joinToString "${server.id}: unavailable (${e.message?.take(200)})" }
+                if (tools.isEmpty()) "${server.id}: (no tools)"
+                else tools.joinToString("\n") { "${server.id}: ${it.name} — ${it.description}" }
+            }
+        }
+
+        override fun callTool(
+            serverId: String,
+            toolName: String,
+            arguments: JSONObject,
+            projectId: String?,
+        ): String {
+            return try {
+                val outcome = mcpToolRegistry.callTool(serverId, toolName, arguments, projectId)
+                if (outcome.isError) "Error: ${outcome.text}" else outcome.text
+            } catch (e: com.codeair.mhe.mcp.McpDeniedException) {
+                "Error: MCP tool denied: ${e.decision.reason}"
+            } catch (e: com.codeair.mhe.mcp.McpPromptRequiredException) {
+                "Error: MCP tool requires approval: ${e.decision.reason} (approve it on the MCP screen, then ask again)"
+            } catch (e: Exception) {
+                "Error: ${e.message}"
+            }
+        }
+    }
+    // Phase 4: rotates the vault's active key when a provider rejects the
+    // current one (401/403/429/quota). The coordinator decides whether the
+    // failure is a key failure and which key is next; the vault owns
+    // activation. A null return means there is nothing else to try.
+    private val apiKeyFailoverCoordinator = com.codeair.mhe.data.ApiKeyFailoverCoordinator()
+    private fun rotateApiKey(providerId: String, reason: String): String? {
+        val credentials = vault.credentials(providerId)
+        return apiKeyFailoverCoordinator.rotate(credentials, { id -> vault.activate(providerId, id) }, reason)?.secret
+    }
     private val claudeRuntime = ClaudeRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
     private val dshRuntime = DshRuntimeBridge(application, { profile -> vault.get(profile.kind.name) }, safetyGateway)
     private val installer = RuntimeInstaller(application)
@@ -483,6 +532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         },
         safetyGateway = safetyGateway,
         geminiApiConfig = { currentGeminiApiConfig() },
+        mcpTools = mcpAgentTools,
     )
     private fun currentGeminiApiConfig(): com.codeair.mhe.runtime.GeminiApiConfig? {
         val key = geminiApiStore.getApiKey()
@@ -490,7 +540,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             com.codeair.mhe.runtime.GeminiApiConfig(key, geminiApiStore.apiModel)
         } else null
     }
-    private val customRuntime = CustomAgentBridge { profile -> vault.get(profile.kind.name) }
+    private val customRuntime = CustomAgentBridge(
+        secretFor = { profile -> vault.get(profile.kind.name) },
+        rotateKey = ::rotateApiKey,
+    )
     private val codexRuntime = CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime, customRuntime, codexRuntime)
     private fun createRuntimeBridge(kind: AgentKind, interactiveApprovals: Boolean = true): com.codeair.mhe.runtime.RuntimeBridge =
@@ -515,8 +568,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 safetyGateway = safetyGateway,
                 interactiveApprovals = interactiveApprovals,
                 geminiApiConfig = { currentGeminiApiConfig() },
+                mcpTools = mcpAgentTools,
             )
-            AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
+            AgentKind.CUSTOM -> CustomAgentBridge(
+                secretFor = { profile -> vault.get(profile.kind.name) },
+                rotateKey = ::rotateApiKey,
+            )
             AgentKind.CODEX -> CodexRuntimeBridge(getApplication<Application>()) { profile -> vault.get(profile.kind.name) }
         }
     private val projectBridgePool = ProjectBridgePool { kind -> createRuntimeBridge(kind) }
@@ -608,8 +665,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         safetyGateway = safetyGateway,
                         interactiveApprovals = false,
                         geminiApiConfig = { currentGeminiApiConfig() },
+                        mcpTools = mcpAgentTools,
                     )
-                    AgentKind.CUSTOM -> CustomAgentBridge { profile -> vault.get(profile.kind.name) }
+                    AgentKind.CUSTOM -> CustomAgentBridge(
+                        secretFor = { profile -> vault.get(profile.kind.name) },
+                        rotateKey = ::rotateApiKey,
+                    )
                     AgentKind.CODEX -> CodexRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
                 }
             },
@@ -5858,6 +5919,15 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
 
     fun removeSkill(name: String) =
         skillsCoordinator.removeSkill(name)
+
+    // Phase 4: export an installed skill as a portable zip; the screen
+    // shares skillsExportUri once and clears it via clearSkillExport.
+    fun exportSkill(name: String) =
+        skillsCoordinator.exportSkill(name)
+
+    fun clearSkillExport() {
+        _state.update { it.copy(skillsExportUri = null) }
+    }
 
     fun toggleSkill(name: String, enabled: Boolean) =
         skillsCoordinator.toggleSkill(name, enabled)

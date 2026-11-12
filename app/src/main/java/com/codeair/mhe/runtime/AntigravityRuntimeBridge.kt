@@ -156,6 +156,12 @@ class AntigravityRuntimeBridge(
     private val safetyGateway: com.codeair.mhe.security.SafetyGateway,
     private val interactiveApprovals: Boolean = true,
     private val geminiApiConfig: () -> GeminiApiConfig? = { null },
+    /**
+     * Phase 4: the MCP tools the Gemini API agent loop may call. When null,
+     * the MCP declarations exist but every call fails closed — the model is
+     * never told a tool ran when it did not.
+     */
+    private val mcpTools: McpAgentTools? = null,
 ) : RuntimeBridge {
     override val supportsSessionRecovery: Boolean = true
     private val installer = RuntimeInstaller(context)
@@ -578,6 +584,7 @@ class AntigravityRuntimeBridge(
                         interactive = interactiveApprovals,
                     )
                 },
+                mcpTools = mcpTools,
             )
             toolExecutors[sessionId] = executor
             val loop = GeminiAgentLoop(executor, rolePermissions = rolePermissions)

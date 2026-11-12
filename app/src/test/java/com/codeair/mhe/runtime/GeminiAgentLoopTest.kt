@@ -17,11 +17,11 @@ class GeminiAgentLoopTest {
         }
 
     @Test
-    fun `declarations list the five real tools`() {
+    fun `declarations list the seven real tools`() {
         val declarations = geminiFunctionDeclarations()
-        assertEquals(5, declarations.length())
+        assertEquals(7, declarations.length())
         val names = (0 until declarations.length()).map { declarations.getJSONObject(it).getString("name") }
-        assertEquals(listOf("run_shell", "read_file", "write_file", "edit_file", "list_dir"), names)
+        assertEquals(listOf("run_shell", "read_file", "write_file", "edit_file", "list_dir", "list_mcp_tools", "call_mcp_tool"), names)
         declarations.getJSONObject(0).getJSONObject("parameters").let {
             assertEquals("object", it.getString("type"))
             assertTrue(it.getJSONArray("required").toString().contains("command"))
@@ -58,7 +58,7 @@ class GeminiAgentLoopTest {
         val body = buildAgentRequestBody("sys", contents)
         val tools = body.getJSONArray("tools")
         assertEquals(1, tools.length())
-        assertEquals(5, tools.getJSONObject(0).getJSONArray("functionDeclarations").length())
+        assertEquals(7, tools.getJSONObject(0).getJSONArray("functionDeclarations").length())
         assertEquals(2, body.getJSONArray("contents").length())
         assertEquals("sys", body.getJSONObject("system_instruction").getJSONArray("parts").getJSONObject(0).getString("text"))
     }

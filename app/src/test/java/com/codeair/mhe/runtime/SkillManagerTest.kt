@@ -4,6 +4,7 @@ import com.codeair.mhe.model.AgentKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -392,6 +393,44 @@ class SkillManagerTest {
             val manager = SkillManager(baseDir = tempDir)
             val result = runCatching { manager.installGitHubRelease("https://github.com/owner/repo", "../evil") }
             assertTrue(result.isFailure)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun exportSkillRoundTripsAsInstallableZip() {
+        val tempDir = Files.createTempDirectory("skill-export-test").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            manager.ensureDefaultSkills()
+            val zip = manager.exportSkill("browser-automation")
+            assertTrue("exported zip should exist", zip.isFile)
+            assertTrue("exported zip should not be empty", zip.length() > 0)
+
+            // The export is a real portable package: a fresh manager
+            // installs it back.
+            val targetDir = Files.createTempDirectory("skill-export-target").toFile()
+            try {
+                val target = SkillManager(baseDir = targetDir)
+                val installed = target.installZip(zip, "export-test")
+                assertEquals(1, installed.size)
+                assertEquals("browser-automation", installed[0].name)
+                assertTrue(File(installed[0].path, "SKILL.md").isFile)
+            } finally {
+                targetDir.deleteRecursively()
+            }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun exportSkillFailsForUnknownSkill() {
+        val tempDir = Files.createTempDirectory("skill-export-missing").toFile()
+        try {
+            val manager = SkillManager(baseDir = tempDir)
+            assertThrows(IllegalStateException::class.java) { manager.exportSkill("no-such-skill") }
         } finally {
             tempDir.deleteRecursively()
         }

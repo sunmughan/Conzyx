@@ -7,11 +7,14 @@ import com.codeair.mhe.model.AgentKind
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.util.UUID
+import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 data class SkillInfo(
     val name: String,
@@ -127,6 +130,40 @@ class SkillManager(
             enabled = json.optBoolean("enabled", true),
         )
     }.sortedBy { it.name.lowercase() }
+
+    /**
+     * Phase 4: packages an installed skill as a portable zip — the inverse
+     * of [installZip]. The skill directory, SKILL.md and all, goes in under
+     * relative paths, so the zip installs cleanly on another device.
+     * Returns the zip file in the cache dir. Same size caps as install.
+     */
+    fun exportSkill(name: String): File {
+        val skill = installed().firstOrNull { it.name == name }
+            ?: error("Skill '$name' is not installed.")
+        val dir = File(skill.path)
+        require(dir.isDirectory) { "Skill '$name' is missing its directory." }
+        val zip = File(cache, "skill-export-$name-${UUID.randomUUID()}.zip")
+        var totalBytes = 0L
+        var entries = 0
+        ZipOutputStream(FileOutputStream(zip)).use { out ->
+            dir.walkTopDown().filter { it.isFile }.forEach { file ->
+                require(file.length() <= MAX_SKILL_FILE_BYTES) {
+                    "Skill file exceeds the 50 MB safety limit: ${file.name}"
+                }
+                totalBytes += file.length()
+                require(totalBytes <= MAX_SKILL_ARCHIVE_BYTES) {
+                    "Skill exceeds the 100 MB safety limit."
+                }
+                entries++
+                require(entries <= MAX_SKILL_ENTRIES) { "Skill has too many files." }
+                val rel = file.relativeTo(dir).path.replace(File.separatorChar, '/')
+                out.putNextEntry(ZipEntry(rel))
+                file.inputStream().use { it.copyTo(out) }
+                out.closeEntry()
+            }
+        }
+        return zip
+    }
 
     fun searchGitHub(query: String, limit: Int = 20): List<SkillSearchResult> {
         val q = query.trim()
