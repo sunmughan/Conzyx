@@ -95,8 +95,32 @@ Repo: `sunmughan/Conzyx`, branch `v3`, base `c3d0bb4c`. No version bump (user or
 
 ## CI
 
-- Commit: _see parent report for hash_ (pushed to `v3`).
-- CI run: _see parent report_ (verified via `gh run list` / `gh run view`).
+- Commit: `dd356eae` (Phase 3) + `7235f147` (forward-reference fix, below) on `v3`.
+- CI run 43166358625 (dd356eae): FAILED in verify — compile error, see below.
+- CI run 43166561077 (7235f147): release job ✓ (20m9s), verify job ✗ (7m41s):
+  `testOnlineDebugUnitTest`, 1371 tests, 4 failed — all 4 were the new tests
+  (TestResultParserTest x3, ChatLinkRoutingTest x1). Everything else passed,
+  including the new engine-diagnosis test.
+- **Fix commit 1 — forward reference (caught locally before CI finished):**
+  the deep-link jump effect called local `goToLine` before its declaration;
+  Kotlin local functions are NOT visible before declaration (verified with the
+  compiler: `unresolved reference`). The effect was moved to just after
+  `goToLine`. `7235f147`.
+- **Fix commit 2 — deep-link regex (real CI bug):** `#L12-L34` ranges carry the
+  `L` on BOTH ends, but the regex expected `-34` (`(?:-\d+)?`), so the range
+  never matched and the line came back null. Fixed to `(?:-L?\d+)?`, verified
+  by a 7-check harness (L12, L12-L34, L12-34, L42, non-line → null, lowercase).
+- **Fix commit 3 — JAXP-free TestResultParser (real CI bug):** `parseReport`
+  returned null in CI for reports that parse fine locally on JDK 17 and 21,
+  with and without `android.jar` on the classpath — the `DocumentBuilderFactory`
+  provider lookup is environment-dependent and fails on the CI unit-test
+  runtime. Rewrote the parser as a small deterministic reader (attribute
+  regexes + XML entity unescape, no JAXP): same public API and tests, no
+  provider variance, no XXE surface at all. A `</testsuite>` presence check
+  keeps the malformed-file → null behavior. Verified by a 24-check harness
+  on JDK 17 and 21 (counts, aggregate, null cases, malformed, self-closing
+  testcase guard so a failure is never attributed to the wrong test).
+- CI run for the fix commits: _see parent report_.
 
 ## Not checked / left open
 

@@ -824,7 +824,9 @@ internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
     val lineNumber = trimmed.substringAfter('#', "")
         .takeIf { it.isNotEmpty() }
         ?.let { fragment ->
-            Regex("""^L(\d+)(?:-\d+)?$""", RegexOption.IGNORE_CASE)
+            // GitHub-style ranges carry the L on BOTH ends (#L12-L34), not
+            // just the first (#L12-34): the second L is part of the syntax.
+            Regex("""^L(\d+)(?:-L?\d+)?$""", RegexOption.IGNORE_CASE)
                 .matchEntire(fragment)?.groupValues?.get(1)?.toIntOrNull()
         }
     if (pathText.isBlank()) return ChatLinkTarget.Ignored

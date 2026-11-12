@@ -1,8 +1,6 @@
 package com.codeair.mhe.factory.build
 
 import java.io.File
-import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
 
 /**
  * Phase 3 — structured test results.
@@ -15,7 +13,15 @@ import org.w3c.dom.Element
  * it returns null when there is nothing to parse, and a malformed file is
  * skipped instead of inventing results.
  *
- * Pure Kotlin + javax.xml: unit-testable on the JVM and usable on device.
+ * Deliberately NOT a JAXP/DOM parser: `DocumentBuilderFactory` resolves its
+ * provider from the runtime classpath, and that lookup behaves differently
+ * across environments (it failed on the CI unit-test runtime for reports
+ * that parse fine locally on JDK 17 and 21). Gradle's JUnit XML is a
+ * simple machine-generated format, so a small deterministic reader over
+ * the text parses it identically everywhere — and, as a side effect, has
+ * no XML-parser attack surface at all (no DTDs, no entity expansion).
+ *
+ * Pure Kotlin: unit-testable on the JVM and usable on device.
  */
 data class TestFailure(
     val className: String,
@@ -48,6 +54,19 @@ data class StructuredTestResults(
 }
 
 object TestResultParser {
+
+    private val TESTSUITE_OPEN = Regex("""<testsuite\b([^>]*)>""")
+    private val ATTR = Regex("""([\w:.-]+)="([^"]*)"""")
+    // The opening tag must NOT be self-closing (<testcase .../>): a lazy
+    // body match starting at a self-closing tag would span into the NEXT
+    // testcase and misattribute its failure. The [^/>] guard forces the
+    // char before '>' to be a real attribute char.
+    private val TESTCASE_WITH_BODY =
+        Regex("""<testcase\b([^>]*?[^/>])>(.*?)</testcase>""", RegexOption.DOT_MATCHES_ALL)
+    private val FAILURE_ELEMENT =
+        Regex("""<(failure|error)\b([^>]*?)>(.*?)</(?:failure|error)>""", RegexOption.DOT_MATCHES_ALL)
+    private val FAILURE_SELF_CLOSING = Regex("""<(failure|error)\b([^>]*?)/>""")
+    private val ENTITY_REF = Regex("""&(#\d+|#x[0-9a-fA-F]+|amp|lt|gt|quot|apos);""")
 
     /**
      * Parses every `TEST-*.xml` under [resultsDir] (the Gradle
@@ -92,45 +111,35 @@ object TestResultParser {
     }
 
     private fun parseReport(file: File): StructuredTestResults {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            // Reports are Gradle-generated, but never trust a DTD in a file
-            // the agent workspace could have produced.
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-        }
-        val doc = factory.newDocumentBuilder().parse(file)
-        val suites = doc.getElementsByTagName("testsuite")
-        var total = 0
-        var failed = 0
-        var skipped = 0
-        var errors = 0
-        var durationMs = 0L
+        val text = file.readText()
+        // Well-formedness bar: a real Gradle report always closes its
+        // testsuite element. A truncated or garbage file (no closing tag)
+        // is not a report and must be skipped, not counted as zero tests.
+        if (!text.contains("</testsuite>")) error("No closing </testsuite> in ${file.name}")
+        // A report without a testsuite element is not a JUnit report at all.
+        val suiteMatch = TESTSUITE_OPEN.find(text) ?: error("No <testsuite> in ${file.name}")
+        val attrs = parseAttrs(suiteMatch.groupValues[1])
+        val total = attrs["tests"]?.toIntOrNull() ?: 0
+        val failed = attrs["failures"]?.toIntOrNull() ?: 0
+        val errors = attrs["errors"]?.toIntOrNull() ?: 0
+        val skipped = attrs["skipped"]?.toIntOrNull() ?: 0
+        val durationMs = ((attrs["time"]?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
         val failures = mutableListOf<TestFailure>()
-        for (i in 0 until suites.length) {
-            val suite = suites.item(i) as? Element ?: continue
-            total += suite.getAttribute("tests").toIntOrNull() ?: 0
-            failed += suite.getAttribute("failures").toIntOrNull() ?: 0
-            errors += suite.getAttribute("errors").toIntOrNull() ?: 0
-            skipped += suite.getAttribute("skipped").toIntOrNull() ?: 0
-            durationMs += ((suite.getAttribute("time").toDoubleOrNull() ?: 0.0) * 1000).toLong()
-            val cases = suite.getElementsByTagName("testcase")
-            for (j in 0 until cases.length) {
-                val case = cases.item(j) as? Element ?: continue
-                val failureNode = firstChildElement(case, "failure")
-                    ?: firstChildElement(case, "error")
-                    ?: continue
-                val message = failureNode.getAttribute("message").ifBlank {
-                    failureNode.textContent?.trim().orEmpty()
-                }
-                failures += TestFailure(
-                    className = case.getAttribute("classname").ifBlank { suite.getAttribute("name") },
-                    testName = case.getAttribute("name"),
-                    message = message,
-                )
-            }
+        for (caseMatch in TESTCASE_WITH_BODY.findAll(text)) {
+            val caseAttrs = parseAttrs(caseMatch.groupValues[1])
+            val body = caseMatch.groupValues[2]
+            val failure = FAILURE_ELEMENT.find(body)
+                ?: FAILURE_SELF_CLOSING.find(body)
+                ?: continue
+            val failureAttrs = parseAttrs(failure.groupValues[2])
+            val message = failureAttrs["message"]?.ifBlank { null }
+                ?: failure.groupValues.getOrNull(3)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: ""
+            failures += TestFailure(
+                className = caseAttrs["classname"].orEmpty(),
+                testName = caseAttrs["name"].orEmpty(),
+                message = unescapeXml(message),
+            )
         }
         return StructuredTestResults(
             total = total,
@@ -143,12 +152,34 @@ object TestResultParser {
         )
     }
 
-    private fun firstChildElement(parent: Element, tag: String): Element? {
-        val children = parent.childNodes
-        for (i in 0 until children.length) {
-            val child = children.item(i)
-            if (child is Element && child.tagName == tag) return child
+    private fun parseAttrs(attrText: String): Map<String, String> {
+        val attrs = mutableMapOf<String, String>()
+        for (match in ATTR.findAll(attrText)) {
+            attrs[match.groupValues[1]] = unescapeXml(match.groupValues[2])
         }
-        return null
+        return attrs
     }
+
+    /** Unescapes the five predefined XML entities plus numeric references. */
+    private fun unescapeXml(text: String): String =
+        ENTITY_REF.replace(text) { match ->
+            when (val entity = match.groupValues[1]) {
+                "amp" -> "&"
+                "lt" -> "<"
+                "gt" -> ">"
+                "quot" -> "\""
+                "apos" -> "'"
+                else -> {
+                    val codePoint = when {
+                        entity.startsWith("#x") ->
+                            entity.substring(2).toIntOrNull(16)
+                        entity.startsWith("#") ->
+                            entity.substring(1).toIntOrNull()
+                        else -> null
+                    }
+                    codePoint?.let { runCatching { Character.toString(it) }.getOrNull() }
+                        ?: match.value
+                }
+            }
+        }
 }
