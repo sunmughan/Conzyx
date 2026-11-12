@@ -120,7 +120,13 @@ Repo: `sunmughan/Conzyx`, branch `v3`, base `c3d0bb4c`. No version bump (user or
   keeps the malformed-file → null behavior. Verified by a 24-check harness
   on JDK 17 and 21 (counts, aggregate, null cases, malformed, self-closing
   testcase guard so a failure is never attributed to the wrong test).
-- CI run for the fix commits: _see parent report_.
+- CI run for the fix commits: 43169566903 — first attempt failed in the SETUP step
+  ("Fetch latest verified runtime bundles", `URLError: [Errno 104] Connection
+  reset by peer`, a transient runner network flake; no build/test ran, nothing
+  to do with this change). Re-ran the failed verify job (`gh run rerun`):
+  **GREEN — verify ✓ 7m13s, release ✓ 14m36s.** `testOnlineDebugUnitTest`
+  BUILD SUCCESSFUL; 1371/1371 tests pass (same 1371-test set as the red run,
+  failures 4 → 0). Final commit: `b4171f0b`.
 
 ## Not checked / left open
 
