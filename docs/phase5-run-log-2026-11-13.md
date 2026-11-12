@@ -89,8 +89,16 @@ Supporting change:
   (`currentTaskRequest: String?`, `PersistedAgentSession` fields,
   `openProject/cancelQueuedPrompt/sendQueuedPromptNow` signatures) — no
   other mismatch. The failed log carried exactly one `e:` line per job.
-- Re-push run id: (fill after push)
-- Result: (fill after push)
+- Re-push run 43286502156 (commit db6a8a54): **SUCCESS** — verify
+  success + release success, 16m13s total, completed 2026-11-13
+  ~00:51 IST. All Gradle steps BUILD SUCCESSFUL (online release APK,
+  offline release APK, online release AAB, online + offline verify).
+  Test count: 1388 `@Test` methods in the repo (1384 at Phase 4 + 4 new
+  in `AgentSessionControllerHistoryTest`); the verify job passes the
+  whole suite, so 1388/1388. Release assets published in place under
+  v3.5.18 (no version bump, as ordered).
+- Run-log commit: (fill after push — docs-only CI run follows the
+  Phase 4 pattern)
 
 ## Skipped / not-checked
 - Local compile of the changed Kotlin files: NOT possible in the sandbox
