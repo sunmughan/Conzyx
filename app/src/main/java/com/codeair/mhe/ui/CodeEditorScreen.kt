@@ -261,6 +261,23 @@ fun CodeEditorScreen(
         lastReportedText = source
     }
 
+    // Phase 3 — deep links: jump once to the line requested by a chat or
+    // stack-trace link (initialViewState.scrollLine, 0-based, set by the
+    // coordinator when the link carries #L). Declared after the source
+    // reset above so it runs after the text lands, and keyed on the
+    // requested line so a second tap on the same open file with a different
+    // line jumps again. Edits never re-jump: jumpedToLine remembers the
+    // line already served, and manual scrolling never changes the stored
+    // target (scroll position is not reported back as view state).
+    var jumpedToLine by remember(filePath) { mutableStateOf<Int?>(null) }
+    val targetScrollLine = initialViewState?.scrollLine ?: 0
+    LaunchedEffect(filePath, value.text, targetScrollLine) {
+        if (targetScrollLine > 0 && value.text.isNotBlank() && jumpedToLine != targetScrollLine) {
+            jumpedToLine = targetScrollLine
+            goToLine(targetScrollLine + 1)
+        }
+    }
+
     val dirty = value.text != savedText
     // QA H3: pane-2 dirtiness is independent — except when both panes show
     // the same file, where they share one buffer (see the sync effect below).

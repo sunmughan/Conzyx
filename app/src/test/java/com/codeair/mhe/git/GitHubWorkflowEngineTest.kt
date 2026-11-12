@@ -216,6 +216,62 @@ class GitHubWorkflowEngineTest {
     }
 
     @Test
+    fun repairPromptCarriesFailureDiagnosis() = runBlocking {
+        val gitController = scriptedStatusGitController(
+            mutableListOf(),
+            listOf("", " M src/Fix.kt")
+        )
+        val workflowEngine = engine(gitController)
+
+        val issue = GitHubIssue(
+            number = 100,
+            title = "Fix unresolved reference",
+            state = "open",
+            user = "developer",
+            comments = 0,
+            htmlUrl = "https://github.com/example/repo/issues/100"
+        )
+
+        var buildAttempt = 0
+        var repairPrompt = ""
+
+        val result = workflowEngine.runAutonomousWorkflow(
+            issue = issue,
+            token = "fake-token-for-testing",
+            repoFullName = "example/repo",
+            workingDir = tempDir,
+            agentExecutor = { prompt ->
+                if (prompt.contains("Build/test failed")) repairPrompt = prompt
+                OperationResult.success()
+            },
+            buildAndTestValidator = {
+                buildAttempt++
+                if (buildAttempt == 1) {
+                    OperationResult.failure(
+                        "Gradle build/test failed (exit code 1).",
+                        logs = listOf(
+                            "e: src/main/java/com/example/Broken.kt:12: Unresolved reference: missingHelper",
+                            "BUILD FAILED",
+                        ),
+                    )
+                } else {
+                    OperationResult.success(logs = listOf("Build succeeded on retry"))
+                }
+            }
+        )
+
+        assertTrue(result.isSuccess)
+        // Phase 3: the repair prompt must name the diagnosis, not just paste
+        // a log tail for the agent to guess from.
+        assertTrue("repair prompt must carry the diagnosis type: $repairPrompt",
+            repairPrompt.contains("Diagnosis: COMPILATION_ERROR"))
+        assertTrue(repairPrompt.contains("Root cause:"))
+        assertTrue(repairPrompt.contains("Suggested fix:"))
+        assertTrue(repairPrompt.contains("Broken.kt"))
+        assertTrue(repairPrompt.contains("Build/test failed with the following real output:"))
+    }
+
+    @Test
     fun autonomousWorkflowFailsWhenAgentFails() = runBlocking {
         val gitController = GitDomainController { _, _, _ -> 0 to "ok" }
         val workflowEngine = engine(gitController)

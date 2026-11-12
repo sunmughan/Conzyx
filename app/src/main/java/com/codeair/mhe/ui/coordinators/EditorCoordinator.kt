@@ -128,7 +128,9 @@ class EditorCoordinator(
     fun resolveEditorPath(project: Project, rawPath: String): String? =
         resolveWorkspaceFile(workspaceRootFor(project), rawPath)
 
-    fun openFileByPath(path: String) {
+    // Phase 3 — deep links: [line] is the 1-based #L line from a chat or
+    // stack-trace link; null opens at the top, as before.
+    fun openFileByPath(path: String, line: Int? = null) {
         // Never fail silently: a tap with no active project used to do nothing
         // at all, which looks exactly like "file does not open".
         val project = host.state().activeProject
@@ -148,6 +150,19 @@ class EditorCoordinator(
         val updatedTabs = if (cleanPath in currentTabs) currentTabs else currentTabs + cleanPath
         preferences.setOpenEditorTabs(project.id, updatedTabs)
         scheduleSessionPersist(project.id, updatedTabs, cleanPath)
+        // Phase 3 — deep links: seed the buffer's scroll position BEFORE
+        // either branch below reads it, so the async disk load (which
+        // preserves the buffer's view state via syncFromDisk) carries the
+        // jump target into the editor instead of overwriting it with 0.
+        // The existing cursor/selection is preserved; only scrollLine moves.
+        if (line != null) {
+            val base = bufferManager.getBuffer(cleanPath)?.viewState
+                ?: com.codeair.mhe.editor.EditorViewState()
+            bufferManager.restoreViewState(
+                cleanPath,
+                base.copy(scrollLine = (line - 1).coerceAtLeast(0)),
+            )
+        }
         // Milestone 2: a dirty buffer restores unsaved work immediately —
         // no disk read, no lost edits.
         val dirtyBuffer = bufferManager.getBuffer(cleanPath)?.takeIf { it.isDirty }

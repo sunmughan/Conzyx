@@ -772,7 +772,11 @@ internal fun bareDomainEnd(text: String, start: Int): Int {
 }
 
 internal sealed interface ChatLinkTarget {
-    data class WorkspaceFile(val relativePath: String, val isArchive: Boolean) : ChatLinkTarget
+    // Phase 3 — deep links: a GitHub-style #L12 (or #L12-L34) fragment on a
+    // file link is a view position, carried through to the editor so the
+    // tap lands on that line instead of the top of the file. Null when the
+    // link carries no line fragment.
+    data class WorkspaceFile(val relativePath: String, val isArchive: Boolean, val line: Int? = null) : ChatLinkTarget
     data class Web(val url: String) : ChatLinkTarget
     object Ignored : ChatLinkTarget
 }
@@ -814,8 +818,15 @@ internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
     // (path#L12-L34). It marks a view position, never part of the file
     // name: without stripping, the editor opens a literal "file#L..."
     // path and fails with ENOENT. Web URLs above keep their fragment;
-    // only workspace paths are stripped here.
+    // only workspace paths are stripped here. The line is parsed and
+    // carried on the target so the editor can jump to it (Phase 3).
     val pathText = trimmed.substringBefore('#')
+    val lineNumber = trimmed.substringAfter('#', "")
+        .takeIf { it.isNotEmpty() }
+        ?.let { fragment ->
+            Regex("""^L(\d+)(?:-\d+)?$""", RegexOption.IGNORE_CASE)
+                .matchEntire(fragment)?.groupValues?.get(1)?.toIntOrNull()
+        }
     if (pathText.isBlank()) return ChatLinkTarget.Ignored
     val pathLower = pathText.lowercase()
     val absolutePath: String? = when {
@@ -836,7 +847,7 @@ internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
             else -> absolutePath.removePrefix("/")
         }.trim()
         if (relative.isBlank() || relative == "workspace") return ChatLinkTarget.Ignored
-        return ChatLinkTarget.WorkspaceFile(relative, isArchivePath(relative))
+        return ChatLinkTarget.WorkspaceFile(relative, isArchivePath(relative), lineNumber)
     }
     val host = pathText.substringBefore('/')
     if (isWebDomainHost(host)) return ChatLinkTarget.Web("https://$pathText")
@@ -845,7 +856,7 @@ internal fun classifyChatLink(rawUrl: String): ChatLinkTarget {
     return if ('/' in pathText || extension in EDITABLE_FILE_EXTENSIONS ||
         extension in ARCHIVE_FILE_EXTENSIONS || fileName.contains('.')
     ) {
-        ChatLinkTarget.WorkspaceFile(pathText, isArchivePath(pathText))
+        ChatLinkTarget.WorkspaceFile(pathText, isArchivePath(pathText), lineNumber)
     } else {
         ChatLinkTarget.Web("https://$pathText")
     }

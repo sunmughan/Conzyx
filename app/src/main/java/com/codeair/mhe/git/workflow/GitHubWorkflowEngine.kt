@@ -7,6 +7,7 @@ import com.codeair.mhe.network.GitHubIssue
 import com.codeair.mhe.network.GitHubPullRequest
 import com.codeair.mhe.security.GitOpKind
 import com.codeair.mhe.security.GitSafetyAdapter
+import com.codeair.mhe.session.SelfHealingLoop
 import com.codeair.mhe.workspace.GitDomainController
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -198,9 +199,30 @@ class GitHubWorkflowEngine(
                 updateStep(WorkflowStage.BUILDING, WorkflowStepStatus.FAILED, buildResult.error ?: "Build/test failed")
                 // 6. Auto-Fix Failures — one bounded repair attempt driven by the real failure.
                 updateStep(WorkflowStage.FIXING, WorkflowStepStatus.IN_PROGRESS, "Triggering self-healing repair...")
+                // Phase 3 — failure diagnosis: classify the real output first
+                // so the repair prompt names the error type, the likely cause
+                // and the affected files instead of handing the agent a bare
+                // log tail to guess from. The loop stays bounded: exactly one
+                // repair attempt, then the workflow fails.
+                val failureText = buildResult.logs.takeLast(60).joinToString("\n")
+                val diagnosis = SelfHealingLoop().diagnose(failureText)
+                val diagnosisBlock = buildString {
+                    append("Diagnosis: ${diagnosis.type} (${(diagnosis.confidence * 100).toInt()}% confidence)\n")
+                    append("Root cause: ${diagnosis.rootCause}\n")
+                    append("Suggested fix: ${diagnosis.suggestedFix}\n")
+                    val files = diagnosis.affectedFiles.distinct().take(10)
+                    if (files.isNotEmpty()) {
+                        append("Affected files:\n")
+                        for (file in files) {
+                            val line = diagnosis.lineCoordinates[file]
+                            append("- $file${if (line != null) " (line $line)" else ""}\n")
+                        }
+                    }
+                }
                 val fixPrompt = buildString {
-                    append("Build/test failed with the following real output:\n")
-                    append(buildResult.logs.takeLast(60).joinToString("\n"))
+                    append(diagnosisBlock)
+                    append("\nBuild/test failed with the following real output:\n")
+                    append(failureText)
                     append("\n\nPlease fix the failures immediately.")
                 }
                 val fixResult = agentExecutor(fixPrompt)

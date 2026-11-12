@@ -96,6 +96,33 @@ class ChatLinkRoutingTest {
     }
 
     @Test
+    fun lineFragmentParsesToDeepLinkTarget() {
+        // Phase 3 — deep links: #L12 lands the editor on line 12, #L12-L34
+        // on the range start; a bare fragment or a non-line fragment is
+        // ignored (null line) instead of breaking the link.
+        assertEquals(
+            ChatLinkTarget.WorkspaceFile("app/Models/User.php", false, 12),
+            classifyChatLink("/workspace/app/Models/User.php#L12"),
+        )
+        assertEquals(
+            ChatLinkTarget.WorkspaceFile("app/Models/User.php", false, 12),
+            classifyChatLink("file://workspace/app/Models/User.php#L12-L34"),
+        )
+        assertEquals(
+            ChatLinkTarget.WorkspaceFile("src/Main.kt", false, 42),
+            classifyChatLink("src/Main.kt#L42"),
+        )
+        assertEquals(
+            ChatLinkTarget.WorkspaceFile("app/Models/User.php", false, null),
+            classifyChatLink("/workspace/app/Models/User.php"),
+        )
+        assertEquals(
+            ChatLinkTarget.WorkspaceFile("app/Models/User.php", false, null),
+            classifyChatLink("/workspace/app/Models/User.php#section"),
+        )
+    }
+
+    @Test
     fun blankLinkIsIgnored() {
         assertEquals(ChatLinkTarget.Ignored, classifyChatLink("   "))
         assertEquals(ChatLinkTarget.Ignored, classifyChatLink("file://workspace/"))

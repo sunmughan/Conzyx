@@ -5088,7 +5088,9 @@ private fun WorkspaceScreen(
     onRenameFile: (String, String) -> Unit = { _, _ -> },
     onDeleteFile: (String) -> Unit = {},
     onDuplicateFile: (String) -> Unit = {},
-    onOpenFileByPath: (String) -> Unit = {},
+    // Phase 3 — deep links: the second param carries the #L line from a
+    // chat/stack-trace link (null = open at the top, as before).
+    onOpenFileByPath: (String, Int?) -> Unit = { _, _ -> },
     workspaceDir: java.io.File? = null,
     onRollbackToBaseline: () -> Unit = {},
     onEngageEmergencyKillSwitch: () -> Unit = {},
@@ -5236,8 +5238,8 @@ private fun WorkspaceScreen(
                 onSaveFile(state.openedFilePath, updatedContent)
             },
             workspaceDir = workspaceDir,
-            onNavigateToFileLine = { path, _ ->
-                onOpenFileByPath(path)
+            onNavigateToFileLine = { path, line ->
+                onOpenFileByPath(path, line)
             },
             // Milestone 2 — persistent buffers: restore cursor, track edits.
             initialViewState = state.openedFilePath?.let { state.editorViewStates[it] },
@@ -6380,7 +6382,7 @@ private fun ChatTab(
     onOpenAttachment: (ChatAttachment) -> Unit,
     onSaveAttachment: (ChatAttachment) -> Unit = {},
     onRunInTerminal: (String) -> Unit,
-    onOpenFileByPath: (String) -> Unit = {},
+    onOpenFileByPath: (String, Int?) -> Unit = { _, _ -> },
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
     onContinueHere: () -> Unit = {},
@@ -6606,6 +6608,14 @@ private fun ChatTab(
                 onDismissTaskOutcome()
             }
         }
+        // Phase 3 — detailed agent activity timeline: the dialog reads the
+        // LIVE orchestrator history (populated during real tasks), falling
+        // back to the banner snapshot's history. The banner's synthetic
+        // completion snapshot carries an empty history and is never the
+        // primary source.
+        var showTimeline by remember { mutableStateOf(false) }
+        val timelineHistory = orchestratorSnapshot?.history?.takeIf { it.isNotEmpty() }
+            ?: bannerSnapshot?.history.orEmpty()
         if (bannerSnapshot != null && bannerSnapshot.state != com.codeair.mhe.session.EngineeringState.IDLE) {
             Box(
                 modifier = Modifier
@@ -6618,8 +6628,19 @@ private fun ChatTab(
                         bannerSnapshot.state != com.codeair.mhe.session.EngineeringState.FAILED
                     ) null else onRollbackToBaseline,
                     onDismiss = if (bannerIsCompletion) onDismissTaskOutcome else null,
+                    onShowTimeline = if (timelineHistory.isNotEmpty()) {
+                        { showTimeline = true }
+                    } else {
+                        null
+                    },
                 )
             }
+        }
+        if (showTimeline) {
+            AgentActivityTimelineDialog(
+                history = timelineHistory,
+                onDismiss = { showTimeline = false },
+            )
         }
         if (emergencyKillSwitchActive) {
             Surface(
@@ -7639,7 +7660,7 @@ private fun MessageBubble(
     onSaveAttachment: (ChatAttachment) -> Unit = {},
     onAddRoadmapComment: (stepId: String?) -> Unit = {},
     onApproveAndBuildRoadmap: () -> Unit = {},
-    onOpenFileLink: (String) -> Unit = {},
+    onOpenFileLink: (String, Int?) -> Unit = { _, _ -> },
     roadmapActionsEnabled: Boolean = true,
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -7657,7 +7678,9 @@ private fun MessageBubble(
             when (val target = classifyChatLink(rawUrl)) {
                 is ChatLinkTarget.WorkspaceFile -> {
                     if (!target.isArchive) {
-                        try { onOpenFileLink(target.relativePath) } catch (_: Throwable) { }
+                        // Phase 3 — deep links: pass the #L line through so
+                        // the editor jumps to it instead of the file top.
+                        try { onOpenFileLink(target.relativePath, target.line) } catch (_: Throwable) { }
                     }
                 }
                 is ChatLinkTarget.Web -> {

@@ -29,6 +29,8 @@ import com.codeair.mhe.data.ApiKeyInfo
 import com.codeair.mhe.data.AppPreferences
 import com.codeair.mhe.core.result.OperationResult
 import com.codeair.mhe.core.result.OperationStatus
+import com.codeair.mhe.factory.build.TestResultParser
+import com.codeair.mhe.session.SelfHealingLoop
 import com.codeair.mhe.model.ActivityItem
 import com.codeair.mhe.model.AgentKind
 import com.codeair.mhe.model.ChangeItem
@@ -3373,8 +3375,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openFile(entry: WorkspaceEntry) =
         editorCoordinator.openFile(entry)
 
-    fun openFileByPath(path: String) =
-        editorCoordinator.openFileByPath(path)
+    // Phase 3 — deep links: [line] is the 1-based #L line from a chat or
+    // stack-trace link; null opens at the top, as before.
+    fun openFileByPath(path: String, line: Int? = null) =
+        editorCoordinator.openFileByPath(path, line)
 
     fun selectEditorTab(path: String) =
         editorCoordinator.selectEditorTab(path)
@@ -6275,22 +6279,45 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             val rawOutput = (process as? com.codeair.mhe.runtime.NativeSpawnProcess)
                 ?.outputFile?.readTailText(MAX_PROCESS_OUTPUT_BYTES).orEmpty()
             val tail = truncateHeadAndTail(rawOutput, maxHeadLines = 10, maxTailLines = 40, maxTotalLines = 60)
-            val logs = listOf(
-                "Command: $command",
-                "Working dir: ${gradleRoot.path}",
-                "Exit code: $exitCode",
-                tail,
+            // Phase 3 — structured test results: parse the JUnit XML Gradle
+            // wrote instead of reporting only a raw log tail. Null means no
+            // reports were produced (the build failed before tests ran, or
+            // the task never ran tests); never report zero tests as a result.
+            val testResults = TestResultParser.parseResultsDir(
+                File(gradleRoot, "build/test-results/testDebugUnitTest")
             )
+            // Phase 3 — failure diagnosis: classify the real output so the
+            // repair prompt (and the failure itself) names the error type,
+            // the likely cause and the affected files, not just a log tail.
+            val diagnosis = if (exitCode != 0) SelfHealingLoop().diagnose(rawOutput) else null
+            val logs = buildList {
+                add("Command: $command")
+                add("Working dir: ${gradleRoot.path}")
+                add("Exit code: $exitCode")
+                testResults?.let {
+                    add(it.summaryLine())
+                    addAll(it.failureLines())
+                }
+                add(tail)
+            }
             return@withContext if (exitCode == 0) {
                 OperationResult.success(
                     exitCode = exitCode,
                     logs = logs,
-                    verificationEvidence = "gradle assembleDebug testDebugUnitTest exit=0 in ${gradleRoot.path}",
+                    verificationEvidence = "gradle assembleDebug testDebugUnitTest exit=0 in ${gradleRoot.path}" +
+                        (testResults?.let { "; ${it.summaryLine()}" } ?: ""),
                     startedAt = startedAt,
                 )
             } else {
+                val diagnosisLine = diagnosis?.let {
+                    val files = it.affectedFiles.distinct().take(5)
+                    "Diagnosis (${it.type}, ${(it.confidence * 100).toInt()}% confidence): " +
+                        "${it.rootCause}. Suggested fix: ${it.suggestedFix}." +
+                        if (files.isNotEmpty()) " Affected files: ${files.joinToString(", ")}." else ""
+                }
                 OperationResult.failure(
                     error = "Gradle build/test failed (exit code $exitCode). " +
+                        (diagnosisLine?.let { "$it " } ?: "") +
                         tail.trim().takeLast(2000).ifBlank { "See logs." },
                     exitCode = exitCode,
                     logs = logs,

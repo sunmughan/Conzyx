@@ -88,6 +88,7 @@ import com.codeair.mhe.model.ScratchpadItem
 import com.codeair.mhe.model.StepStatus
 import com.codeair.mhe.model.TaskStatus
 import com.codeair.mhe.session.EngineeringState
+import com.codeair.mhe.session.EngineeringStepEvent
 import com.codeair.mhe.session.OrchestratorSnapshot
 import com.codeair.mhe.ui.theme.PocketGreen
 import com.codeair.mhe.ui.theme.PocketOrange
@@ -784,6 +785,10 @@ fun EngineeringStateBanner(
     onRollbackToBaseline: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onDismiss: (() -> Unit)? = null,
+    // Phase 3 — detailed agent activity timeline: when set and the
+    // snapshot carries history, tapping the banner opens the timeline
+    // dialog instead of doing nothing.
+    onShowTimeline: (() -> Unit)? = null,
 ) {
     // The Analyzing status pill is removed by user order: no "Analyzing Requirements"
     // banner while the agent is analyzing. Other states (plan, build, fix, failure)
@@ -812,7 +817,13 @@ fun EngineeringStateBanner(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
         border = BorderStroke(1.dp, color.copy(alpha = 0.5f)),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().then(
+            if (onShowTimeline != null && snapshot.history.isNotEmpty()) {
+                Modifier.clickable { onShowTimeline() }
+            } else {
+                Modifier
+            }
+        ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -848,6 +859,17 @@ fun EngineeringStateBanner(
                 }
             }
 
+            // Phase 3 — timeline affordance: a history icon signals the
+            // banner opens the detailed activity timeline on tap.
+            if (onShowTimeline != null && snapshot.history.isNotEmpty()) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = "Show agent activity timeline",
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (onDismiss != null) {
                 IconButton(
                     onClick = onDismiss,
@@ -880,4 +902,83 @@ fun EngineeringStateBanner(
             }
         }
     }
+}
+
+/**
+ * Phase 3 — detailed agent activity timeline.
+ *
+ * Lists the orchestrator's [EngineeringStepEvent] history for the current
+ * task (newest last): time, state, step title, details and iteration.
+ * The caller passes the LIVE snapshot's history, which is populated during
+ * real tasks; the banner's synthetic completion snapshot carries an empty
+ * history and must never be used as the source here.
+ */
+@Composable
+fun AgentActivityTimelineDialog(
+    history: List<EngineeringStepEvent>,
+    onDismiss: () -> Unit,
+) {
+    val timeFormat = remember {
+        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Agent activity", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (history.isEmpty()) {
+                    Text(
+                        "No activity recorded for this task yet.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                for (event in history) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                timeFormat.format(java.util.Date(event.timestampMillis)),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                event.state.name.replace('_', ' ').lowercase()
+                                    .replaceFirstChar { it.uppercase() },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PocketOrange,
+                            )
+                            if (event.iteration > 1) {
+                                Text(
+                                    "Iter ${event.iteration}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Text(event.stepTitle, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        if (!event.details.isNullOrBlank()) {
+                            Text(
+                                event.details,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
 }
