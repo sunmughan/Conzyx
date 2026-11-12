@@ -108,6 +108,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Close
@@ -317,6 +318,9 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Default.Home),
     CHAT("Chat", Icons.Default.AutoAwesome),
+    // Phase 5: mobile command center — running task, interrupted session,
+    // queued prompts, recent session history in one place.
+    COMMAND("Command", Icons.Default.Dashboard),
     FILES("Files", Icons.Default.Folder),
     TERMINAL("Terminal", Icons.Default.Terminal),
     CHANGES("Changes", Icons.Default.Code),
@@ -5631,6 +5635,15 @@ private fun WorkspaceScreen(
                     onCancelQueuedPrompt = { viewModel?.cancelQueuedPrompt(it) },
                     onMoveQueuedPrompt = { id, index -> viewModel?.reorderQueuedPrompt(id, index) },
                     onSendQueuedPromptNow = { viewModel?.sendQueuedPromptNow(it) },
+                )
+                WorkspaceTab.COMMAND -> CommandCenterScreen(
+                    state = state,
+                    onStop = onStop,
+                    onResumeInterruptedSession = onResumeInterruptedSession,
+                    onDismissInterruptedSession = onDismissInterruptedSession,
+                    onCancelQueuedPrompt = { viewModel?.cancelQueuedPrompt(it) },
+                    onSendQueuedPromptNow = { viewModel?.sendQueuedPromptNow(it) },
+                    onOpenProject = { project -> viewModel?.openProject(project) },
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,

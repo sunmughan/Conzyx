@@ -324,6 +324,9 @@ data class AppUiState(
     val streamingMessageId: String? = null,
     val activeSessionId: String? = null,
     val interruptedSession: com.codeair.mhe.session.PersistedAgentSession? = null,
+    // Phase 5 (mobile command center): archived session history, newest
+    // first, fed by AgentSessionController so the list stays live.
+    val sessionHistory: List<com.codeair.mhe.session.PersistedAgentSession> = emptyList(),
     val runtimeRecoveryStatus: String? = null,
     val runtimeRecoveryAttempt: Int = 0,
     val runtimeRecoveryCanResume: Boolean = false,
@@ -587,7 +590,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val sessionManager = com.codeair.mhe.session.AgentSessionManager(application)
     val checkpointManager = com.codeair.mhe.workspace.WorkspaceCheckpointManager(application.filesDir)
     val runtimeHealthController = com.codeair.mhe.runtime.RuntimeHealthController(application)
-    val agentSessionController = com.codeair.mhe.session.AgentSessionController(application, sessionManager)
+    val agentSessionController = com.codeair.mhe.session.AgentSessionController(sessionManager)
     val terminalSessionController = com.codeair.mhe.terminal.TerminalSessionController()
     val agentChatController = com.codeair.mhe.agent.AgentChatController()
     val gitDomainController = com.codeair.mhe.workspace.GitDomainController { args, workingDir, guestPath ->
@@ -920,6 +923,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             teamOrchestrator.sessionState.collect { teamState ->
                 _state.update { it.copy(teamSessionState = teamState) }
+            }
+        }
+        viewModelScope.launch {
+            agentSessionController.history.collect { history ->
+                _state.update { it.copy(sessionHistory = history) }
             }
         }
         runCatching { RuntimeSetupController.restore(application) }

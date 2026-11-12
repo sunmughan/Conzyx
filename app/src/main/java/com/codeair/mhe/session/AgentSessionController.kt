@@ -15,17 +15,29 @@ data class AgentSessionDomainState(
 )
 
 class AgentSessionController(
-    private val context: Context,
-    private val sessionManager: AgentSessionManager = AgentSessionManager(context),
+    private val sessionManager: AgentSessionManager,
 ) {
+    /** Testable seam: production passes the app-owned manager; tests pass a temp-dir manager. */
+    constructor(context: Context) : this(AgentSessionManager(context))
+
     private val _state = MutableStateFlow(AgentSessionDomainState())
     val state: StateFlow<AgentSessionDomainState> = _state.asStateFlow()
+
+    // Phase 5 (mobile command center): archived session history, newest
+    // first, kept live so the command center never shows a stale list.
+    private val _history = MutableStateFlow<List<PersistedAgentSession>>(emptyList())
+    val history: StateFlow<List<PersistedAgentSession>> = _history.asStateFlow()
 
     init {
         val interrupted = sessionManager.detectInterruptedSessions()
         if (interrupted.isNotEmpty()) {
             _state.update { it.copy(interruptedSessions = interrupted) }
         }
+        refreshHistory()
+    }
+
+    private fun refreshHistory() {
+        _history.value = sessionManager.listSessionHistory()
     }
 
     fun startSession(
@@ -82,6 +94,7 @@ class AgentSessionController(
 
     fun completeSession(sessionId: String, summary: String? = null) {
         sessionManager.recordSessionCompleted(sessionId, summary)
+        refreshHistory()
         _state.update {
             it.copy(
                 activeSessions = it.activeSessions - sessionId,
@@ -93,6 +106,7 @@ class AgentSessionController(
 
     fun failSession(sessionId: String, reason: String) {
         sessionManager.recordSessionFailed(sessionId, reason)
+        refreshHistory()
         _state.update {
             it.copy(
                 activeSessions = it.activeSessions - sessionId,
@@ -104,6 +118,7 @@ class AgentSessionController(
 
     fun cancelSession(sessionId: String) {
         sessionManager.recordSessionCancelled(sessionId)
+        refreshHistory()
         _state.update {
             it.copy(
                 activeSessions = it.activeSessions - sessionId,
@@ -115,6 +130,7 @@ class AgentSessionController(
 
     fun timeoutSession(sessionId: String, timeoutMs: Long) {
         sessionManager.recordSessionTimeout(sessionId, timeoutMs)
+        refreshHistory()
         _state.update {
             it.copy(
                 activeSessions = it.activeSessions - sessionId,
