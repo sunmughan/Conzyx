@@ -403,8 +403,23 @@ class SkillManagerTest {
         val tempDir = Files.createTempDirectory("skill-export-test").toFile()
         try {
             val manager = SkillManager(baseDir = tempDir)
-            manager.ensureDefaultSkills()
-            val zip = manager.exportSkill("browser-automation")
+            // A custom skill: built-in names are reserved and installZip
+            // refuses to install over one, so the round-trip uses a
+            // custom name.
+            val skillZip = File(tempDir, "custom-skill.zip")
+            ZipOutputStream(skillZip.outputStream()).use { out ->
+                out.putNextEntry(ZipEntry("SKILL.md"))
+                out.write("---\nname: export-test-skill\ndescription: Round-trip test skill.\n---\n\n# Export test skill\n".toByteArray())
+                out.closeEntry()
+                out.putNextEntry(ZipEntry("helper.txt"))
+                out.write("helper content".toByteArray())
+                out.closeEntry()
+            }
+            val installedFirst = manager.installZip(skillZip, "test-fixture")
+            assertEquals(1, installedFirst.size)
+            assertEquals("export-test-skill", installedFirst[0].name)
+
+            val zip = manager.exportSkill("export-test-skill")
             assertTrue("exported zip should exist", zip.isFile)
             assertTrue("exported zip should not be empty", zip.length() > 0)
 
@@ -415,8 +430,9 @@ class SkillManagerTest {
                 val target = SkillManager(baseDir = targetDir)
                 val installed = target.installZip(zip, "export-test")
                 assertEquals(1, installed.size)
-                assertEquals("browser-automation", installed[0].name)
+                assertEquals("export-test-skill", installed[0].name)
                 assertTrue(File(installed[0].path, "SKILL.md").isFile)
+                assertTrue(File(installed[0].path, "helper.txt").isFile)
             } finally {
                 targetDir.deleteRecursively()
             }

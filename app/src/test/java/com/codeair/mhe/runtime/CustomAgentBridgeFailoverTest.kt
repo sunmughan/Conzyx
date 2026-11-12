@@ -135,24 +135,43 @@ class CustomAgentBridgeFailoverTest {
     fun `fails the session when there is no key to rotate to`() {
         val serverSocket = ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))
         val port = serverSocket.localPort
+        // The server answers 429 to every request: the bridge's same-key
+        // retry then terminates on its own (3 attempts, ~3s of backoff)
+        // instead of hanging on a dead connection. A server that accepts
+        // once and stops reading leaves the listening socket open, so the
+        // retry's connection sits in the backlog until the 120s read
+        // timeout — that is a test-server defect, not a bridge defect.
         thread(isDaemon = true, name = "failover-no-key-server") {
             try {
-                serverSocket.accept().use { socket ->
-                    val reader = socket.getInputStream().bufferedReader()
-                    var line: String?
-                    do {
-                        line = reader.readLine()
-                    } while (line != null && line.isNotEmpty())
-                    val body = "{\"error\":{\"message\":\"rate limit exceeded\"}}"
-                    val out = socket.getOutputStream()
-                    out.write(
-                        ("HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\n" +
-                            "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body").toByteArray(),
-                    )
-                    out.flush()
+                while (!serverSocket.isClosed) {
+                    serverSocket.accept().use { socket ->
+                        val reader = socket.getInputStream().bufferedReader()
+                        var contentLength = 0
+                        var line: String?
+                        do {
+                            line = reader.readLine()
+                            if (line != null && line.startsWith("Content-Length: ")) {
+                                contentLength = line.removePrefix("Content-Length: ").trim().toIntOrNull() ?: 0
+                            }
+                        } while (line != null && line.isNotEmpty())
+                        var remaining = contentLength
+                        val buf = CharArray(1024)
+                        while (remaining > 0) {
+                            val read = reader.read(buf, 0, minOf(buf.size, remaining))
+                            if (read < 0) break
+                            remaining -= read
+                        }
+                        val body = "{\"error\":{\"message\":\"rate limit exceeded\"}}"
+                        val out = socket.getOutputStream()
+                        out.write(
+                            ("HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\n" +
+                                "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body").toByteArray(),
+                        )
+                        out.flush()
+                    }
                 }
             } catch (_: Exception) {
-                // Client went away: nothing to do.
+                // Client went away or socket closed: nothing to do.
             }
         }
         try {
