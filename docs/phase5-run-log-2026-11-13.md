@@ -80,7 +80,16 @@ Supporting change:
   deleted, not committed.
 
 ## CI
-- Run id: (fill after push)
+- Run 43285223115 (commit a9d5b30b): **FAILURE** — both jobs failed on ONE
+  compile error: `CommandCenterScreen.kt:103:21` — `state.lastTaskOutcome`
+  is a `TaskOutcome` data class, not a String; `Text()` had no applicable
+  candidate. My inspection miss (the field name read like a String).
+  Fix: use `state.lastTaskOutcome?.title`. All other composable field
+  types re-audited against their definitions before re-push
+  (`currentTaskRequest: String?`, `PersistedAgentSession` fields,
+  `openProject/cancelQueuedPrompt/sendQueuedPromptNow` signatures) — no
+  other mismatch. The failed log carried exactly one `e:` line per job.
+- Re-push run id: (fill after push)
 - Result: (fill after push)
 
 ## Skipped / not-checked

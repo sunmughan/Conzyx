@@ -101,7 +101,7 @@ fun CommandCenterScreen(
                     }
                 } else {
                     Text(
-                        state.lastTaskOutcome ?: "No task running.",
+                        state.lastTaskOutcome?.title ?: "No task running.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
