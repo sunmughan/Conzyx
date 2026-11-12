@@ -145,7 +145,25 @@ junit, coroutines):
 
 ## CI
 
-(TODO — filled in after push.)
+- **Run 43253714705** (commit `43f23ad3`): verify FAILED, release
+  succeeded. 1384 tests ran, 2 failed:
+  1. `CustomAgentBridgeFailoverTest` no-key case — the test server
+     accepted once and stopped reading, leaving the listening socket open,
+     so the bridge retry sat in the backlog until the 120s read timeout
+     (test-server defect, not a bridge defect).
+  2. `SkillManagerTest.exportSkillRoundTripsAsInstallableZip` — installZip
+     refuses to install over a reserved built-in skill name
+     (`browser-automation`).
+  Both fixed in commit `02e0e16a` (test-only changes, no product code):
+  the no-key server now answers 429 to every request so the retry
+  terminates on its own; the export round-trip builds a custom skill
+  instead of re-installing a built-in.
+- **Run 43258265797** (commit `02e0e16a`): **SUCCESS — verify + release
+  both green.** `testOnlineDebugUnitTest` + `assembleOnlineDebug` BUILD
+  SUCCESSFUL (4m 57s), offline build BUILD SUCCESSFUL (2m 21s), 0 FAILED
+  in the whole log. Same 1384-test set as the first run, 1384/1384 passing.
+  Release v3.5.18 updated in place (12 assets, updated 2026-11-12T16:39:16Z).
+  No version bump, per the standing order.
 
 ## Not checked / left open
 
