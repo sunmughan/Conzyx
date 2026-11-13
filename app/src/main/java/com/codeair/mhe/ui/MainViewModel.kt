@@ -6481,6 +6481,7 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
         super.onCleared()
         AppCrashLogger.log("MainViewModel.onCleared: cleaning up running processes and sessions")
         terminalCoordinator.onCleared()
+        editorCoordinator.onCleared()
         gitHubAuthCoordinator.onCleared()
         teamOrchestrator.shutdown()
         if (_state.value.isRunning) {

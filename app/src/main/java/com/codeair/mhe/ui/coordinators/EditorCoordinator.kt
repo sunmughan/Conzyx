@@ -11,6 +11,9 @@ import com.codeair.mhe.model.WorkspaceEntry
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -71,6 +74,22 @@ class EditorCoordinator(
         EditorSessionStore(File(host.appContext.filesDir, "editor-sessions"))
     }
     private var sessionPersistJob: Job? = null
+
+    /**
+     * Phase 5: flushes the debounced session persist when the app
+     * backgrounds, so a process kill in the background cannot lose up
+     * to 1.5s of editor state (tabs, dirty buffers, cursor/scroll).
+     * Registered once per coordinator; removed in [onCleared].
+     */
+    private val backgroundObserver = object : DefaultLifecycleObserver {
+        override fun onStop(owner: LifecycleOwner) {
+            flushSessionPersist()
+        }
+    }
+
+    init {
+        runCatching { ProcessLifecycleOwner.get().lifecycle.addObserver(backgroundObserver) }
+    }
 
     /** Last rename transaction, for undo. Null when nothing to undo. */
     private var lastRenameTransaction: com.codeair.mhe.workspace.ReplaceTransaction? = null
@@ -620,6 +639,34 @@ class EditorCoordinator(
             )
             withContext(Dispatchers.IO) { sessionStore.saveSession(session) }
         }
+    }
+
+    /**
+     * Phase 5: writes the current editor session to disk immediately,
+     * cancelling any pending debounced write first. Safe to call when
+     * nothing is pending (writes the current snapshot) and when no
+     * project is active (no-op). A foreground crash can still lose up
+     * to the 1.5s debounce window; backgrounding no longer can.
+     */
+    fun flushSessionPersist() {
+        val project = host.state().activeProject ?: return
+        sessionPersistJob?.cancel()
+        sessionPersistJob = host.scope.launch {
+            val session = EditorSession(
+                projectId = project.id,
+                tabs = host.state().openEditorTabs,
+                activePath = host.state().openedFilePath,
+                buffers = bufferManager.dirtyBuffers(),
+                viewStates = bufferManager.allViewStates(),
+                splitState = host.state().editorSplitState,
+            )
+            withContext(Dispatchers.IO) { sessionStore.saveSession(session) }
+        }
+    }
+
+    /** Removes the background observer; called from MainViewModel.onCleared. */
+    fun onCleared() {
+        runCatching { ProcessLifecycleOwner.get().lifecycle.removeObserver(backgroundObserver) }
     }
 
     /** Plans a rename; returns the preview for the UI to review. */
