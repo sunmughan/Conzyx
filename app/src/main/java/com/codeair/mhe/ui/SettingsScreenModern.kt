@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrivacyTip
@@ -158,7 +159,7 @@ import com.codeair.mhe.auth.ui.ChangePasswordDialog
 import com.codeair.mhe.auth.ui.DeleteAccountDialog
 import com.codeair.mhe.auth.ui.EditDisplayNameDialog
 
-private enum class SettingsSection { ACCOUNT, APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL, PERMISSIONS }
+private enum class SettingsSection { ACCOUNT, APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL, PERMISSIONS, NOTIFICATIONS }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -214,6 +215,7 @@ fun SettingsScreen(
     val runtimeInstaller = remember { RuntimeInstaller(context) }
     val appPrefs = remember { AppPreferences(context) }
     var agentBrowserDriveEnabled by remember { mutableStateOf(appPrefs.agentBrowserDriveEnabled) }
+    var quietHoursEnabled by remember { mutableStateOf(appPrefs.notificationQuietHoursEnabled) }
     val installedEnvVersions = remember(state.installedDevStacks) {
         runCatching { runtimeInstaller.installedEnvironmentVersions() }.getOrDefault(emptyMap())
     }
@@ -380,6 +382,34 @@ fun SettingsScreen(
                         ModernThemeChoice("Dark", Icons.Default.DarkMode, state.themeMode == AppThemeMode.DARK, { onSetThemeMode(AppThemeMode.DARK) }, Modifier.weight(1f))
                         ModernThemeChoice("Light", Icons.Default.LightMode, state.themeMode == AppThemeMode.LIGHT, { onSetThemeMode(AppThemeMode.LIGHT) }, Modifier.weight(1f))
                         ModernThemeChoice("System", Icons.Default.PhoneAndroid, state.themeMode == AppThemeMode.SYSTEM, { onSetThemeMode(AppThemeMode.SYSTEM) }, Modifier.weight(1f))
+                    }
+                }
+            }
+
+            item {
+                SettingsAccordion(
+                    title = "Notifications",
+                    subtitle = if (quietHoursEnabled) "Quiet hours on · 10pm-7am" else "Quiet hours off",
+                    icon = Icons.Default.Notifications,
+                    expanded = expanded == SettingsSection.NOTIFICATIONS,
+                    onClick = { toggle(SettingsSection.NOTIFICATIONS) },
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Quiet hours", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                            Text("Task results arrive silently 10pm-7am. Failures and approval requests still alert.", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = quietHoursEnabled,
+                            onCheckedChange = {
+                                appPrefs.notificationQuietHoursEnabled = it
+                                quietHoursEnabled = it
+                            },
+                        )
                     }
                 }
             }

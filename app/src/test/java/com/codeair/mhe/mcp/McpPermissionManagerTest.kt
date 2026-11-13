@@ -98,4 +98,20 @@ class McpPermissionManagerTest {
         assertFalse(manager.evaluate(custom, "otherTool", "proj-1").allowed)
         assertTrue(manager.evaluate(custom, "someTool", "proj-1").allowed)
     }
+
+    @Test
+    fun `one-time approval survives manager restart and is consumed exactly once`() {
+        val dir = tempFolder.newFolder("perm6")
+        val custom = McpServerInfo(id = "custom-1", name = "Custom", command = "node", isBuiltIn = false)
+        McpPermissionManager(dir).grantOneTimeApproval("custom-1", "someTool", "proj-1")
+
+        val restarted = McpPermissionManager(dir)
+        val granted = restarted.evaluate(custom, "someTool", "proj-1")
+        assertTrue(granted.allowed)
+        assertFalse(granted.requiresPrompt)
+
+        val after = restarted.evaluate(custom, "someTool", "proj-1")
+        assertFalse(after.allowed)
+        assertTrue(after.requiresPrompt)
+    }
 }

@@ -201,6 +201,11 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("agent_browser_drive_enabled", true)
         set(value) { preferences.edit().putBoolean("agent_browser_drive_enabled", value).commit() }
 
+    /** Phase 5: task-result notifications go silent 10pm-7am; failures and approvals still alert. */
+    var notificationQuietHoursEnabled: Boolean
+        get() = preferences.getBoolean("notification_quiet_hours_enabled", true)
+        set(value) { preferences.edit().putBoolean("notification_quiet_hours_enabled", value).commit() }
+
 
     fun saveProvider(profile: ProviderProfile, agent: AgentKind? = null) {
         val editor = preferences.edit()

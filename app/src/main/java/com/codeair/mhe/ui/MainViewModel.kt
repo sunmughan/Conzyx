@@ -503,6 +503,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: com.codeair.mhe.mcp.McpDeniedException) {
                 "Error: MCP tool denied: ${e.decision.reason}"
             } catch (e: com.codeair.mhe.mcp.McpPromptRequiredException) {
+                // Phase 5: post an actionable notification so the user can
+                // approve from the shade instead of finding the MCP screen.
+                runCatching {
+                    NotificationCoordinator.postApprovalRequired(
+                        getApplication(),
+                        serverId,
+                        toolName,
+                        projectId,
+                        "Approval needed: $toolName",
+                        "MCP tool $toolName on server $serverId needs your approval before it can run.",
+                    )
+                }
                 "Error: MCP tool requires approval: ${e.decision.reason} (approve it on the MCP screen, then ask again)"
             } catch (e: Exception) {
                 "Error: ${e.message}"

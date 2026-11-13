@@ -3,6 +3,7 @@ package com.codeair.mhe.mcp
 import android.content.Context
 import com.codeair.mhe.security.PermissionPolicyEngine
 import com.codeair.mhe.workspace.SafeFileOps
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -73,10 +74,14 @@ class McpPermissionManager(
 
     fun grantOneTimeApproval(serverId: String, toolName: String, projectId: String? = null) {
         oneTimeApprovals[approvalKey(serverId, toolName, projectId)] = Unit
+        persist()
     }
 
-    private fun consumeOneTimeApproval(serverId: String, toolName: String, projectId: String?): Boolean =
-        oneTimeApprovals.remove(approvalKey(serverId, toolName, projectId)) != null
+    private fun consumeOneTimeApproval(serverId: String, toolName: String, projectId: String?): Boolean {
+        val consumed = oneTimeApprovals.remove(approvalKey(serverId, toolName, projectId)) != null
+        if (consumed) persist()
+        return consumed
+    }
 
     private fun approvalKey(serverId: String, toolName: String, projectId: String?): String =
         "${projectId.orEmpty()}|$serverId::$toolName"
@@ -169,6 +174,7 @@ class McpPermissionManager(
         globalToolPolicies.clear()
         projectServerPolicies.clear()
         projectToolPolicies.clear()
+        oneTimeApprovals.clear()
         persist()
     }
 
@@ -220,6 +226,14 @@ class McpPermissionManager(
                             if (p != null) map[tKey] = p
                         }
                     }
+                    // One-time approvals are durable too: an approval granted
+                    // from a notification must still hold after a restart.
+                    oneTimeApprovals.clear()
+                    root.optJSONArray("oneTimeApprovals")?.let { arr ->
+                        for (i in 0 until arr.length()) {
+                            arr.optString(i)?.takeIf { it.isNotBlank() }?.let { oneTimeApprovals[it] = Unit }
+                        }
+                    }
                 }
             }
         }
@@ -253,6 +267,10 @@ class McpPermissionManager(
                     projectTools.put(pId, pObj)
                 }
                 root.put("projectTools", projectTools)
+
+                val oneTimeArr = JSONArray()
+                oneTimeApprovals.keys.forEach { oneTimeArr.put(it) }
+                root.put("oneTimeApprovals", oneTimeArr)
 
                 SafeFileOps.atomicWriteText(permissionFile, root.toString())
             }
