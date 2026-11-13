@@ -146,6 +146,8 @@ import androidx.compose.material.icons.filled.Speed
 import com.codeair.mhe.ui.components.YouTubeBrandRed
 import com.codeair.mhe.ui.components.YouTubeVideoDialog
 import com.codeair.mhe.util.YouTubeUrlValidator
+import com.codeair.mhe.voice.VoiceCommand
+import com.codeair.mhe.voice.VoiceCommandParser
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
@@ -5635,6 +5637,8 @@ private fun WorkspaceScreen(
                     onCancelQueuedPrompt = { viewModel?.cancelQueuedPrompt(it) },
                     onMoveQueuedPrompt = { id, index -> viewModel?.reorderQueuedPrompt(id, index) },
                     onSendQueuedPromptNow = { viewModel?.sendQueuedPromptNow(it) },
+                    onOpenCommandCenter = { selectedTab = WorkspaceTab.COMMAND },
+                    onResumeInterruptedSession = onResumeInterruptedSession,
                 )
                 WorkspaceTab.COMMAND -> CommandCenterScreen(
                     state = state,
@@ -6425,6 +6429,10 @@ private fun ChatTab(
     onCancelQueuedPrompt: (String) -> Unit = {},
     onMoveQueuedPrompt: (String, Int) -> Unit = { _, _ -> },
     onSendQueuedPromptNow: (String) -> Unit = {},
+    // Phase 5: voice commands (see VoiceCommandParser) need the same
+    // navigation + resume actions the command center tab already has.
+    onOpenCommandCenter: () -> Unit = {},
+    onResumeInterruptedSession: () -> Unit = {},
 ) {
     val view = LocalView.current
     // Keep the screen on while the selected agent is working in this chat. Released automatically
@@ -6527,8 +6535,20 @@ private fun ChatTab(
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spokenText.isNullOrBlank()) {
-                prompt = if (prompt.isBlank()) spokenText else "$prompt $spokenText"
-                updateMentionQuery(prompt)
+                // Phase 5: control phrases act instead of being dictated.
+                when (val command = VoiceCommandParser.parse(spokenText)) {
+                    is VoiceCommand.Dictate -> {
+                        prompt = if (prompt.isBlank()) command.text else "$prompt ${command.text}"
+                        updateMentionQuery(prompt)
+                    }
+                    VoiceCommand.StopTask -> onStop()
+                    VoiceCommand.ResumeSession -> onResumeInterruptedSession()
+                    VoiceCommand.OpenCommandCenter -> onOpenCommandCenter()
+                    VoiceCommand.ShowStatus -> {
+                        val status = if (isRunning) "Agent is running" else "No task running"
+                        Toast.makeText(context, status, Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
