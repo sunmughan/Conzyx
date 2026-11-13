@@ -62,6 +62,10 @@ class MobileHarnessApplication : Application() {
                 }
             )
         }
+        // Phase 5: periodic background watchdog (WorkManager, 15 min) that
+        // marks sessions killed with the process as interrupted and reminds
+        // the user when sessions or queued prompts wait to resume.
+        runCatching { com.codeair.mhe.runtime.BackgroundJobScheduler.enqueueAll(this) }
     }
 
     override fun onTrimMemory(level: Int) {

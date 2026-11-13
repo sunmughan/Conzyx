@@ -30,6 +30,7 @@ object NotificationCoordinator {
     const val RESULT_GROUP_SUMMARY_ID = 43
     const val REMOTE_GROUP_KEY = "conzyx-remote-events"
     const val REMOTE_GROUP_SUMMARY_ID = 44
+    const val RESUME_REMINDER_NOTIFICATION_ID = 45
     private const val REMOTE_NOTIFICATION_BASE_ID = 10_000
     private const val APPROVAL_NOTIFICATION_BASE_ID = 20_000
 
@@ -244,6 +245,41 @@ object NotificationCoordinator {
         if (!prefs.notificationQuietHoursEnabled) return false
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         return NotificationPolicy.isQuietHour(hour)
+    }
+
+    /**
+     * Phase 5: the session watchdog's resume reminder. A distinct id from
+     * the single result slot (42), so it never overwrites the latest task
+     * result. Silent during quiet hours like any other non-failure result.
+     */
+    fun postResumeReminder(context: Context, interruptedCount: Int, queuedCount: Int) {
+        ensureChannels(context)
+        val silent = isQuietNow(context)
+        val detail = buildString {
+            if (interruptedCount > 0) {
+                append("$interruptedCount interrupted session${if (interruptedCount == 1) "" else "s"}")
+            }
+            if (queuedCount > 0) {
+                if (isNotEmpty()) append(" · ")
+                append("$queuedCount queued prompt${if (queuedCount == 1) "" else "s"}")
+            }
+            append(" waiting to resume")
+        }
+        context.getSystemService(NotificationManager::class.java).notify(
+            RESUME_REMINDER_NOTIFICATION_ID,
+            NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("Sessions waiting to resume")
+                .setContentText(detail)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+                .setContentIntent(openAppIntent(context))
+                .setAutoCancel(true)
+                .setGroup(RESULT_GROUP_KEY)
+                .setSilent(silent)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setPriority(if (silent) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT)
+                .build(),
+        )
     }
 
     private fun openAppIntent(context: Context, route: String? = null): PendingIntent = PendingIntent.getActivity(
