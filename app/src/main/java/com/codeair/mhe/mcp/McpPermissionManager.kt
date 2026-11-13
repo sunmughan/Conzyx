@@ -46,13 +46,18 @@ class McpPermissionManager(
     // Project: projectId -> serverId:toolName -> policy
     private val projectToolPolicies = ConcurrentHashMap<String, ConcurrentHashMap<String, McpPermissionPolicy>>()
 
+    // One-time approvals (granted from a notification or the MCP screen).
+    // Declared BEFORE init on purpose: loadPersisted() runs in init and
+    // fills this map, so a declaration after init would read a null field
+    // (silently swallowed by loadPersisted's runCatching) and approvals
+    // would never survive a restart.
+    private val oneTimeApprovals = ConcurrentHashMap<String, Unit>()
+
     private val lock = Any()
 
     init {
         loadPersisted()
     }
-
-    private val oneTimeApprovals = ConcurrentHashMap<String, Unit>()
 
     fun evaluate(
         server: McpServerInfo,
